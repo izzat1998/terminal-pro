@@ -41,6 +41,11 @@ ignore = [
     "B008",   # Do not perform function calls in argument defaults (needed for DRF)
     "B904",   # Within except clause, raise from err (too strict for Django)
     "RUF012", # Mutable class attributes (common in Django models)
+    "RUF001", # Ambiguous characters - project uses Russian strings intentionally
+    "RUF002", # Ambiguous characters in docstrings
+    "RUF003", # Ambiguous characters in comments
+    "DJ001",  # null=True on CharField - acceptable for optional fields
+    "UP007",  # Use X | Y for Union - keep compatibility with older type checkers
 ]
 
 # Allow autofix for all enabled rules
@@ -49,12 +54,16 @@ unfixable = []
 
 [lint.per-file-ignores]
 # Tests can use assertions and have unused imports (fixtures)
-"tests/**/*.py" = ["S101", "F401", "F811"]
+"tests/**/*.py" = ["S101", "F401", "F811", "F841", "B007", "E402"]
 # Settings files often have unused imports and star imports
 "**/settings.py" = ["F401", "F403", "F405"]
 "**/settings/**/*.py" = ["F401", "F403", "F405"]
 # __init__.py files often have unused imports for re-exports
 "**/__init__.py" = ["F401"]
+# Management commands often have delayed imports
+"**/management/commands/*.py" = ["E402"]
+# Script files
+"scripts*.py" = ["E402", "F841"]
 
 [lint.isort]
 # Django import ordering
@@ -66,10 +75,6 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 force-single-line = false
 # Add line between import sections
 lines-after-imports = 2
-
-[lint.flake8-django]
-# Custom user model for type checking
-custom-user-model = "apps.accounts.models.CustomUser"
 
 [format]
 # Use double quotes (same as Black)
