@@ -72,6 +72,21 @@
   "prettier.requireConfig": true,
 
   // ========================================
+  // Theme & Appearance
+  // ========================================
+  "workbench.colorTheme": "Tokyo Night",
+
+  // ========================================
+  // Font Settings (JetBrains Mono)
+  // ========================================
+  // Download: https://www.jetbrains.com/lp/mono/
+  "editor.fontFamily": "JetBrains Mono, Fira Code, Menlo, Monaco, monospace",
+  "editor.fontLigatures": true,
+  "editor.fontSize": 14,
+  "editor.lineHeight": 1.6,
+  "editor.fontWeight": "400",
+
+  // ========================================
   // Editor Settings
   // ========================================
   "editor.formatOnSave": true,
@@ -86,6 +101,9 @@
   },
   "editor.tabSize": 2,
   "editor.rulers": [88, 120],
+  "editor.cursorBlinking": "smooth",
+  "editor.cursorSmoothCaretAnimation": "on",
+  "editor.smoothScrolling": true,
 
   // ========================================
   // File & Search Settings

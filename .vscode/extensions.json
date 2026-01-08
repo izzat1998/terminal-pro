@@ -28,6 +28,11 @@
     "mikestead.dotenv",
     "rangav.vscode-thunder-client",
     "gruntfuggly.todo-tree",
+
+    // ========================================
+    // APPEARANCE - Theme & Icons
+    // ========================================
+    "enkia.tokyo-night",
     "PKief.material-icon-theme"
   ],
   "unwantedRecommendations": [
