@@ -5,8 +5,7 @@
     // ========================================
     "ms-python.python",
     "ms-python.vscode-pylance",
-    "ms-python.black-formatter",
-    "ms-python.isort",
+    "charliermarsh.ruff",
     "batisteo.vscode-django",
     "njpwerner.autodocstring",
 
@@ -64,6 +63,8 @@
     "EditorConfig.EditorConfig"
   ],
   "unwantedRecommendations": [
-    "octref.vetur"
+    "octref.vetur",
+    "ms-python.black-formatter",
+    "ms-python.isort"
   ]
 }

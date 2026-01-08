@@ -33,6 +33,9 @@ htmlcov/
 .tox/
 .nox/
 
+# Ruff
+.ruff_cache/
+
 # ==================== Node/JavaScript ====================
 node_modules/
 npm-debug.log*
