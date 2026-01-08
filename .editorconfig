@@ -1,0 +1,110 @@
+# EditorConfig - Consistent coding styles across editors
+# https://editorconfig.org
+
+root = true
+
+# ========================================
+# Default Settings (All Files)
+# ========================================
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# ========================================
+# Python (Django Backend)
+# ========================================
+[*.py]
+indent_size = 4
+max_line_length = 88
+
+# ========================================
+# JavaScript / TypeScript / Vue (Frontend)
+# ========================================
+[*.{js,jsx,ts,tsx,vue}]
+indent_size = 2
+max_line_length = 120
+
+# ========================================
+# HTML / Django Templates
+# ========================================
+[*.{html,htm}]
+indent_size = 2
+
+[**/templates/**/*.html]
+indent_size = 2
+
+# ========================================
+# CSS / SCSS / LESS
+# ========================================
+[*.{css,scss,sass,less}]
+indent_size = 2
+
+# ========================================
+# JSON / YAML / TOML Configuration
+# ========================================
+[*.{json,jsonc}]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.toml]
+indent_size = 2
+
+# ========================================
+# Markdown / Documentation
+# ========================================
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+[*.rst]
+indent_size = 3
+
+# ========================================
+# Makefiles (require tabs)
+# ========================================
+[Makefile]
+indent_style = tab
+indent_size = 4
+
+[*.mk]
+indent_style = tab
+indent_size = 4
+
+# ========================================
+# Shell Scripts
+# ========================================
+[*.{sh,bash,zsh}]
+indent_size = 2
+
+# ========================================
+# Docker
+# ========================================
+[Dockerfile*]
+indent_size = 4
+
+[docker-compose*.yml]
+indent_size = 2
+
+# ========================================
+# Git
+# ========================================
+[.git*]
+indent_size = 2
+
+# ========================================
+# Environment Files
+# ========================================
+[*.env*]
+indent_size = 2
+
+# ========================================
+# SQL
+# ========================================
+[*.sql]
+indent_size = 2

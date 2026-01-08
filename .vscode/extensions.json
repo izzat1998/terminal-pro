@@ -1,0 +1,69 @@
+{
+  "recommendations": [
+    // ========================================
+    // Python & Django Development
+    // ========================================
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.black-formatter",
+    "ms-python.isort",
+    "batisteo.vscode-django",
+    "njpwerner.autodocstring",
+
+    // ========================================
+    // Vue.js & TypeScript Development
+    // ========================================
+    "Vue.volar",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+
+    // ========================================
+    // API Development & Testing
+    // ========================================
+    "rangav.vscode-thunder-client",
+    "humao.rest-client",
+    "42Crunch.vscode-openapi",
+
+    // ========================================
+    // Docker & DevOps
+    // ========================================
+    "ms-azuretools.vscode-docker",
+    "ms-vscode-remote.remote-containers",
+
+    // ========================================
+    // Git & Version Control
+    // ========================================
+    "eamodio.gitlens",
+    "mhutchie.git-graph",
+
+    // ========================================
+    // Database
+    // ========================================
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-pg",
+    "mtxr.sqltools-driver-sqlite",
+
+    // ========================================
+    // General Productivity
+    // ========================================
+    "mikestead.dotenv",
+    "usernamehw.errorlens",
+    "formulahendry.auto-rename-tag",
+    "christian-kohler.path-intellisense",
+    "streetsidesoftware.code-spell-checker",
+    "gruntfuggly.todo-tree",
+    "wayou.vscode-todo-highlight",
+    "aaron-bond.better-comments",
+    "PKief.material-icon-theme",
+
+    // ========================================
+    // Code Quality
+    // ========================================
+    "sonarsource.sonarlint-vscode",
+    "EditorConfig.EditorConfig"
+  ],
+  "unwantedRecommendations": [
+    "octref.vetur"
+  ]
+}
