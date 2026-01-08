@@ -127,7 +127,6 @@
   // Error Lens Settings
   // ========================================
   "errorLens.enabledDiagnosticLevels": ["error", "warning"],
-  "errorLens.excludeBySource": ["cSpell"],
 
   // ========================================
   // Todo Tree Settings

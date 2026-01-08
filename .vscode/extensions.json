@@ -1,66 +1,34 @@
 {
   "recommendations": [
     // ========================================
-    // Python & Django Development
+    // ESSENTIAL - Python & Django
     // ========================================
     "ms-python.python",
     "ms-python.vscode-pylance",
     "charliermarsh.ruff",
-    "batisteo.vscode-django",
-    "njpwerner.autodocstring",
 
     // ========================================
-    // Vue.js & TypeScript Development
+    // ESSENTIAL - Vue.js & TypeScript
     // ========================================
     "Vue.volar",
     "dbaeumer.vscode-eslint",
     "esbenp.prettier-vscode",
-    "bradlc.vscode-tailwindcss",
 
     // ========================================
-    // API Development & Testing
+    // ESSENTIAL - Developer Experience
     // ========================================
-    "rangav.vscode-thunder-client",
-    "humao.rest-client",
-    "42Crunch.vscode-openapi",
+    "usernamehw.errorlens",
+    "EditorConfig.EditorConfig",
 
     // ========================================
-    // Docker & DevOps
+    // USEFUL - Recommended
     // ========================================
     "ms-azuretools.vscode-docker",
-    "ms-vscode-remote.remote-containers",
-
-    // ========================================
-    // Git & Version Control
-    // ========================================
     "eamodio.gitlens",
-    "mhutchie.git-graph",
-
-    // ========================================
-    // Database
-    // ========================================
-    "mtxr.sqltools",
-    "mtxr.sqltools-driver-pg",
-    "mtxr.sqltools-driver-sqlite",
-
-    // ========================================
-    // General Productivity
-    // ========================================
     "mikestead.dotenv",
-    "usernamehw.errorlens",
-    "formulahendry.auto-rename-tag",
-    "christian-kohler.path-intellisense",
-    "streetsidesoftware.code-spell-checker",
+    "rangav.vscode-thunder-client",
     "gruntfuggly.todo-tree",
-    "wayou.vscode-todo-highlight",
-    "aaron-bond.better-comments",
-    "PKief.material-icon-theme",
-
-    // ========================================
-    // Code Quality
-    // ========================================
-    "sonarsource.sonarlint-vscode",
-    "EditorConfig.EditorConfig"
+    "PKief.material-icon-theme"
   ],
   "unwantedRecommendations": [
     "octref.vetur",
