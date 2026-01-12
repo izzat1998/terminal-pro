@@ -8,8 +8,8 @@ class TimestampedModel(models.Model):
     Abstract base model that provides created_at and updated_at timestamps.
     """
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="дата изменения")
 
     class Meta:
         abstract = True

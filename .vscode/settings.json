@@ -74,7 +74,7 @@
   // ========================================
   // Theme & Appearance
   // ========================================
-  "workbench.colorTheme": "Tokyo Night",
+  "workbench.colorTheme": "Default Dark Modern",
 
   // ========================================
   // Font Settings (JetBrains Mono)
@@ -171,5 +171,6 @@
     "terminal_app": "config",
     "services": "functions",
     "serializers": "mappings"
-  }
+  },
+  "makefile.configureOnOpen": true
 }

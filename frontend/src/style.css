@@ -1,0 +1,413 @@
+/* ============================================
+   MTT Design System - Design Tokens & Global Styles
+   ============================================ */
+
+/* --------------------------------------------
+   1. DESIGN TOKENS (CSS Custom Properties)
+   -------------------------------------------- */
+:root {
+  /* Typography */
+  --font-display: 'Unbounded', system-ui, -apple-system, sans-serif;
+  --font-body: 'Onest', system-ui, -apple-system, sans-serif;
+
+  /* Brand Colors */
+  --color-primary: #0066FF;
+  --color-primary-hover: #0052CC;
+  --color-primary-active: #004299;
+  --color-primary-light: #E6F0FF;
+  --color-primary-lighter: #F0F6FF;
+
+  /* Semantic Colors - Entry/Import Operations (Green) */
+  --color-entry: #10B981;
+  --color-entry-hover: #059669;
+  --color-entry-light: #D1FAE5;
+  --color-entry-lighter: #ECFDF5;
+
+  /* Semantic Colors - Exit/Export Operations (Blue) */
+  --color-exit: #3B82F6;
+  --color-exit-hover: #2563EB;
+  --color-exit-light: #DBEAFE;
+  --color-exit-lighter: #EFF6FF;
+
+  /* Status Colors */
+  --color-success: #10B981;
+  --color-success-light: #D1FAE5;
+  --color-warning: #F59E0B;
+  --color-warning-light: #FEF3C7;
+  --color-danger: #EF4444;
+  --color-danger-light: #FEE2E2;
+  --color-info: #3B82F6;
+  --color-info-light: #DBEAFE;
+
+  /* Neutral Palette */
+  --color-bg-page: #F8FAFC;
+  --color-bg-card: #FFFFFF;
+  --color-bg-subtle: #F1F5F9;
+  --color-bg-muted: #E2E8F0;
+  --color-border: #E2E8F0;
+  --color-border-light: #F1F5F9;
+  --color-text: #1E293B;
+  --color-text-secondary: #64748B;
+  --color-text-muted: #94A3B8;
+
+  /* Spacing Scale (8px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.03);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.04);
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-bounce: 500ms cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+/* --------------------------------------------
+   2. BASE STYLES
+   -------------------------------------------- */
+
+/* Apply custom fonts globally */
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-bg-page);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Focus styles for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------
+   3. ANT DESIGN OVERRIDES
+   -------------------------------------------- */
+
+/* Layout */
+.ant-layout {
+  background: var(--color-bg-page);
+}
+
+.ant-layout-content {
+  background: transparent;
+}
+
+.ant-layout-sider {
+  background: var(--color-bg-card) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.ant-layout-header {
+  background: var(--color-bg-card) !important;
+  box-shadow: var(--shadow-xs);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Cards */
+.ant-card {
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border-light);
+  transition: box-shadow var(--transition-normal), transform var(--transition-normal);
+}
+
+.ant-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.ant-card-head {
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.ant-card-head-title {
+  font-weight: 600;
+}
+
+/* Buttons */
+.ant-btn {
+  font-family: var(--font-body);
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.ant-btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 4px rgba(0, 102, 255, 0.2);
+}
+
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  box-shadow: 0 4px 8px rgba(0, 102, 255, 0.3);
+}
+
+.ant-btn-primary:active {
+  background: var(--color-primary-active);
+  border-color: var(--color-primary-active);
+}
+
+/* Tables */
+.ant-table {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.ant-table-thead > tr > th {
+  background: var(--color-bg-subtle) !important;
+  font-weight: 600;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--color-primary-lighter) !important;
+}
+
+.ant-table-tbody > tr > td {
+  transition: background var(--transition-fast);
+}
+
+/* Forms */
+.ant-input,
+.ant-select-selector,
+.ant-picker {
+  border-radius: var(--radius-md) !important;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.ant-input:hover,
+.ant-select-selector:hover,
+.ant-picker:hover {
+  border-color: var(--color-primary) !important;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.1) !important;
+}
+
+/* Modals */
+.ant-modal-content {
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-2xl);
+}
+
+.ant-modal-header {
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.ant-modal-title {
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+
+/* Tags */
+.ant-tag {
+  border-radius: var(--radius-md);
+  font-weight: 500;
+}
+
+/* Tabs */
+.ant-tabs-tab {
+  font-weight: 500;
+  transition: color var(--transition-fast);
+}
+
+.ant-tabs-tab-active {
+  font-weight: 600;
+}
+
+/* Menu */
+.ant-menu-item {
+  border-radius: var(--radius-md);
+  margin: 2px 0;
+  transition: all var(--transition-fast);
+}
+
+.ant-menu-item:hover {
+  background: var(--color-primary-lighter) !important;
+}
+
+.ant-menu-item-selected {
+  background: var(--color-primary-light) !important;
+}
+
+/* Dropdown */
+.ant-dropdown-menu {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-1);
+}
+
+.ant-dropdown-menu-item {
+  border-radius: var(--radius-md);
+}
+
+/* Breadcrumb */
+.ant-breadcrumb {
+  font-size: 14px;
+}
+
+.ant-breadcrumb a {
+  color: var(--color-text-secondary);
+  transition: color var(--transition-fast);
+}
+
+.ant-breadcrumb a:hover {
+  color: var(--color-primary);
+}
+
+/* Statistic */
+.ant-statistic-title {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.ant-statistic-content {
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+
+/* Avatar */
+.ant-avatar {
+  box-shadow: var(--shadow-sm);
+}
+
+/* Alert */
+.ant-alert {
+  border-radius: var(--radius-lg);
+}
+
+/* Message */
+.ant-message-notice-content {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+/* --------------------------------------------
+   4. UTILITY CLASSES
+   -------------------------------------------- */
+
+/* Stat card hover effect */
+.stat-card {
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+  cursor: default;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Display font utility */
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Gradient backgrounds */
+.bg-gradient-primary {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+}
+
+.bg-gradient-subtle {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+/* Card with enhanced hover */
+.card-interactive {
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+}
+
+.card-interactive:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-xl);
+}
+
+/* Fade-in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--transition-normal) ease-out;
+}
+
+/* Staggered animation delays */
+.stagger-1 { animation-delay: 50ms; }
+.stagger-2 { animation-delay: 100ms; }
+.stagger-3 { animation-delay: 150ms; }
+.stagger-4 { animation-delay: 200ms; }
+
+/* --------------------------------------------
+   5. SCROLLBAR STYLING
+   -------------------------------------------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+  transition: background var(--transition-fast);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) var(--color-bg-subtle);
+}

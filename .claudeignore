@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.egg-info/
+
+# Build outputs
+dist/
+build/
+*.pyc
+*.pyo
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Media uploads (large binary files)
+media/
+staticfiles/
+
+# Database files
+*.sqlite3
+db.sqlite3
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+
+# Docker volumes
+postgres_data/
+redis_data/
+
+# Test artifacts
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Package locks (large files, not needed for understanding code)
+package-lock.json
+yarn.lock
+poetry.lock
+Pipfile.lock

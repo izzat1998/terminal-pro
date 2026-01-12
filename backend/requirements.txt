@@ -1,0 +1,47 @@
+asgiref==3.9.1
+attrs==25.3.0
+Django==5.2.6
+djangorestframework==3.16.1
+djangorestframework_simplejwt==5.5.1
+drf-spectacular==0.28.0
+inflection==0.5.1
+iniconfig==2.1.0
+jsonschema==4.25.1
+jsonschema-specifications==2025.9.1
+packaging==25.0
+pillow==11.3.0
+python-magic==0.4.27
+pluggy==1.6.0
+Pygments==2.19.2
+PyJWT==2.10.1
+pytest==8.4.2
+pytest-django==4.11.1
+python-dotenv==1.1.1
+django-filter==25.1
+PyYAML==6.0.2
+referencing==0.36.2
+rpds-py==0.27.1
+sqlparse==0.5.3
+typing_extensions==4.15.0
+uritemplate==4.2.0
+
+# PostgreSQL adapter - Latest stable version as of Sept 2025
+psycopg2-binary==2.9.10
+
+# Database URL parsing - Latest stable version as of Sept 2025
+dj-database-url==2.3.0
+
+# Redis support - Latest version as of Sept 2025
+django-redis==5.4.0
+
+# Production WSGI server - Latest version as of Sept 2025
+gunicorn==23.0.0
+
+# Telegram Bot - aiogram 3.x (Latest as of Oct 2025)
+aiogram==3.22.0
+redis==6.4.0
+
+# Excel file processing - For container entry imports
+pandas==2.3.3
+openpyxl==3.1.5
+ruff>=0.14.0
