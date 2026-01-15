@@ -1,80 +1,85 @@
 <template>
   <a-layout style="min-height: 100vh;">
-    <a-layout-sider v-if="isAdmin" v-model:collapsed="collapsed" :trigger="null" collapsible theme="light"
-      :style="{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0, top: 0, bottom: 0 }">
-      <div class="logo">
-        <span v-if="!collapsed">MTT Terminal</span>
-        <span v-else>MTT</span>
-      </div>
-      <a-menu :style="{ padding: '0 5px' }" v-model:selectedKeys="selectedKeys" v-model:openKeys="openKeys"
-        theme="light" mode="inline" @click="handleMenuClick">
+    <!-- Dark sidebar with nested ConfigProvider -->
+    <a-config-provider v-if="isAdmin" :theme="sidebarTheme">
+      <a-layout-sider v-model:collapsed="collapsed" :trigger="null" collapsible theme="dark"
+        :style="{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0, top: 0, bottom: 0 }">
+        <div class="logo">
+          <span v-if="!collapsed">MTT Terminal</span>
+          <span v-else>MTT</span>
+        </div>
+        <a-menu :style="{ padding: '0 5px' }" v-model:selectedKeys="selectedKeys" v-model:openKeys="openKeys"
+          theme="dark" mode="inline" @click="handleMenuClick">
 
-        <!-- Dashboard -->
-        <a-menu-item key="dashboard">
-          <DashboardOutlined />
-          <span>Главная</span>
-        </a-menu-item>
+          <!-- Dashboard -->
+          <a-menu-item key="dashboard">
+            <DashboardOutlined />
+            <span>Главная</span>
+          </a-menu-item>
 
-        <!-- КПП Section -->
-        <a-menu-item-group v-if="!collapsed" title="КПП" />
-        <a-divider v-if="collapsed" style="margin: 8px 16px;" />
+          <!-- КПП Section -->
+          <a-menu-item-group v-if="!collapsed" title="КПП" />
+          <a-divider v-if="collapsed" style="margin: 8px 16px;" />
 
-        <a-menu-item key="gate">
-          <CarOutlined />
-          <span>Журнал КПП</span>
-        </a-menu-item>
+          <a-menu-item key="gate">
+            <CarOutlined />
+            <span>Журнал КПП</span>
+          </a-menu-item>
 
-        <!-- Operations Section -->
-        <a-menu-item-group v-if="!collapsed" title="Операции" />
-        <a-divider v-if="collapsed" style="margin: 8px 16px;" />
+          <!-- Operations Section -->
+          <a-menu-item-group v-if="!collapsed" title="Операции" />
+          <a-divider v-if="collapsed" style="margin: 8px 16px;" />
 
-        <a-menu-item key="containers">
-          <ContainerOutlined />
-          <span>Контейнеры</span>
-        </a-menu-item>
+          <a-menu-item key="containers">
+            <ContainerOutlined />
+            <span>Контейнеры</span>
+          </a-menu-item>
+          <a-menu-item key="placement">
+            <AppstoreOutlined />
+            <span>Площадка 3D</span>
+          </a-menu-item>
 
-        <!-- Directory Section -->
-        <a-menu-item-group v-if="!collapsed" title="Справочники" />
-        <a-divider v-if="collapsed" style="margin: 8px 16px;" />
+          <!-- Directory Section -->
+          <a-menu-item-group v-if="!collapsed" title="Справочники" />
+          <a-divider v-if="collapsed" style="margin: 8px 16px;" />
 
-        <a-menu-item key="companies">
-          <BankOutlined />
-          <span>Компании</span>
-        </a-menu-item>
-        <a-menu-item key="owners">
-          <ShopOutlined />
-          <span>Собственники</span>
-        </a-menu-item>
-        <a-menu-item key="vehicles-customers">
-          <IdcardOutlined />
-          <span>Клиенты</span>
-        </a-menu-item>
+          <a-menu-item key="companies">
+            <BankOutlined />
+            <span>Компании</span>
+          </a-menu-item>
+          <a-menu-item key="owners">
+            <ShopOutlined />
+            <span>Собственники</span>
+          </a-menu-item>
+          <a-menu-item key="vehicles-customers">
+            <IdcardOutlined />
+            <span>Клиенты</span>
+          </a-menu-item>
 
-        <!-- Users Section -->
-        <a-menu-item-group v-if="!collapsed" title="Управление" />
-        <a-divider v-if="collapsed" style="margin: 8px 16px;" />
+          <!-- Users Section -->
+          <a-menu-item-group v-if="!collapsed" title="Управление" />
+          <a-divider v-if="collapsed" style="margin: 8px 16px;" />
 
-        <a-menu-item key="managers">
-          <TeamOutlined />
-          <span>Менеджеры</span>
-        </a-menu-item>
-        <a-menu-item key="telegram-bot">
-          <RobotOutlined />
-          <span>Telegram Бот</span>
-        </a-menu-item>
-      </a-menu>
-    </a-layout-sider>
+          <a-menu-item key="managers">
+            <TeamOutlined />
+            <span>Менеджеры</span>
+          </a-menu-item>
+          <a-menu-item key="telegram-bot">
+            <RobotOutlined />
+            <span>Telegram Бот</span>
+          </a-menu-item>
+        </a-menu>
+      </a-layout-sider>
+    </a-config-provider>
 
     <a-layout :style="isAdmin ? { marginLeft: collapsed ? '80px' : '200px', transition: 'margin-left 0.2s' } : {}">
-      <a-layout-header
-        style="background: #fff; padding: 0; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100;">
-
+      <a-layout-header class="app-header">
         <template v-if="isAdmin">
           <menu-unfold-outlined v-if="collapsed" class="trigger" @click="() => (collapsed = !collapsed)" />
           <menu-fold-outlined v-else class="trigger" @click="() => (collapsed = !collapsed)" />
         </template>
         <div v-else>
-          <div class="logo" style="padding: 0 15px;">
+          <div class="logo header-logo">
             <span v-if="!collapsed">MTT SYSTEM</span>
             <span v-else>MTT</span>
           </div>
@@ -97,7 +102,7 @@
           </template>
         </a-dropdown>
       </a-layout-header>
-      <a-layout-content :style="{ margin: '24px 16px' }">
+      <a-layout-content :style="{ margin: '16px 16px' }">
         <router-view />
       </a-layout-content>
       <a-layout-footer style="text-align: center;">
@@ -111,21 +116,23 @@
 import { computed, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import {
-  UserOutlined,
-  DownOutlined,
-  LogoutOutlined,
-  MenuUnfoldOutlined,
-  MenuFoldOutlined,
-  ContainerOutlined,
-  TeamOutlined,
-  CarOutlined,
+  AppstoreOutlined,
   BankOutlined,
+  CarOutlined,
+  ContainerOutlined,
   DashboardOutlined,
-  ShopOutlined,
+  DownOutlined,
   IdcardOutlined,
+  LogoutOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   RobotOutlined,
+  ShopOutlined,
+  TeamOutlined,
+  UserOutlined,
 } from '@ant-design/icons-vue';
 import { useAuth } from '../composables/useAuth';
+import { sidebarTheme } from '../theme';
 
 const router = useRouter();
 const route = useRoute();
@@ -141,6 +148,7 @@ const routeToKey: Record<string, string> = {
   '/gate': 'gate',
   '/vehicles': 'gate',
   '/containers': 'containers',
+  '/placement': 'placement',
   '/accounts/companies': 'companies',
   '/owners': 'owners',
   '/vehicles-customers': 'vehicles-customers',
@@ -165,6 +173,7 @@ const keyToRoute: Record<string, string> = {
   'dashboard': '/',
   'gate': '/gate',
   'containers': '/containers',
+  'placement': '/placement',
   'companies': '/accounts/companies',
   'owners': '/owners',
   'vehicles-customers': '/vehicles-customers',
@@ -188,77 +197,82 @@ const isAdmin = computed(() => user.value?.user_type === 'admin')
 </script>
 
 <style scoped>
+/* Header styling */
+.app-header {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Header trigger - compact */
 .trigger {
-  font-size: 18px;
-  line-height: 64px;
-  padding: 0 24px;
+  font-size: 16px;
+  line-height: 48px;
+  padding: 0 16px;
   cursor: pointer;
-  transition: color var(--transition-fast);
-  color: var(--color-text-secondary);
+  transition: color 0.15s ease;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .trigger:hover {
-  color: var(--color-primary);
+  color: #3b82f6;
 }
 
+/* Logo - compact corporate style */
 .logo {
-  height: 40px;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  margin: 16px;
-  padding: 0 16px;
+  height: 32px;
+  background: #3b82f6;
+  margin: 12px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-family: var(--font-display);
   font-weight: 600;
-  font-size: 14px;
-  letter-spacing: 0.5px;
-  border-radius: var(--radius-lg);
-  box-shadow: 0 4px 12px rgba(0, 102, 255, 0.25);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
 }
 
 .logo:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 102, 255, 0.35);
+  background: #2563eb;
 }
 
+.header-logo {
+  margin: 0;
+  padding: 0 15px;
+}
+
+/* User dropdown - compact */
 .user-dropdown {
-  color: var(--color-text);
-  padding: 0 24px;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 0 16px;
   display: flex;
   align-items: center;
   cursor: pointer;
-  transition: color var(--transition-fast);
+  transition: color 0.15s ease;
+  font-size: 12px;
   font-weight: 500;
 }
 
 .user-dropdown:hover {
-  color: var(--color-primary);
+  color: #3b82f6;
 }
 
-/* Sidebar enhancements */
-:deep(.ant-layout-sider) {
-  border-right: 1px solid var(--color-border-light);
-}
-
-:deep(.ant-menu-item) {
-  margin: 4px 8px;
-  border-radius: var(--radius-md);
-}
-
+/* Menu group titles */
 :deep(.ant-menu-item-group-title) {
   padding: 16px 16px 8px 16px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--color-text-muted);
 }
 
+/* Dividers */
 :deep(.ant-divider) {
   margin: 8px 0;
-  border-color: var(--color-border-light);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 </style>

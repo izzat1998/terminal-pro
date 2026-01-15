@@ -6,7 +6,6 @@
     :width="900"
     :style="{ top: '20px' }"
     @cancel="handleClose"
-    st
   >
     <div style="margin-bottom: 16px;">
       <a-upload
@@ -62,11 +61,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import { message, Modal } from 'ant-design-vue';
 import { FileOutlined, DownloadOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons-vue';
 import type { FileAttachment } from '../services/terminalService';
 import { http } from '../utils/httpClient';
+import { downloadBlob } from '../utils/download';
+import { useModalVisibility } from '../composables/useModalVisibility';
 
 interface Props {
   open: boolean;
@@ -103,10 +104,7 @@ const emit = defineEmits<Emits>();
 
 const fileList = ref([]);
 
-const visible = computed({
-  get: () => props.open,
-  set: (value) => emit('update:open', value),
-});
+const visible = useModalVisibility(props, emit);
 
 const fileColumns = [
   {
@@ -154,16 +152,7 @@ const downloadFile = async (url: string, filename: string) => {
   try {
     const response = await fetch(url);
     const blob = await response.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    window.URL.revokeObjectURL(blobUrl);
+    downloadBlob(blob, filename);
   } catch (error) {
     message.error('Ошибка при скачивании файла');
   }
@@ -214,7 +203,7 @@ const handleUpload = async (options: any) => {
   formData.append('container_owner', props.containerOwnerId?.toString() || '');
 
   try {
-    await http.upload(`/terminal/entries/${props.containerId}/upload_file/`, formData);
+    await http.upload(`/terminal/entries/${props.containerId}/upload-file/`, formData);
 
     message.success('Изображение успешно загружено');
     onSuccess({});
@@ -247,7 +236,7 @@ const handleDeleteFile = async (attachmentId: number) => {
   }
 
   try {
-    await http.delete(`/terminal/entries/${props.containerId}/remove_file/${attachmentId}/`);
+    await http.delete(`/terminal/entries/${props.containerId}/remove-file/${attachmentId}/`);
 
     message.success('Файл успешно удалён');
     emit('upload-success');

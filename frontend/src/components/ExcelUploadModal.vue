@@ -38,10 +38,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import { message } from 'ant-design-vue';
 import { UploadOutlined } from '@ant-design/icons-vue';
 import { http } from '../utils/httpClient';
+import { useModalVisibility } from '../composables/useModalVisibility';
 
 interface Props {
   open: boolean;
@@ -58,10 +59,7 @@ const emit = defineEmits<Emits>();
 const fileList = ref<any[]>([]);
 const uploading = ref(false);
 
-const visible = computed({
-  get: () => props.open,
-  set: (value) => emit('update:open', value),
-});
+const visible = useModalVisibility(props, emit);
 
 const handleClose = () => {
   visible.value = false;
@@ -111,7 +109,7 @@ const handleSubmit = async () => {
   uploading.value = true;
 
   try {
-    await http.upload('/terminal/entries/import_excel/', formData);
+    await http.upload('/terminal/entries/import-excel/', formData);
 
     message.success('Excel файл успешно загружен и обработан');
     emit('upload-success');

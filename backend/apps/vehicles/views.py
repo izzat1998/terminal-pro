@@ -301,6 +301,44 @@ class VehicleEntryViewSet(viewsets.ModelViewSet):
         response_serializer = VehicleEntrySerializer(entry)
         return Response({"success": True, "data": response_serializer.data})
 
+    @action(detail=False, methods=["get"], url_path="check-plate")
+    def check_plate(self, request):
+        """
+        Check if a vehicle with given license plate is currently on terminal.
+
+        Used for real-time validation in the create vehicle form.
+
+        GET /api/vehicles/entries/check-plate/?license_plate=ABC123
+
+        Response:
+        - 200: { "on_terminal": false }
+        - 200: { "on_terminal": true, "entry": { id, license_plate, entry_time, vehicle_type } }
+        """
+        license_plate = request.query_params.get("license_plate", "").strip().upper()
+
+        if not license_plate:
+            return Response({"on_terminal": False})
+
+        entry = VehicleEntry.objects.filter(
+            license_plate__iexact=license_plate,
+            status="ON_TERMINAL",
+        ).first()
+
+        if entry:
+            return Response(
+                {
+                    "on_terminal": True,
+                    "entry": {
+                        "id": entry.id,
+                        "license_plate": entry.license_plate,
+                        "entry_time": entry.entry_time,
+                        "vehicle_type": entry.vehicle_type,
+                    },
+                }
+            )
+
+        return Response({"on_terminal": False})
+
 
 class PlateRecognizerAPIView(APIView):
     """

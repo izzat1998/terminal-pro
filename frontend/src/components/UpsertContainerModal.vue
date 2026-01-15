@@ -5,13 +5,27 @@
       style="margin-top: 2rem;">
       <a-row :gutter="16">
         <a-col :xs="24" :sm="12" :md="8">
-          <a-form-item label="Номер контейнера" name="container_number" :rules="[
-            { required: true, message: 'Введите номер контейнера' },
-            { pattern: /^[A-Z]{4}\d{7}$/, message: 'Формат: 4 буквы + 7 цифр (например, MSKU1234567)' }
-          ]">
-            <a-input :value="formState.container_number" placeholder="Например: MSKU1234567"
-              style="text-transform: uppercase;" maxlength="11"
-              @update:value="(val: string) => formState.container_number = val.toUpperCase()" />
+          <a-form-item
+            label="Номер контейнера"
+            name="container_number"
+            :rules="[
+              { required: true, message: 'Введите номер контейнера' },
+              { pattern: /^[A-Z]{4}\d{7}$/, message: 'Формат: 4 буквы + 7 цифр (например, MSKU1234567)' }
+            ]"
+            :validate-status="containerOnTerminal ? 'error' : undefined"
+            :help="containerOnTerminal ? `Контейнер ${formState.container_number} уже на терминале` : undefined"
+          >
+            <a-input
+              :value="formState.container_number"
+              placeholder="Например: MSKU1234567"
+              style="text-transform: uppercase;"
+              maxlength="11"
+              @update:value="(val: string) => formState.container_number = val.toUpperCase()"
+            >
+              <template #suffix>
+                <LoadingOutlined v-if="containerCheckLoading" spin />
+              </template>
+            </a-input>
           </a-form-item>
         </a-col>
         <a-col :xs="24" :sm="12" :md="8">
@@ -192,8 +206,11 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
+import { LoadingOutlined } from '@ant-design/icons-vue';
+import { debounce } from 'lodash-es';
 import dayjs, { type Dayjs } from 'dayjs';
 import { http } from '../utils/httpClient';
+import { useModalVisibility } from '../composables/useModalVisibility';
 import MultiDateCalendar from './MultiDateCalendar.vue';
 
 interface CraneOperation {
@@ -274,16 +291,52 @@ const emit = defineEmits<Emits>();
 const modalTitle = computed(() => props.mode === 'create' ? 'Создать контейнер' : 'Редактировать контейнер');
 const okText = computed(() => props.mode === 'create' ? 'Создать' : 'Сохранить');
 
-const visible = computed({
-  get: () => props.open,
-  set: (value) => emit('update:open', value),
-});
+const visible = useModalVisibility(props, emit);
 
 const loading = ref(false);
 const owners = ref<Owner[]>([]);
 const ownersLoading = ref(false);
 const companies = ref<Company[]>([]);
 const companiesLoading = ref(false);
+
+// Container on-terminal validation state
+const containerCheckLoading = ref(false);
+const containerOnTerminal = ref(false);
+const containerOnTerminalEntry = ref<{ id: number; container_number: string; entry_time: string } | null>(null);
+
+// Check if container is already on terminal
+const checkContainerOnTerminal = async (containerNumber: string) => {
+  // Only check in create mode - in edit mode, the container might already be on terminal
+  if (props.mode === 'edit') {
+    containerOnTerminal.value = false;
+    containerOnTerminalEntry.value = null;
+    return;
+  }
+
+  if (!containerNumber || containerNumber.length < 4) {
+    containerOnTerminal.value = false;
+    containerOnTerminalEntry.value = null;
+    return;
+  }
+
+  try {
+    containerCheckLoading.value = true;
+    const data = await http.get<{ on_terminal: boolean; entry?: { id: number; container_number: string; entry_time: string } }>(
+      `/terminal/entries/check-container/?container_number=${encodeURIComponent(containerNumber)}`
+    );
+    containerOnTerminal.value = data.on_terminal;
+    containerOnTerminalEntry.value = data.entry || null;
+  } catch (error) {
+    console.error('Error checking container:', error);
+    containerOnTerminal.value = false;
+    containerOnTerminalEntry.value = null;
+  } finally {
+    containerCheckLoading.value = false;
+  }
+};
+
+// Debounced version (400ms delay)
+const debouncedCheckContainer = debounce(checkContainerOnTerminal, 400);
 
 const formState = reactive<FormState>({
   container_number: '',
@@ -355,6 +408,16 @@ const loadFormData = () => {
   if (props.containerOwnerId !== undefined) formState.container_owner = props.containerOwnerId;
 };
 
+// Watch for container number changes (only in create mode)
+watch(() => formState.container_number, (newNumber) => {
+  if (props.mode === 'create' && newNumber) {
+    debouncedCheckContainer(newNumber);
+  } else {
+    containerOnTerminal.value = false;
+    containerOnTerminalEntry.value = null;
+  }
+});
+
 // Reset form to initial state based on mode
 const resetForm = () => {
   formState.container_number = '';
@@ -371,6 +434,10 @@ const resetForm = () => {
   formState.company_id = undefined;
   formState.container_owner = undefined;
 
+  // Reset container validation state
+  containerOnTerminal.value = false;
+  containerOnTerminalEntry.value = null;
+
   // Mode-specific defaults
   if (props.mode === 'create') {
     formState.exit_date = dayjs();
@@ -385,6 +452,12 @@ const resetForm = () => {
 };
 
 const handleSubmit = async () => {
+  // Block if container is already on terminal (only in create mode)
+  if (props.mode === 'create' && containerOnTerminal.value) {
+    message.error('Невозможно создать запись: контейнер уже на терминале');
+    return;
+  }
+
   // Validate required fields
   if (!formState.container_number || !formState.container_iso_type || !formState.status || !formState.transport_type || !formState.transport_number || !formState.company_id) {
     message.error('Заполните все обязательные поля');
@@ -421,7 +494,7 @@ const handleSubmit = async () => {
       await http.post('/terminal/entries/', submitData);
       message.success('Контейнер успешно создан');
     } else {
-      await http.put(`/terminal/entries/${props.containerId}/`, submitData);
+      await http.patch(`/terminal/entries/${props.containerId}/`, submitData);
       message.success('Контейнер успешно обновлён');
     }
 

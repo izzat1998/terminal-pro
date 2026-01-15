@@ -80,6 +80,7 @@ import { message } from 'ant-design-vue';
 import { ReloadOutlined } from '@ant-design/icons-vue';
 import { formatDateTime } from '../../utils/dateFormat';
 import { http } from '../../utils/httpClient';
+import type { PaginatedResponse } from '../../types/api';
 
 interface Company {
     id: number;
@@ -103,13 +104,6 @@ interface Order {
     matched_at: string | null;
     cancelled_at: string | null;
     batch_id: string | null;
-}
-
-interface PaginatedResponse {
-    count: number;
-    next: string | null;
-    previous: string | null;
-    results: Order[];
 }
 
 defineProps<{
@@ -195,7 +189,7 @@ const fetchOrders = async () => {
     try {
         ordersLoading.value = true;
 
-        const result = await http.get<PaginatedResponse>('/customer/preorders/');
+        const result = await http.get<PaginatedResponse<Order>>('/customer/preorders/');
 
         orders.value = result.results || [];
         totalCount.value = result.count || 0;

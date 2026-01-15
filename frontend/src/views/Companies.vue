@@ -17,6 +17,7 @@
       @change="handleTableChange"
       bordered
       :scroll="{ x: 1200 }"
+      :locale="{ emptyText: 'Нет компаний. Создайте первую компанию.' }"
     >
       <template #bodyCell="{ column, index, record }">
         <template v-if="column.key === 'number'">

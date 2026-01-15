@@ -1,4 +1,5 @@
 import { http } from '../utils/httpClient';
+import type { PaginatedResponse } from '../types/api';
 
 export interface FileObject {
   id: string;
@@ -67,16 +68,9 @@ export interface TerminalEntry {
   main_file: FileAttachment | null;
 }
 
-export interface PaginatedResponse<T> {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: T[];
-}
-
 class TerminalService {
 
-  async getContainers(filters?: Record<string, any>, page: number = 1, pageSize: number = 10): Promise<{ data: TerminalEntry[], total: number }> {
+  async getContainers(filters?: Record<string, string | number | string[] | undefined>, page: number = 1, pageSize: number = 10): Promise<{ data: TerminalEntry[], total: number }> {
     let url = '/terminal/entries/';
 
     const params = new URLSearchParams();
@@ -92,7 +86,7 @@ class TerminalService {
           if (Array.isArray(value)) {
             value.forEach(v => params.append(key, v));
           } else {
-            params.append(key, value);
+            params.append(key, String(value));
           }
         }
       });

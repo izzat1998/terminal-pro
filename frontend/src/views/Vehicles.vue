@@ -181,7 +181,8 @@
     </div>
 
     <a-table :columns="filteredColumns" :data-source="dataSource" :pagination="pagination" :loading="loading"
-      @change="handleTableChange" bordered :scroll="{ x: 1500 }" size="small">
+      @change="handleTableChange" bordered :scroll="{ x: 1500 }" size="small"
+      :locale="{ emptyText: 'Нет записей транспорта. Попробуйте изменить фильтры или создайте новую запись.' }">
       <template #bodyCell="{ column, index, record }">
         <template v-if="column.key === 'number'">
           {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
@@ -299,8 +300,18 @@
       <!-- License Plate and Vehicle Type -->
       <a-row :gutter="16">
         <a-col :span="12">
-          <a-form-item label="Гос. номер" name="license_plate" required>
-            <a-input v-model:value="createForm.license_plate" placeholder="Введите гос. номер" />
+          <a-form-item
+            label="Гос. номер"
+            name="license_plate"
+            required
+            :validate-status="plateOnTerminal ? 'error' : undefined"
+            :help="plateOnTerminal ? `Транспорт ${createForm.license_plate} уже на терминале` : undefined"
+          >
+            <a-input v-model:value="createForm.license_plate" placeholder="Введите гос. номер">
+              <template #suffix>
+                <LoadingOutlined v-if="plateCheckLoading" spin />
+              </template>
+            </a-input>
           </a-form-item>
         </a-col>
         <a-col :span="12">
@@ -563,63 +574,68 @@
           </a-form-item>
         </a-col>
       </a-row>
-    </a-form>
-  </a-modal>
 
-  <!-- Exit Modal -->
-  <a-modal v-model:open="exitModalVisible" title="Регистрация выезда" @ok="handleExitSubmit"
-    @cancel="handleExitCancel" :confirm-loading="exitLoading" width="500px"
-    ok-text="Зарегистрировать выезд" cancel-text="Отмена">
-    <a-form ref="exitFormRef" :model="exitForm" layout="vertical">
-      <!-- Vehicle Info (read-only) -->
-      <a-row :gutter="16">
-        <a-col :span="24">
-          <a-alert type="info" show-icon style="margin-bottom: 16px;">
-            <template #message>
-              <span>Транспорт: <strong>{{ exitForm.license_plate }}</strong></span>
-            </template>
-          </a-alert>
-        </a-col>
-      </a-row>
+      <!-- Photos Preview Section -->
+      <a-divider v-if="editForm.entry_photos.length > 0 || editForm.exit_photos.length > 0">Фотографии</a-divider>
 
-      <!-- Exit Time -->
-      <a-row :gutter="16">
+      <a-row :gutter="16" v-if="editForm.entry_photos.length > 0">
         <a-col :span="24">
-          <a-form-item label="Время выезда" required>
-            <a-date-picker
-              v-model:value="exitForm.exit_time"
-              :show-time="{ format: 'HH:mm' }"
-              format="DD.MM.YYYY HH:mm"
-              placeholder="Выберите дату и время"
-              style="width: 100%;"
-              :value-format="undefined"
-            />
+          <a-form-item label="Фото при въезде">
+            <a-image-preview-group>
+              <a-space>
+                <a-image
+                  v-for="photo in editForm.entry_photos"
+                  :key="photo.id"
+                  :width="80"
+                  :height="80"
+                  :src="photo.thumbnail_url || photo.image_url"
+                  :preview="{ src: photo.image_url }"
+                  style="object-fit: cover; border-radius: 4px;"
+                />
+              </a-space>
+            </a-image-preview-group>
           </a-form-item>
         </a-col>
       </a-row>
 
-      <!-- Exit Load Status (only for cargo vehicles) -->
-      <a-row :gutter="16" v-if="exitForm.vehicle_type === 'CARGO'">
+      <a-row :gutter="16" v-if="editForm.exit_photos.length > 0">
         <a-col :span="24">
-          <a-form-item label="Статус загрузки при выезде">
-            <a-select v-model:value="exitForm.exit_load_status" allow-clear placeholder="Выберите статус загрузки">
-              <a-select-option v-for="opt in choices.load_statuses" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </a-select-option>
-            </a-select>
+          <a-form-item label="Фото при выезде">
+            <a-image-preview-group>
+              <a-space>
+                <a-image
+                  v-for="photo in editForm.exit_photos"
+                  :key="photo.id"
+                  :width="80"
+                  :height="80"
+                  :src="photo.thumbnail_url || photo.image_url"
+                  :preview="{ src: photo.image_url }"
+                  style="object-fit: cover; border-radius: 4px;"
+                />
+              </a-space>
+            </a-image-preview-group>
           </a-form-item>
         </a-col>
       </a-row>
     </a-form>
   </a-modal>
+
+  <!-- Exit Modal - using extracted component -->
+  <VehicleExitModal
+    ref="exitModalRef"
+    v-model:open="exitModalVisible"
+    :load-statuses="choices.load_statuses"
+    @success="handleExitSuccess"
+  />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, reactive, computed, watch } from 'vue';
+import { debounce } from 'lodash-es';
 import { message, Modal } from 'ant-design-vue';
 import type { FormInstance } from 'ant-design-vue';
-import { handleFormError, isApiError } from '../utils/formErrors';
+import { handleFormError } from '../utils/formErrors';
 import {
   PlusOutlined,
   EditOutlined,
@@ -639,10 +655,10 @@ import {
   RollbackOutlined,
   CheckOutlined,
   CloseOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons-vue';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
-import * as XLSX from 'xlsx';
 import { http } from '../utils/httpClient';
 import { formatDateTime } from '../utils/dateFormat';
 import {
@@ -655,254 +671,22 @@ import {
   isContainerCapableTransport,
 } from '../utils/vehicleHelpers';
 
-interface Photo {
-  id: string;
-  file_url: string;
-  original_filename: string;
-  file_category: number;
-  category_name: string;
-  mime_type: string;
-  size: number;
-  size_mb: number;
-  uploaded_by: number | null;
-  is_public: boolean;
-  is_active: boolean;
-  width: number;
-  height: number;
-  created_at: string;
-  updated_at: string;
-}
+// Extracted modules
+import type {
+  Photo,
+  Vehicle,
+  VehicleRecord,
+  Destination,
+  VehicleChoices,
+  CustomerOption,
+} from '../types/vehicle';
+import { VEHICLE_COLUMNS } from '../constants/vehicleColumns';
+import { useVehicleStats } from '../composables/useVehicleStats';
+import { exportVehiclesToExcel } from '../services/vehicleExportService';
+import VehicleExitModal from '../components/VehicleExitModal.vue';
 
-interface Customer {
-  id: number;
-  name: string;
-  phone: string;
-  company_slug: string
-}
-
-interface Manager {
-  id: number;
-  name: string;
-  phone: string;
-}
-
-interface Vehicle {
-  id: number;
-  status: string;
-  status_display: string;
-  license_plate: string;
-  entry_photos: Photo[];
-  entry_time: string | null;
-  manager: Manager | null;
-  customer: Customer | null;
-  vehicle_type: string;
-  vehicle_type_display: string;
-  visitor_type: string | null;
-  visitor_type_display: string | null;
-  transport_type: string | null;
-  transport_type_display: string | null;
-  entry_load_status: string | null;
-  entry_load_status_display: string | null;
-  cargo_type: string | null;
-  cargo_type_display: string | null;
-  container_size: string | null;
-  container_size_display: string | null;
-  container_load_status: string | null;
-  container_load_status_display: string | null;
-  destination: number | null;
-  exit_photos: Photo[];
-  exit_time: string | null;
-  exit_load_status: string | null;
-  exit_load_status_display: string | null;
-  is_on_terminal: boolean;
-  dwell_time_hours: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface VehicleRecord {
-  key: string;
-  id: number;
-  status: string;
-  status_display: string;
-  license_plate: string;
-  entry_photos: Photo[];
-  entry_time: string;
-  customer_id: number | null;
-  customer_name: string;
-  customer_phone: string;
-  customer_company_slug: string;
-  manager_name: string;
-  manager_phone: string;
-  vehicle_type: string;
-  vehicle_type_display: string;
-  visitor_type: string;
-  visitor_type_display: string;
-  transport_type: string;
-  transport_type_display: string;
-  entry_load_status: string;
-  entry_load_status_display: string;
-  cargo_type: string;
-  cargo_type_display: string;
-  container_size: string;
-  container_size_display: string;
-  container_load_status: string;
-  container_load_status_display: string;
-  destination: number | null;
-  exit_photos: Photo[];
-  exit_time: string;
-  exit_load_status: string;
-  exit_load_status_display: string;
-  is_on_terminal: boolean;
-  dwell_time_hours: string;
-}
-
-const columns = [
-  {
-    title: '№',
-    key: 'number',
-    align: 'center' as const,
-    width: 60,
-    fixed: 'left' as const,
-  },
-  {
-    title: 'Гос. номер',
-    dataIndex: 'license_plate',
-    key: 'license_plate',
-    align: 'center' as const,
-    width: 120,
-    fixed: 'left' as const,
-    sorter: (a: VehicleRecord, b: VehicleRecord) => a.license_plate.localeCompare(b.license_plate),
-  },
-  {
-    title: 'Статус',
-    key: 'status',
-    align: 'center' as const,
-    width: 120,
-    filters: [
-      { text: 'Ожидает', value: 'WAITING' },
-      { text: 'На терминале', value: 'ON_TERMINAL' },
-      { text: 'Выехал', value: 'EXITED' },
-      { text: 'Отменён', value: 'CANCELLED' },
-    ],
-    onFilter: (value: string, record: VehicleRecord) => record.status === value,
-  },
-  {
-    title: 'Клиент',
-    key: 'customer',
-    align: 'center' as const,
-    width: 150,
-    sorter: (a: VehicleRecord, b: VehicleRecord) => a.customer_name.localeCompare(b.customer_name),
-  },
-  {
-    title: 'Менеджер',
-    key: 'manager',
-    align: 'center' as const,
-    width: 150,
-  },
-  {
-    title: 'Тип ТС',
-    dataIndex: 'vehicle_type_display',
-    key: 'vehicle_type',
-    align: 'center' as const,
-    width: 140,
-    filters: [
-      { text: 'Легковой', value: 'LIGHT' },
-      { text: 'Грузовой', value: 'CARGO' },
-    ],
-    onFilter: (value: string, record: VehicleRecord) => record.vehicle_type === value,
-  },
-  {
-    title: 'Фото въезда',
-    key: 'entry_photos',
-    align: 'center' as const,
-    width: 180,
-  },
-  {
-    title: 'Время въезда',
-    dataIndex: 'entry_time',
-    key: 'entry_time',
-    align: 'center' as const,
-    width: 160,
-    sorter: (a: VehicleRecord, b: VehicleRecord) => a.entry_time.localeCompare(b.entry_time),
-    defaultSortOrder: 'descend' as const,
-  },
-  {
-    title: 'Тип посетителя',
-    dataIndex: 'visitor_type_display',
-    key: 'visitor_type',
-    align: 'center' as const,
-    width: 130,
-  },
-  {
-    title: 'Тип транспорта',
-    dataIndex: 'transport_type_display',
-    key: 'transport_type',
-    align: 'center' as const,
-    width: 130,
-  },
-  {
-    title: 'Статус загрузки въезд',
-    dataIndex: 'entry_load_status_display',
-    key: 'entry_load_status',
-    align: 'center' as const,
-    width: 170,
-  },
-  {
-    title: 'Тип груза',
-    dataIndex: 'cargo_type_display',
-    key: 'cargo_type',
-    align: 'center' as const,
-    width: 120,
-  },
-  {
-    title: 'Размер контейнера',
-    dataIndex: 'container_size_display',
-    key: 'container_size',
-    align: 'center' as const,
-    width: 150,
-  },
-  {
-    title: 'Фото выезда',
-    key: 'exit_photos',
-    align: 'center' as const,
-    width: 180,
-  },
-  {
-    title: 'Время выезда',
-    dataIndex: 'exit_time',
-    key: 'exit_time',
-    align: 'center' as const,
-    width: 160,
-    sorter: (a: VehicleRecord, b: VehicleRecord) => a.exit_time.localeCompare(b.exit_time),
-  },
-  {
-    title: 'Статус загрузки выезд',
-    dataIndex: 'exit_load_status_display',
-    key: 'exit_load_status',
-    align: 'center' as const,
-    width: 170,
-  },
-  {
-    title: 'Время пребывания (ч)',
-    dataIndex: 'dwell_time_hours',
-    key: 'dwell_time_hours',
-    align: 'center' as const,
-    width: 160,
-    sorter: (a: VehicleRecord, b: VehicleRecord) => {
-      const aVal = a.dwell_time_hours === '—' ? 0 : parseFloat(a.dwell_time_hours);
-      const bVal = b.dwell_time_hours === '—' ? 0 : parseFloat(b.dwell_time_hours);
-      return aVal - bVal;
-    },
-  },
-  {
-    title: 'Действия',
-    key: 'actions',
-    align: 'center' as const,
-    width: 120,
-    fixed: 'right' as const,
-  },
-];
+// Use imported types from types/vehicle.ts and constants from vehicleColumns.ts
+const columns = VEHICLE_COLUMNS;
 
 const dataSource = ref<VehicleRecord[]>([]);
 const loading = ref(false);
@@ -923,7 +707,7 @@ const dateRange = ref<[Dayjs, Dayjs] | null>(null);
 // Column visibility
 const visibleColumns = ref<string[]>([
   'number', 'license_plate', 'status', 'customer', 'vehicle_type',
-  'entry_photos', 'entry_time', 'exit_time', 'dwell_time_hours', 'actions'
+  'entry_photos', 'exit_photos', 'entry_time', 'exit_time', 'dwell_time_hours', 'actions'
 ]);
 
 const columnOptions = [
@@ -958,63 +742,49 @@ const searchText = ref('');
 // Excel export
 const exportLoading = ref(false);
 
+// License plate on-terminal validation state
+const plateCheckLoading = ref(false);
+const plateOnTerminal = ref(false);
+const plateOnTerminalEntry = ref<{ id: number; license_plate: string; entry_time: string } | null>(null);
+
+// Check if license plate is already on terminal
+const checkPlateOnTerminal = async (plate: string) => {
+  if (!plate || plate.length < 3) {
+    plateOnTerminal.value = false;
+    plateOnTerminalEntry.value = null;
+    return;
+  }
+
+  try {
+    plateCheckLoading.value = true;
+    const data = await http.get<{ on_terminal: boolean; entry?: { id: number; license_plate: string; entry_time: string } }>(
+      `/vehicles/entries/check-plate/?license_plate=${encodeURIComponent(plate)}`
+    );
+    plateOnTerminal.value = data.on_terminal;
+    plateOnTerminalEntry.value = data.entry || null;
+  } catch (error) {
+    console.error('Error checking plate:', error);
+    plateOnTerminal.value = false;
+    plateOnTerminalEntry.value = null;
+  } finally {
+    plateCheckLoading.value = false;
+  }
+};
+
+// Debounced version (400ms delay for responsive UX)
+const debouncedCheckPlate = debounce(checkPlateOnTerminal, 400);
+
+// Export using extracted service
 const exportToExcel = async () => {
   try {
     exportLoading.value = true;
-
-    // Fetch all data for export (no pagination)
-    const params = new URLSearchParams();
-    params.append('page_size', '10000'); // Get all records
-
-    if (activeVehicleTypeTab.value !== 'all') {
-      params.append('vehicle_type', activeVehicleTypeTab.value);
-    }
-    if (activeStatusTab.value !== 'all') {
-      params.append('status', activeStatusTab.value);
-    }
-    if (searchText.value) {
-      params.append('license_plate', searchText.value);
-    }
-    if (dateRange.value) {
-      params.append('entry_time_after', dateRange.value[0].format('YYYY-MM-DD'));
-      params.append('entry_time_before', dateRange.value[1].format('YYYY-MM-DD'));
-    }
-
-    const data = await http.get<{ count: number; results: Vehicle[] }>(`/vehicles/entries/?${params.toString()}`);
-
-    // Transform data for Excel
-    const excelData = data.results.map((v, index) => ({
-      '№': index + 1,
-      'Гос. номер': v.license_plate,
-      'Статус': v.status_display,
-      'Клиент': v.customer?.name || '—',
-      'Телефон клиента': v.customer?.phone || '—',
-      'Тип ТС': v.vehicle_type_display,
-      'Время въезда': v.entry_time ? formatDateTime(v.entry_time) : '—',
-      'Тип транспорта': v.transport_type_display || '—',
-      'Статус загрузки въезд': v.entry_load_status_display || '—',
-      'Тип груза': v.cargo_type_display || '—',
-      'Время выезда': v.exit_time ? formatDateTime(v.exit_time) : '—',
-      'Статус загрузки выезд': v.exit_load_status_display || '—',
-      'Время пребывания (ч)': v.dwell_time_hours?.toFixed(2) || '—',
-    }));
-
-    // Create workbook and worksheet
-    const ws = XLSX.utils.json_to_sheet(excelData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Транспорт');
-
-    // Auto-size columns
-    const colWidths = Object.keys(excelData[0] || {}).map(key => ({
-      wch: Math.max(key.length, 15)
-    }));
-    ws['!cols'] = colWidths;
-
-    // Download
-    const fileName = `transport_${dayjs().format('YYYY-MM-DD_HH-mm')}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-
-    message.success(`Экспортировано ${excelData.length} записей`);
+    const count = await exportVehiclesToExcel({
+      vehicleType: activeVehicleTypeTab.value,
+      status: activeStatusTab.value,
+      searchText: searchText.value,
+      dateRange: dateRange.value,
+    });
+    message.success(`Экспортировано ${count} записей`);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Не удалось экспортировать данные транспорта. Попробуйте снова.';
     message.error(errorMsg);
@@ -1122,7 +892,7 @@ const fetchVehicles = async (page?: number, pageSize?: number) => {
   }
 };
 
-const handleTableChange = (pag: any) => {
+const handleTableChange = (pag: { current: number; pageSize: number }) => {
   fetchVehicles(pag.current, pag.pageSize);
 };
 
@@ -1146,17 +916,7 @@ const handleCustomerFilterChange = () => {
 
 // getStatusColor is now imported from '../utils/vehicleHelpers'
 
-// Destinations
-interface Destination {
-  id: number;
-  name: string;
-  code: string;
-  zone: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
+// Destinations (interface imported from types/vehicle.ts)
 const destinations = ref<Destination[]>([]);
 
 const fetchDestinations = async () => {
@@ -1173,25 +933,13 @@ const fetchDestinations = async () => {
   }
 };
 
-const filterOption = (input: string, option: any) => {
-  return option.children[0].children.toLowerCase().indexOf(input.toLowerCase()) >= 0;
+// Ant Design Select filter option - VNode children structure
+const filterOption = (input: string, option: { children?: Array<{ children?: string }> }) => {
+  const text = option.children?.[0]?.children ?? '';
+  return text.toLowerCase().indexOf(input.toLowerCase()) >= 0;
 };
 
-// Choices
-interface ChoiceOption {
-  value: string;
-  label: string;
-}
-
-interface VehicleChoices {
-  vehicle_types: ChoiceOption[];
-  visitor_types: ChoiceOption[];
-  transport_types: ChoiceOption[];
-  load_statuses: ChoiceOption[];
-  cargo_types: ChoiceOption[];
-  container_sizes: ChoiceOption[];
-}
-
+// Choices (interfaces imported from types/vehicle.ts)
 const choices = ref<VehicleChoices>({
   vehicle_types: [],
   visitor_types: [],
@@ -1201,72 +949,8 @@ const choices = ref<VehicleChoices>({
   container_sizes: [],
 });
 
-// Gate Statistics
-interface GateStatistics {
-  current: {
-    total_on_terminal: number;
-    by_vehicle_type: Record<string, { count: number; label: string }>;
-  };
-  time_metrics: {
-    avg_dwell_hours: number;
-    longest_current_stay: {
-      license_plate: string;
-      hours: number;
-      vehicle_type: string;
-    } | null;
-  };
-  overstayers: {
-    count: number;
-  };
-  last_30_days: {
-    total_entries: number;
-    total_exits: number;
-  };
-}
-
-const statsLoading = ref(false);
-const gateStats = ref({
-  total: 0,
-  light: 0,
-  cargo: 0,
-  overstayers: 0,
-  avgDwellHours: 0,
-  entriesLast30Days: 0,
-  exitsLast30Days: 0,
-  longestStay: {
-    plate: '',
-    hours: 0,
-  },
-});
-
-const fetchGateStats = async () => {
-  try {
-    statsLoading.value = true;
-    const response = await http.get<{ success: boolean; data: GateStatistics }>('/vehicles/statistics/');
-    const stats = response.data; // API wraps data in { success, data }
-    const longestStay = stats.time_metrics?.longest_current_stay;
-
-    gateStats.value = {
-      total: stats.current?.total_on_terminal ?? 0,
-      light: stats.current?.by_vehicle_type?.['LIGHT']?.count ?? 0,
-      cargo: stats.current?.by_vehicle_type?.['CARGO']?.count ?? 0,
-      overstayers: stats.overstayers?.count ?? 0,
-      avgDwellHours: stats.time_metrics?.avg_dwell_hours ?? 0,
-      entriesLast30Days: stats.last_30_days?.total_entries ?? 0,
-      exitsLast30Days: stats.last_30_days?.total_exits ?? 0,
-      longestStay: {
-        plate: longestStay?.license_plate ?? '',
-        hours: longestStay?.hours ?? 0,
-      },
-    };
-  } catch (error) {
-    console.error('Failed to fetch gate stats:', error);
-    // Don't show error toast for stats - just log it
-    // Stats are supplementary info, page is still usable without them
-  } finally {
-    statsLoading.value = false;
-  }
-};
+// Gate Statistics - using extracted composable
+const { gateStats, statsLoading, fetchGateStats } = useVehicleStats();
 
 const fetchChoices = async () => {
   try {
@@ -1279,13 +963,7 @@ const fetchChoices = async () => {
 
 // getChoiceLabel is now imported from '../utils/vehicleHelpers'
 
-// Customers
-interface CustomerOption {
-  id: number;
-  first_name: string;
-  phone_number: string;
-}
-
+// Customers (interface imported from types/vehicle.ts)
 const customers = ref<CustomerOption[]>([]);
 
 const fetchCustomers = async () => {
@@ -1297,9 +975,9 @@ const fetchCustomers = async () => {
   }
 };
 
-const filterCustomerOption = (input: string, option: any) => {
-  const text = option.children[0].children.toLowerCase();
-  return text.indexOf(input.toLowerCase()) >= 0;
+const filterCustomerOption = (input: string, option: { children?: Array<{ children?: string }> }) => {
+  const text = option.children?.[0]?.children ?? '';
+  return text.toLowerCase().indexOf(input.toLowerCase()) >= 0;
 };
 
 // Create modal state
@@ -1328,6 +1006,16 @@ const isCreateContainerCargo = computed(() => isContainerCargoType(createForm.ca
 const isCreateContainerCapableTransport = computed(() =>
   isContainerCapableTransport(createForm.transport_type)
 );
+
+// Watch for license plate changes to check if vehicle is on terminal
+watch(() => createForm.license_plate, (newPlate) => {
+  if (newPlate) {
+    debouncedCheckPlate(newPlate);
+  } else {
+    plateOnTerminal.value = false;
+    plateOnTerminalEntry.value = null;
+  }
+});
 
 // Watchers for create form to reset dependent fields
 watch(() => createForm.vehicle_type, (newType, oldType) => {
@@ -1388,6 +1076,9 @@ const showCreateModal = () => {
   createForm.container_size = '';
   createForm.container_load_status = null;
   createForm.destination = 0;
+  // Reset plate validation state
+  plateOnTerminal.value = false;
+  plateOnTerminalEntry.value = null;
   createModalVisible.value = true;
 };
 
@@ -1396,6 +1087,12 @@ const handleCreateCancel = () => {
 };
 
 const handleCreateSubmit = async () => {
+  // Block if vehicle is already on terminal
+  if (plateOnTerminal.value) {
+    message.error('Невозможно создать запись: транспорт уже на терминале');
+    return;
+  }
+
   // Basic validation
   if (!createForm.license_plate.trim()) {
     message.error('Пожалуйста, введите гос. номер');
@@ -1445,10 +1142,10 @@ const handleCreateSubmit = async () => {
   try {
     createLoading.value = true;
 
-    const requestBody: any = {
+    const requestBody: Record<string, string | number | null> = {
       license_plate: createForm.license_plate,
       vehicle_type: createForm.vehicle_type,
-      customer: createForm.customer,
+      customer_id: createForm.customer,  // Backend expects 'customer_id'
     };
 
     if (createForm.vehicle_type === 'LIGHT') {
@@ -1506,6 +1203,8 @@ const editForm = reactive({
   destination_zone: '',
   exit_load_status: null as string | null,
   exit_time: null as dayjs.Dayjs | null,  // Exit time field (null for DatePicker compatibility)
+  entry_photos: [] as Photo[],
+  exit_photos: [] as Photo[],
 });
 
 // Computed properties for conditional field visibility
@@ -1618,6 +1317,10 @@ const showEditModal = (record: VehicleRecord) => {
     editForm.exit_time = null;  // Use null instead of undefined for DatePicker
   }
 
+  // Populate photos for preview
+  editForm.entry_photos = record.entry_photos || [];
+  editForm.exit_photos = record.exit_photos || [];
+
   editModalVisible.value = true;
 };
 
@@ -1693,13 +1396,14 @@ const handleEditSubmit = async () => {
   try {
     editLoading.value = true;
 
-    const requestBody: any = {};
+    const requestBody: Record<string, string | number | null> = {};
 
     // Helper function to add field only if changed
-    const addField = (key: string, value: any) => {
+    type FieldValue = string | number | null;
+    const addField = (key: string, value: FieldValue) => {
       if (originalRecord && key in originalRecord) {
         // Compare with original value
-        const originalValue = (originalRecord as any)[key];
+        const originalValue = originalRecord[key as keyof VehicleRecord];
         if (value !== originalValue) {
           requestBody[key] = value;
         }
@@ -1720,9 +1424,9 @@ const handleEditSubmit = async () => {
       requestBody.vehicle_type = editForm.vehicle_type;
     }
 
-    // Add customer if changed
+    // Add customer if changed (backend expects 'customer_id', not 'customer')
     if (originalRecord?.customer_id !== editForm.customer) {
-      requestBody.customer = editForm.customer;
+      requestBody.customer_id = editForm.customer;
     }
 
     // Add fields based on vehicle type
@@ -1752,7 +1456,7 @@ const handleEditSubmit = async () => {
       requestBody.exit_time = editForm.exit_time.toISOString();
     }
 
-    await http.put(`/vehicles/entries/${editForm.id}/`, requestBody);
+    await http.patch(`/vehicles/entries/${editForm.id}/`, requestBody);
 
     message.success('Транспортное средство успешно обновлено');
     editModalVisible.value = false;
@@ -1776,106 +1480,19 @@ const handleEditSubmit = async () => {
   }
 };
 
-// Exit modal state
+// Exit modal - using extracted VehicleExitModal component
 const exitModalVisible = ref(false);
-const exitLoading = ref(false);
-const exitFormRef = ref<FormInstance>();
-const exitForm = reactive({
-  id: 0,
-  license_plate: '',
-  vehicle_type: '',
-  entry_time: '' as string,  // Store entry_time for validation
-  exit_time: null as dayjs.Dayjs | null,  // null for DatePicker compatibility
-  exit_load_status: null as string | null,
-});
+const exitModalRef = ref<InstanceType<typeof VehicleExitModal>>();
 
 const showExitModal = (record: VehicleRecord) => {
-  exitForm.id = record.id;
-  exitForm.license_plate = record.license_plate;
-  exitForm.vehicle_type = record.vehicle_type;
-  exitForm.entry_time = record.entry_time;  // Store for validation
-  // Default to current time using dayjs for Ant Design compatibility
-  exitForm.exit_time = dayjs();
-  exitForm.exit_load_status = null;
+  exitModalRef.value?.initForm(record);
   exitModalVisible.value = true;
 };
 
-const handleExitCancel = () => {
-  exitModalVisible.value = false;
-  exitForm.id = 0;
-  exitForm.license_plate = '';
-  exitForm.vehicle_type = '';
-  exitForm.entry_time = '';
-  exitForm.exit_time = null;  // null for DatePicker compatibility
-  exitForm.exit_load_status = null;
-};
-
-const handleExitSubmit = async () => {
-  if (!exitForm.exit_time || !exitForm.exit_time.isValid()) {
-    message.error('Пожалуйста, укажите время выезда');
-    return;
-  }
-
-  // Validate exit_time > entry_time (frontend validation)
-  if (exitForm.entry_time && exitForm.entry_time !== '—') {
-    const entryTime = dayjs(exitForm.entry_time, 'DD.MM.YYYY HH:mm');
-    if (entryTime.isValid() && exitForm.exit_time.isBefore(entryTime)) {
-      message.error('Время выезда не может быть раньше времени въезда');
-      return;
-    }
-  }
-
-  // For cargo vehicles, exit_load_status is optional but recommended
-  try {
-    exitLoading.value = true;
-
-    // Format the date for the API (date picker always returns dayjs)
-    const exitTime = exitForm.exit_time.toISOString();
-
-    // NEW: Use FormData for multipart request to dedicated exit endpoint
-    // This triggers service layer which auto-sets status and sends notifications
-    const formData = new FormData();
-    formData.append('license_plate', exitForm.license_plate);
-    formData.append('exit_time', exitTime);
-
-    if (exitForm.exit_load_status) {
-      formData.append('exit_load_status', exitForm.exit_load_status);
-    }
-
-    // TODO: Add exit photo files when UI is implemented
-    // For now, photos are optional - Telegram miniapp handles photo uploads
-
-    // NEW: POST to dedicated exit endpoint (not PUT to generic endpoint)
-    // Use http.upload() for FormData support
-    await http.upload('/vehicles/entries/exit/', formData);
-
-    message.success(`Транспорт ${exitForm.license_plate} успешно выехал`);
-    exitModalVisible.value = false;
-    fetchVehicles(pagination.value.current, pagination.value.pageSize);
-    fetchGateStats(); // Refresh statistics
-  } catch (error) {
-    // Show field-level errors on form, or toast for general errors
-    // Debug: Log full error details
-    console.error('[Exit] Submission error:', error);
-    if (isApiError(error)) {
-      console.error('[Exit] Validation errors:', error.fieldErrors);
-      console.error('[Exit] Error message:', error.message);
-      console.error('[Exit] Error code:', error.code);
-    }
-
-    // Try to handle form errors if formRef is available
-    if (exitFormRef.value) {
-      handleFormError(error, exitFormRef.value);
-    } else {
-      // Fallback: show error message
-      const errorMessage = error instanceof Error
-        ? error.message
-        : 'Произошла ошибка при регистрации выезда';
-      message.error(errorMessage);
-    }
-  } finally {
-    exitLoading.value = false;
-  }
+// Handle successful exit from the modal
+const handleExitSuccess = () => {
+  fetchVehicles(pagination.value.current, pagination.value.pageSize);
+  fetchGateStats(); // Refresh statistics
 };
 
 // Revert exit functionality
@@ -1896,9 +1513,7 @@ const showRevertModal = (record: VehicleRecord) => {
 const handleRevertExit = async (record: VehicleRecord) => {
   try {
     // Update vehicle: set status back to ON_TERMINAL, clear exit_time and exit_load_status
-    await http.put(`/vehicles/entries/${record.id}/`, {
-      license_plate: record.license_plate,
-      vehicle_type: record.vehicle_type,
+    await http.patch(`/vehicles/entries/${record.id}/`, {
       status: 'ON_TERMINAL',
       exit_time: null,
       exit_load_status: null,

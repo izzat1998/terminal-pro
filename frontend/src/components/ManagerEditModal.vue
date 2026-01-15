@@ -48,9 +48,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { http } from '../utils/httpClient';
+import { useModalVisibility } from '../composables/useModalVisibility';
 
 interface Props {
   open: boolean;
@@ -79,10 +80,7 @@ interface FormState {
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 
-const visible = computed({
-  get: () => props.open,
-  set: (value) => emit('update:open', value),
-});
+const visible = useModalVisibility(props, emit);
 
 const loading = ref(false);
 
@@ -159,7 +157,7 @@ const handleSubmit = async () => {
       submitData.password = formState.password;
     }
 
-    await http.put(`/auth/managers/${props.managerId}/`, submitData);
+    await http.patch(`/auth/managers/${props.managerId}/`, submitData);
 
     message.success('Менеджер успешно обновлён');
     emit('success');

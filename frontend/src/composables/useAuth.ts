@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue';
 import { userService, type User, type LoginRequest } from '../services/userService';
-import { getCookie, setCookie, deleteCookie } from '../utils/cookies';
+import { getCookie, setCookie, deleteCookie } from '../utils/storage';
 
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';

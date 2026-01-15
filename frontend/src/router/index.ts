@@ -107,6 +107,12 @@ const routes = [
         meta: { title: 'Контейнеры - МТТ', roles: ['admin'] as UserRole[] },
       },
       {
+        path: '/placement',
+        name: 'ContainerPlacement',
+        component: () => import('../views/ContainerPlacement.vue'),
+        meta: { title: 'Площадка 3D - МТТ', roles: ['admin'] as UserRole[] },
+      },
+      {
         path: '/owners',
         name: 'ContainerOwners',
         component: ContainerOwners,
@@ -203,8 +209,8 @@ router.beforeEach(async (to, _from, next) => {
       return;
     }
 
-    // Handle home redirect based on user type
-    if (to.name === 'Home' || to.path === '/') {
+    // Handle root path redirect based on user type
+    if (to.path === '/') {
       const redirectPath = user.value?.user_type === 'customer' ? '/customer' : '/containers';
       next({ path: redirectPath });
       return;

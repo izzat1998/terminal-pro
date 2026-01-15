@@ -10,6 +10,14 @@ export interface ApiResponse<T> {
   message?: string;
 }
 
+// Standard paginated response from DRF
+export interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
 // Standard error response from backend
 export interface ApiErrorResponse {
   success: false;

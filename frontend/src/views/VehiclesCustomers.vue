@@ -1,12 +1,23 @@
 <template>
   <a-card title="Клиенты транспорта" :bordered="false">
     <template #extra>
-      <a-button type="primary" @click="showCreateModal">
-        <template #icon>
-          <PlusOutlined />
-        </template>
-        Создать клиента
-      </a-button>
+      <a-space>
+        <a-input-search
+          v-model:value="searchText"
+          placeholder="Поиск по имени или телефону..."
+          style="width: 280px;"
+          allow-clear
+          @search="handleSearch"
+          @pressEnter="handleSearch"
+          @change="(e: Event) => { if (!(e.target as HTMLInputElement).value) handleSearch() }"
+        />
+        <a-button type="primary" @click="showCreateModal">
+          <template #icon>
+            <PlusOutlined />
+          </template>
+          Создать клиента
+        </a-button>
+      </a-space>
     </template>
 
     <a-table
@@ -17,6 +28,7 @@
       @change="handleTableChange"
       bordered
       :scroll="{ x: 1000 }"
+      :locale="{ emptyText: undefined }"
     >
       <template #bodyCell="{ column, index, record }">
         <template v-if="column.key === 'number'">
@@ -33,13 +45,31 @@
           </a-tag>
         </template>
         <template v-else-if="column.key === 'actions'">
-          <a-button type="link" size="small" @click="showEditModal(record)">
-            Редактировать
-          </a-button>
-          <a-button type="link" size="small" danger @click="showDeleteModal(record)">
-            Удалить
-          </a-button>
+          <a-space>
+            <a-tooltip title="Редактировать">
+              <a-button type="link" size="small" @click="showEditModal(record)">
+                <template #icon>
+                  <EditOutlined />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip title="Удалить">
+              <a-button type="link" size="small" danger @click="showDeleteModal(record)">
+                <template #icon>
+                  <DeleteOutlined />
+                </template>
+              </a-button>
+            </a-tooltip>
+          </a-space>
         </template>
+      </template>
+      <template #emptyText>
+        <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description="Нет клиентов">
+          <a-button type="primary" @click="showCreateModal">
+            <template #icon><PlusOutlined /></template>
+            Создать клиента
+          </a-button>
+        </a-empty>
       </template>
     </a-table>
   </a-card>
@@ -56,7 +86,7 @@
       <a-form-item label="Имя" required>
         <a-input v-model:value="createForm.first_name" placeholder="Введите имя" />
       </a-form-item>
-      <a-form-item label="Телефон" required>
+      <a-form-item label="Телефон" required extra="Формат: +998XXXXXXXXX (9 цифр после +998)">
         <a-input
           v-model:value="createForm.phone_number"
           placeholder="+998901234567"
@@ -84,7 +114,7 @@
       <a-form-item label="Имя" required>
         <a-input v-model:value="editForm.first_name" placeholder="Введите имя" />
       </a-form-item>
-      <a-form-item label="Телефон" required>
+      <a-form-item label="Телефон" required extra="Формат: +998XXXXXXXXX (9 цифр после +998)">
         <a-input
           v-model:value="editForm.phone_number"
           placeholder="+998901234567"
@@ -118,11 +148,10 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { message } from 'ant-design-vue';
-import { PlusOutlined } from '@ant-design/icons-vue';
+import { message, Empty } from 'ant-design-vue';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue';
 import { http } from '../utils/httpClient';
 import { formatDateTime } from '../utils/dateFormat';
-import { useCrudTable } from '../composables/useCrudTable';
 
 interface Customer {
   id: number;
@@ -217,23 +246,76 @@ const columns = [
   },
 ];
 
-// Use composable for table data management
-const { dataSource, loading, pagination, fetchData, handleTableChange, refresh, refreshAfterDelete } = useCrudTable<Customer, CustomerRecord>(
-  '/auth/customers/',
-  (customer) => ({
-    key: customer.id.toString(),
-    id: customer.id,
-    first_name: customer.first_name,
-    phone_number: customer.phone_number,
-    telegram_username: customer.telegram_username ? `@${customer.telegram_username}` : '—',
-    bot_access: customer.bot_access,
-    is_active: customer.is_active,
-    can_use_bot: customer.can_use_bot,
-    orders_count: customer.orders_count,
-    created: formatDateTime(customer.created_at),
-    updated: formatDateTime(customer.updated_at),
-  })
-);
+// Search state
+const searchText = ref('');
+
+// Table data state
+const dataSource = ref<CustomerRecord[]>([]);
+const loading = ref(false);
+const pagination = ref({
+  current: 1,
+  pageSize: 25,
+  total: 0,
+  showSizeChanger: true,
+  pageSizeOptions: ['10', '25', '50', '100'],
+});
+
+// Fetch data with search support
+const fetchData = async (page?: number, pageSize?: number) => {
+  try {
+    loading.value = true;
+    const currentPage = page ?? pagination.value.current;
+    const currentPageSize = pageSize ?? pagination.value.pageSize;
+
+    const params = new URLSearchParams();
+    params.append('page', currentPage.toString());
+    params.append('page_size', currentPageSize.toString());
+    if (searchText.value.trim()) {
+      params.append('search', searchText.value.trim());
+    }
+
+    const data = await http.get<{ count: number; results: Customer[] }>(`/auth/customers/?${params.toString()}`);
+
+    dataSource.value = data.results.map(customer => ({
+      key: customer.id.toString(),
+      id: customer.id,
+      first_name: customer.first_name,
+      phone_number: customer.phone_number,
+      telegram_username: customer.telegram_username ? `@${customer.telegram_username}` : '—',
+      bot_access: customer.bot_access,
+      is_active: customer.is_active,
+      can_use_bot: customer.can_use_bot,
+      orders_count: customer.orders_count,
+      created: formatDateTime(customer.created_at),
+      updated: formatDateTime(customer.updated_at),
+    }));
+    pagination.value.total = data.count;
+    pagination.value.current = currentPage;
+    pagination.value.pageSize = currentPageSize;
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : 'Не удалось загрузить данные');
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleTableChange = (pag: { current: number; pageSize: number }) => {
+  fetchData(pag.current, pag.pageSize);
+};
+
+const handleSearch = () => {
+  fetchData(1, pagination.value.pageSize); // Reset to page 1 on search
+};
+
+const refresh = () => {
+  fetchData(pagination.value.current, pagination.value.pageSize);
+};
+
+const refreshAfterDelete = () => {
+  const isLastItemOnPage = dataSource.value.length === 1 && pagination.value.current > 1;
+  const newPage = isLastItemOnPage ? pagination.value.current - 1 : pagination.value.current;
+  fetchData(newPage, pagination.value.pageSize);
+};
 
 // Create modal state
 const createModalVisible = ref(false);
@@ -355,7 +437,7 @@ const handleEditSubmit = async () => {
   try {
     editLoading.value = true;
 
-    await http.put(`/auth/customers/${editForm.id}/`, {
+    await http.patch(`/auth/customers/${editForm.id}/`, {
       first_name: editForm.first_name,
       phone_number: editForm.phone_number,
       bot_access: editForm.bot_access,

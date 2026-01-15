@@ -30,7 +30,6 @@
 import { message } from 'ant-design-vue';
 import type { FormInstance } from 'ant-design-vue';
 import { isApiError } from '../types/api';
-import type { FieldErrors as _FieldErrors } from '../types/api';
 
 // Re-export for convenience
 export { ApiError, isApiError } from '../types/api';
@@ -234,29 +233,6 @@ function getFieldLabel(field: string): string {
 }
 
 /**
- * Clear all field errors from a form
- */
-export function clearFormErrors(
-  formRef: FormInstance | undefined,
-  fieldNames?: string[]
-): void {
-  if (!formRef) return;
-
-  if (fieldNames) {
-    // Clear specific fields
-    // Cast to extended type since setFields exists at runtime
-    const extendedForm = formRef as ExtendedFormInstance;
-    const fields = fieldNames.map((name) => ({ name, errors: [] as string[] }));
-    if (typeof extendedForm.setFields === 'function') {
-      extendedForm.setFields(fields);
-    }
-  } else {
-    // Clear all fields by resetting validation
-    formRef.clearValidate();
-  }
-}
-
-/**
  * Extract error message from any error type
  */
 export function getErrorMessage(error: unknown): string {
@@ -269,82 +245,3 @@ export function getErrorMessage(error: unknown): string {
   return 'Произошла неизвестная ошибка';
 }
 
-/**
- * Check if error has specific field error
- */
-export function hasFieldError(error: unknown, fieldName: string): boolean {
-  if (!isApiError(error) || !error.fieldErrors) {
-    return false;
-  }
-  return fieldName in error.fieldErrors;
-}
-
-/**
- * Get specific field error message
- */
-export function getFieldErrorMessage(
-  error: unknown,
-  fieldName: string
-): string | null {
-  if (!isApiError(error)) {
-    return null;
-  }
-  return error.getFieldError(fieldName);
-}
-
-/**
- * Transform field errors for custom rendering
- * Returns a flat object: { fieldName: "first error message" }
- */
-export function flattenFieldErrors(
-  error: unknown,
-  fieldMapping?: Record<string, string>
-): Record<string, string> {
-  if (!isApiError(error) || !error.fieldErrors) {
-    return {};
-  }
-
-  const result: Record<string, string> = {};
-  for (const [field, errors] of Object.entries(error.fieldErrors)) {
-    const mappedField = fieldMapping?.[field] ?? field;
-    const firstError = errors[0];
-    if (firstError) {
-      result[mappedField] = firstError;
-    }
-  }
-  return result;
-}
-
-/**
- * Create a composable for form error handling
- *
- * Usage:
- * ```vue
- * <script setup>
- * import { useFormErrors } from '@/utils/formErrors';
- *
- * const formRef = ref<FormInstance>();
- * const { handleError, clearErrors } = useFormErrors(formRef);
- *
- * const handleSubmit = async () => {
- *   clearErrors();
- *   try {
- *     await http.post('/api/...', data);
- *   } catch (error) {
- *     handleError(error);
- *   }
- * };
- * </script>
- * ```
- */
-export function useFormErrors(
-  formRef: { value: FormInstance | undefined },
-  defaultOptions: FormErrorOptions = {}
-) {
-  return {
-    handleError: (error: unknown, options?: FormErrorOptions) =>
-      handleFormError(error, formRef.value, { ...defaultOptions, ...options }),
-    clearErrors: (fieldNames?: string[]) =>
-      clearFormErrors(formRef.value, fieldNames),
-  };
-}

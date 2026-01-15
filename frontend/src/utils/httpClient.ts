@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '../config/api';
-import { getCookie, setCookie, deleteCookie } from './cookies';
+import { getCookie, setCookie, deleteCookie } from './storage';
 import { ApiError, parseApiErrorResponse } from '../types/api';
 
 const ACCESS_TOKEN_KEY = 'access_token';
@@ -68,13 +68,18 @@ export interface RequestConfig extends RequestInit {
   isFormData?: boolean;
 }
 
-function isTokenError(errorData: any): boolean {
+function isTokenError(errorData: unknown): boolean {
+  if (!errorData || typeof errorData !== 'object') return false;
+  const data = errorData as Record<string, unknown>;
+  const error = data.error as Record<string, unknown> | undefined;
+  const details = error?.details as Record<string, unknown> | undefined;
   // Check various token error formats
-  if (errorData?.code === 'token_not_valid') return true;
-  if (errorData?.error?.code === 'token_not_valid') return true;
-  if (errorData?.error?.details?.code?.includes('token_not_valid')) return true;
-  if (errorData?.detail === 'Данный токен недействителен для любого типа токена') return true;
-  if (errorData?.error?.details?.detail?.includes('Данный токен недействителен для любого типа токена')) return true;
+  if (data.code === 'token_not_valid') return true;
+  if (error?.code === 'token_not_valid') return true;
+  if (Array.isArray(details?.code) && details.code.includes('token_not_valid')) return true;
+  if (data.detail === 'Данный токен недействителен для любого типа токена') return true;
+  const detailStr = details?.detail;
+  if (typeof detailStr === 'string' && detailStr.includes('Данный токен недействителен для любого типа токена')) return true;
   return false;
 }
 

@@ -1,5 +1,14 @@
 /* ============================================
    MTT Design System - Design Tokens & Global Styles
+
+   NOTE: Most Ant Design styling is now handled via ConfigProvider theme.
+   See src/theme/index.ts for component-level theming.
+
+   This file contains:
+   1. CSS Custom Properties (design tokens) for non-Ant components
+   2. Base styles (body, scrollbar, focus)
+   3. Utility classes (animations, gradients)
+   4. Minimal overrides only for edge cases
    ============================================ */
 
 /* --------------------------------------------
@@ -10,12 +19,23 @@
   --font-display: 'Unbounded', system-ui, -apple-system, sans-serif;
   --font-body: 'Onest', system-ui, -apple-system, sans-serif;
 
-  /* Brand Colors */
-  --color-primary: #0066FF;
-  --color-primary-hover: #0052CC;
-  --color-primary-active: #004299;
-  --color-primary-light: #E6F0FF;
-  --color-primary-lighter: #F0F6FF;
+  /* Brand Colors (aligned with login page) */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-primary-active: #1d4ed8;
+  --color-primary-light: #dbeafe;
+  --color-primary-lighter: #eff6ff;
+
+  /* Dark Slate Palette (for sidebar/header) */
+  --color-slate-900: #0f172a;
+  --color-slate-800: #1e293b;
+  --color-slate-700: #334155;
+  --color-slate-600: #475569;
+
+  /* Dark mode text colors (opacity hierarchy) */
+  --color-text-on-dark: #ffffff;
+  --color-text-on-dark-secondary: rgba(255, 255, 255, 0.7);
+  --color-text-on-dark-muted: rgba(255, 255, 255, 0.5);
 
   /* Semantic Colors - Entry/Import Operations (Green) */
   --color-entry: #10B981;
@@ -71,13 +91,25 @@
   --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
   --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.04);
 
-  /* Border Radius */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
-  --radius-2xl: 16px;
+  /* Blue-tinted shadows */
+  --shadow-blue-sm: 0 2px 8px rgba(59, 130, 246, 0.15);
+  --shadow-blue-md: 0 4px 16px rgba(59, 130, 246, 0.25);
+  --shadow-blue-lg: 0 8px 32px rgba(59, 130, 246, 0.35);
+
+  /* Border Radius - Compact for data-dense UI */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
   --radius-full: 9999px;
+
+  /* Typography Scale - Compact */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-lg: 14px;
+  --text-xl: 16px;
 
   /* Transitions */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -90,14 +122,15 @@
    2. BASE STYLES
    -------------------------------------------- */
 
-/* Apply custom fonts globally */
+/* Apply custom fonts globally - compact base size */
 body {
   font-family: var(--font-body);
+  font-size: var(--text-base);
   background-color: var(--color-bg-page);
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 /* Smooth scrolling */
@@ -112,7 +145,8 @@ html {
 }
 
 /* --------------------------------------------
-   3. ANT DESIGN OVERRIDES
+   3. ANT DESIGN COMPONENT OVERRIDES
+   (For styling not available via typed theme tokens)
    -------------------------------------------- */
 
 /* Layout */
@@ -124,202 +158,317 @@ html {
   background: transparent;
 }
 
-.ant-layout-sider {
-  background: var(--color-bg-card) !important;
-  box-shadow: var(--shadow-sm);
-}
-
 .ant-layout-header {
-  background: var(--color-bg-card) !important;
-  box-shadow: var(--shadow-xs);
-  border-bottom: 1px solid var(--color-border);
+  height: 48px;
+  line-height: 48px;
 }
 
-/* Cards */
-.ant-card {
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--color-border-light);
-  transition: box-shadow var(--transition-normal), transform var(--transition-normal);
-}
-
-.ant-card:hover {
-  box-shadow: var(--shadow-md);
-}
-
-.ant-card-head {
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.ant-card-head-title {
-  font-weight: 600;
-}
-
-/* Buttons */
-.ant-btn {
-  font-family: var(--font-body);
-  font-weight: 500;
-  border-radius: var(--radius-md);
-  transition: all var(--transition-fast);
-}
-
-.ant-btn-primary {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  box-shadow: 0 2px 4px rgba(0, 102, 255, 0.2);
-}
-
-.ant-btn-primary:hover,
-.ant-btn-primary:focus {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  box-shadow: 0 4px 8px rgba(0, 102, 255, 0.3);
-}
-
-.ant-btn-primary:active {
-  background: var(--color-primary-active);
-  border-color: var(--color-primary-active);
-}
-
-/* Tables */
+/* Table - ultra-compact data-dense layout */
 .ant-table {
-  border-radius: var(--radius-lg);
-  overflow: hidden;
+  font-size: 12px;
 }
 
 .ant-table-thead > tr > th {
-  background: var(--color-bg-subtle) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-size: 11px;
   font-weight: 600;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.ant-table-tbody > tr:hover > td {
-  background: var(--color-primary-lighter) !important;
+  padding: 6px 8px !important;
+  background: var(--color-bg-subtle) !important;
+  line-height: 1.3;
 }
 
 .ant-table-tbody > tr > td {
-  transition: background var(--transition-fast);
+  padding: 4px 8px !important;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
-/* Forms */
+/* Small table variant - even denser */
+.ant-table-small .ant-table-thead > tr > th {
+  padding: 4px 6px !important;
+  font-size: 10px;
+}
+
+.ant-table-small .ant-table-tbody > tr > td {
+  padding: 2px 6px !important;
+  font-size: 11px;
+}
+
+/* Row hover - subtle */
+.ant-table-tbody > tr:hover > td {
+  background: var(--color-bg-subtle) !important;
+}
+
+/* Bordered table - tighter borders */
+.ant-table-bordered .ant-table-thead > tr > th,
+.ant-table-bordered .ant-table-tbody > tr > td {
+  border-right: 1px solid var(--color-border-light);
+}
+
+/* Selection column - compact */
+.ant-table-selection-column {
+  padding-left: 8px !important;
+  padding-right: 4px !important;
+  width: 32px !important;
+}
+
+/* Actions column - compact */
+.ant-table-cell .ant-space {
+  gap: 4px !important;
+}
+
+/* Expandable row icon - compact */
+.ant-table-row-expand-icon {
+  width: 16px;
+  height: 16px;
+  line-height: 14px;
+}
+
+/* Button - compact */
+.ant-btn {
+  font-weight: 500;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.ant-btn-lg {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+.ant-btn-sm {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+/* Input - compact */
 .ant-input,
 .ant-select-selector,
 .ant-picker {
-  border-radius: var(--radius-md) !important;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  font-size: 12px;
 }
 
-.ant-input:hover,
-.ant-select-selector:hover,
-.ant-picker:hover {
-  border-color: var(--color-primary) !important;
+.ant-input-affix-wrapper {
+  padding: 4px 11px;
+  min-height: 32px;
 }
 
-.ant-input:focus,
-.ant-input-focused,
-.ant-select-focused .ant-select-selector,
-.ant-picker-focused {
-  border-color: var(--color-primary) !important;
-  box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.1) !important;
+.ant-input-search .ant-input-affix-wrapper {
+  height: 32px;
 }
 
-/* Modals */
+.ant-input-search .ant-input-search-button {
+  height: 32px;
+  width: 32px;
+}
+
+/* Select */
+.ant-select-selector {
+  min-height: 32px;
+}
+
+/* Card - compact */
+.ant-card-head {
+  padding: 12px 16px;
+  min-height: auto;
+}
+
+.ant-card-head-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ant-card-body {
+  padding: 16px;
+}
+
+.ant-card-small .ant-card-body {
+  padding: 12px 16px;
+}
+
+/* Statistic - keep readable, don't over-compact */
+.ant-statistic-title {
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: var(--color-text-secondary);
+}
+
+.ant-statistic-content-value {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ant-statistic-content-prefix {
+  font-size: 20px;
+  margin-right: 4px;
+}
+
+/* Small card statistics - still readable */
+.ant-card-small .ant-statistic-title {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.ant-card-small .ant-statistic-content-value {
+  font-size: 24px;
+}
+
+.ant-card-small .ant-statistic-content-prefix {
+  font-size: 18px;
+}
+
+/* Stat card container - more padding for prominence */
+.ant-card-small .ant-card-body {
+  padding: 16px !important;
+}
+
+/* Modal - compact with explicit white background */
 .ant-modal-content {
-  border-radius: var(--radius-xl);
-  overflow: hidden;
-  box-shadow: var(--shadow-2xl);
+  background-color: #ffffff;
 }
 
 .ant-modal-header {
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 12px 16px;
+  background-color: #ffffff;
 }
 
 .ant-modal-title {
-  font-family: var(--font-body);
-  font-weight: 600;
+  font-size: 14px;
 }
 
-/* Tags */
+.ant-modal-body {
+  padding: 16px;
+  background-color: #ffffff;
+}
+
+.ant-modal-footer {
+  padding: 12px 16px;
+  background-color: #ffffff;
+}
+
+/* Confirm modal specific - ensure white background */
+.ant-modal-confirm .ant-modal-content,
+.ant-modal-confirm .ant-modal-body {
+  background-color: #ffffff;
+}
+
+/* Modal buttons - ensure proper contrast */
+.ant-modal-confirm .ant-btn-default,
+.ant-modal .ant-btn-default {
+  background-color: #ffffff;
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.ant-modal-confirm .ant-btn-default:hover,
+.ant-modal .ant-btn-default:hover {
+  background-color: #ffffff;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Confirm modal text */
+.ant-modal-confirm-title {
+  color: var(--color-text);
+}
+
+.ant-modal-confirm-content {
+  color: var(--color-text-secondary);
+}
+
+/* Tag - base style */
 .ant-tag {
-  border-radius: var(--radius-md);
+  font-size: 12px;
+  padding: 2px 8px;
+  line-height: 20px;
+  height: auto;
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+/* Tags inside popovers/dropdowns - keep compact */
+.ant-popover .ant-tag,
+.ant-dropdown .ant-tag,
+.ant-tag.tag-compact {
+  font-size: 11px;
+  padding: 1px 6px;
+  line-height: 18px;
+}
+
+/* Popover - compact */
+.ant-popover-title {
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+.ant-popover-inner-content {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+/* Buttons inside popovers - smaller */
+.ant-popover .ant-btn-sm {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+/* Form - compact */
+.ant-form-item-label > label {
+  font-size: 12px;
   font-weight: 500;
 }
 
-/* Tabs */
-.ant-tabs-tab {
-  font-weight: 500;
-  transition: color var(--transition-fast);
+.ant-form-item {
+  margin-bottom: 16px;
 }
 
-.ant-tabs-tab-active {
-  font-weight: 600;
+/* Pagination - ultra-compact */
+.ant-pagination {
+  font-size: 12px;
 }
 
-/* Menu */
-.ant-menu-item {
-  border-radius: var(--radius-md);
-  margin: 2px 0;
-  transition: all var(--transition-fast);
+.ant-pagination-item,
+.ant-pagination-prev,
+.ant-pagination-next {
+  min-width: 24px;
+  height: 24px;
+  line-height: 22px;
+  font-size: 11px;
+  margin-inline-end: 4px;
 }
 
-.ant-menu-item:hover {
-  background: var(--color-primary-lighter) !important;
+.ant-pagination-options {
+  margin-inline-start: 8px;
 }
 
-.ant-menu-item-selected {
-  background: var(--color-primary-light) !important;
+.ant-pagination-options-size-changer {
+  margin-inline-end: 4px;
 }
 
-/* Dropdown */
-.ant-dropdown-menu {
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: var(--space-1);
+.ant-select-single.ant-pagination-options-size-changer .ant-select-selector {
+  height: 24px !important;
+  font-size: 11px;
 }
 
-.ant-dropdown-menu-item {
-  border-radius: var(--radius-md);
+.ant-pagination-total-text {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* Table pagination container */
+.ant-table-pagination {
+  margin: 8px 0 !important;
 }
 
 /* Breadcrumb */
 .ant-breadcrumb {
-  font-size: 14px;
-}
-
-.ant-breadcrumb a {
-  color: var(--color-text-secondary);
-  transition: color var(--transition-fast);
-}
-
-.ant-breadcrumb a:hover {
-  color: var(--color-primary);
-}
-
-/* Statistic */
-.ant-statistic-title {
-  color: var(--color-text-secondary);
-  font-size: 14px;
-}
-
-.ant-statistic-content {
-  font-family: var(--font-body);
-  font-weight: 600;
-}
-
-/* Avatar */
-.ant-avatar {
-  box-shadow: var(--shadow-sm);
-}
-
-/* Alert */
-.ant-alert {
-  border-radius: var(--radius-lg);
-}
-
-/* Message */
-.ant-message-notice-content {
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  font-size: 13px;
 }
 
 /* --------------------------------------------

@@ -101,13 +101,13 @@
       </a-row>
     </a-spin>
 
-    <!-- Company Stats - Using a-space and a-tag -->
-    <a-space wrap v-if="companyStats.length > 0 && !statsLoading" style="margin-bottom: 16px;">
-      <span style="color: #8c8c8c; font-size: 12px;">По клиентам:</span>
+    <!-- Company Stats - Filter chips by company -->
+    <a-space wrap v-if="companyStats.length > 0 && !statsLoading" style="margin-bottom: 16px;" :size="8">
+      <span style="color: var(--color-text-secondary); font-size: 13px; font-weight: 500;">По клиентам:</span>
       <a-tooltip v-for="company in companyStats" :key="company.id" placement="bottom">
         <template #title>
           <div style="text-align: center;">
-            <div style="font-weight: 500; margin-bottom: 4px;">{{ company.name }}</div>
+            <div style="font-weight: 600; margin-bottom: 4px;">{{ company.name }}</div>
             <div style="font-size: 12px; color: rgba(255,255,255,0.85);">
               <span style="color: #95de64;">{{ company.laden }} груж.</span>
               <span style="margin: 0 6px;">|</span>
@@ -117,10 +117,10 @@
         </template>
         <a-tag
           :color="activeCompanyFilter === company.id ? 'blue' : 'default'"
-          style="cursor: pointer; padding: 4px 8px;"
+          style="cursor: pointer;"
           @click="handleCompanyChipClick(company.id)"
         >
-          {{ company.name }} <strong>{{ company.count }}</strong>
+          {{ company.name }} <strong style="margin-left: 4px;">{{ company.count }}</strong>
         </a-tag>
       </a-tooltip>
     </a-space>
@@ -410,6 +410,21 @@
             {{ record.dwellTimeDays ?? '—' }} дн.
           </a-tag>
         </template>
+        <template v-else-if="column.key === 'location'">
+          <a-tooltip v-if="record.location" title="Показать на 3D схеме" placement="top">
+            <a-button
+              type="link"
+              size="small"
+              class="location-link"
+              @click="openLocation3D(record)"
+            >
+              <a-tag color="purple" class="location-tag-clickable">
+                {{ record.location }}
+              </a-tag>
+            </a-button>
+          </a-tooltip>
+          <span v-else class="text-muted">—</span>
+        </template>
         <template v-else-if="column.key === 'files'">
           <a-button type="link" @click="showFiles(record)">
             {{ record.files }}
@@ -460,6 +475,13 @@
   <ExcelUploadModal v-model:open="excelUploadModalVisible" @upload-success="handleExcelUploadSuccess" />
 
   <ExcelExportModal v-model:open="excelExportModalVisible" />
+
+  <!-- 3D Location Modal (only render when needed) -->
+  <Container3DModal
+    v-if="show3DModal || selected3DContainer"
+    v-model:open="show3DModal"
+    :container="selected3DContainer"
+  />
   </div>
 </template>
 
@@ -491,6 +513,7 @@ import FilesDialog from './FilesDialog.vue';
 import UpsertContainerModal from './UpsertContainerModal.vue';
 import ExcelUploadModal from './ExcelUploadModal.vue';
 import ExcelExportModal from './ExcelExportModal.vue';
+import Container3DModal from './Container3DModal.vue';
 
 // Initialize composable for data transformation
 const { transformEntries } = useContainerTransform();
@@ -808,7 +831,7 @@ const exportSelected = async () => {
 
   try {
     const containerIds = selectedRowKeys.value.join(',');
-    window.open(`/api/terminal/entries/export_excel/?container_ids=${containerIds}`);
+    window.open(`/api/terminal/entries/export-excel/?container_ids=${containerIds}`);
     message.success(`Экспорт ${selectedRowKeys.value.length} контейнеров`);
   } catch (error) {
     message.error('Ошибка при экспорте');
@@ -1028,6 +1051,29 @@ const createModalVisible = ref(false);
 const editModalVisible = ref(false);
 const excelUploadModalVisible = ref(false);
 const excelExportModalVisible = ref(false);
+
+// 3D Location Modal state
+const show3DModal = ref(false);
+const selected3DContainer = ref<{
+  id: number;
+  containerNumber: string;
+  location: string;
+  isoType?: string;
+  status?: 'LADEN' | 'EMPTY';
+} | null>(null);
+
+// Open 3D modal for a container
+function openLocation3D(record: ContainerRecord) {
+  if (!record.location) return;
+  selected3DContainer.value = {
+    id: record.containerId,
+    containerNumber: record.container,
+    location: record.location,
+    isoType: record.isoType,
+    status: record.status === 'Гружёный' ? 'LADEN' : 'EMPTY',
+  };
+  show3DModal.value = true;
+}
 
 const fetchContainers = async (filters?: Record<string, any>, page?: number, pageSize?: number) => {
   try {
@@ -1371,5 +1417,22 @@ onMounted(() => {
 .company-link:hover {
   color: #4096ff;
   text-decoration: underline;
+}
+
+/* Location link styles */
+.location-link {
+  padding: 0;
+  height: auto;
+  line-height: 1;
+}
+
+.location-tag-clickable {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.location-tag-clickable:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(114, 46, 209, 0.3);
 }
 </style>

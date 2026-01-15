@@ -73,8 +73,9 @@
 import { ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { DownloadOutlined } from '@ant-design/icons-vue';
-import { getCookie } from '../utils/cookies';
+import { getCookie } from '../utils/storage';
 import { API_BASE_URL } from '../config/api';
+import { downloadBlob } from '../utils/download';
 
 interface Owner {
   id: number;
@@ -152,7 +153,7 @@ const fetchCustomerNames = async () => {
     customersLoading.value = true;
     const token = getCookie('access_token');
 
-    const response = await fetch(`${API_BASE_URL}/terminal/entries/customer_names/`, {
+    const response = await fetch(`${API_BASE_URL}/terminal/entries/customer-names/`, {
       headers: {
         'Content-Type': 'application/json',
         ...(token && { Authorization: `Bearer ${token}` }),
@@ -209,7 +210,7 @@ const handleExport = async () => {
     }
 
     const queryString = queryParams.toString();
-    const apiUrl = `${API_BASE_URL}/terminal/entries/export_excel/${queryString ? '?' + queryString : ''}`;
+    const apiUrl = `${API_BASE_URL}/terminal/entries/export-excel/${queryString ? '?' + queryString : ''}`;
 
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -233,15 +234,7 @@ const handleExport = async () => {
       }
     }
 
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    downloadBlob(blob, filename);
 
     message.success('Данные успешно экспортированы');
     handleCancel();

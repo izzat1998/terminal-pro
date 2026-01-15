@@ -1,4 +1,5 @@
 import { http } from '../utils/httpClient';
+import type { PaginatedResponse } from '../types/api';
 
 export interface TelegramActivityLog {
   id: number;
@@ -26,13 +27,6 @@ export interface ActivityLogSummary {
     count: number;
   }>;
   by_user_type: Record<string, number>;
-}
-
-export interface PaginatedResponse<T> {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: T[];
 }
 
 export interface ActivityLogFilters {

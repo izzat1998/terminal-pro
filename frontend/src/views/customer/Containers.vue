@@ -91,7 +91,18 @@
           <span v-if="!record.cargo_name && !record.cargo_weight" class="text-muted">—</span>
         </template>
         <template v-if="column.key === 'location'">
-          <a-tag v-if="record.location" color="purple">{{ record.location }}</a-tag>
+          <a-tooltip v-if="record.location" title="Показать на 3D схеме" placement="top">
+            <a-button
+              type="link"
+              size="small"
+              class="location-link"
+              @click="openLocation3D(record)"
+            >
+              <a-tag color="purple" class="location-tag-clickable">
+                {{ record.location }}
+              </a-tag>
+            </a-button>
+          </a-tooltip>
           <span v-else class="text-muted">—</span>
         </template>
         <template v-if="column.key === 'dwell_time'">
@@ -111,6 +122,13 @@
         </template>
       </template>
     </a-table>
+
+    <!-- 3D Location Modal (only render when needed) -->
+    <Container3DModal
+      v-if="show3DModal || selected3DContainer"
+      v-model:open="show3DModal"
+      :container="selected3DContainer"
+    />
   </a-card>
 </template>
 
@@ -120,6 +138,8 @@ import { message } from 'ant-design-vue';
 import type { TableProps } from 'ant-design-vue';
 import { http } from '../../utils/httpClient';
 import { formatDateTime } from '../../utils/dateFormat';
+import type { PaginatedResponse } from '../../types/api';
+import Container3DModal from '../../components/Container3DModal.vue';
 
 interface Company {
   id: number;
@@ -169,13 +189,6 @@ interface ContainerEntry {
   image_count: number;
 }
 
-interface PaginatedResponse {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: ContainerEntry[];
-}
-
 const props = defineProps<{
   company: Company | null;
   loading: boolean;
@@ -184,6 +197,29 @@ const props = defineProps<{
 const entries = ref<ContainerEntry[]>([]);
 const loading = ref(false);
 const searchText = ref('');
+
+// 3D Location Modal state
+const show3DModal = ref(false);
+const selected3DContainer = ref<{
+  id: number;
+  containerNumber: string;
+  location: string;
+  isoType?: string;
+  status?: 'LADEN' | 'EMPTY';
+} | null>(null);
+
+// Open 3D modal for a container
+function openLocation3D(record: ContainerEntry) {
+  if (!record.location) return;
+  selected3DContainer.value = {
+    id: record.id,
+    containerNumber: record.container.container_number,
+    location: record.location,
+    isoType: record.container.iso_type,
+    status: record.status,
+  };
+  show3DModal.value = true;
+}
 
 // Server-side pagination state
 const pagination = ref({
@@ -388,7 +424,7 @@ const fetchEntries = async () => {
     }
 
     const url = `/customer/containers/?${params.toString()}`;
-    const result = await http.get<PaginatedResponse>(url);
+    const result = await http.get<PaginatedResponse<ContainerEntry>>(url);
 
     entries.value = result.results || [];
     pagination.value.total = result.count;
@@ -459,5 +495,22 @@ watch(() => props.company, (newCompany) => {
   position: absolute;
   top: -4px;
   right: -8px;
+}
+
+/* Location link styles */
+.location-link {
+  padding: 0;
+  height: auto;
+  line-height: 1;
+}
+
+.location-tag-clickable {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.location-tag-clickable:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(114, 46, 209, 0.3);
 }
 </style>
