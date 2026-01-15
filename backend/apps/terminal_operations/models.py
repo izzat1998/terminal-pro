@@ -369,3 +369,111 @@ class PreOrder(TimestampedModel):
 
     def __str__(self):
         return f"PreOrder {self.id}: {self.plate_number} ({self.get_operation_type_display()}) - {self.get_status_display()}"
+
+
+class ContainerPosition(TimestampedModel):
+    """
+    3D position for container placement in terminal yard.
+    One-to-one relationship with ContainerEntry for physical location tracking.
+
+    Coordinate Format: Zone-Row-Bay-Tier-Slot (e.g., A-R03-B15-T2-A)
+    - Zone: A-E (5 zones)
+    - Row: 1-10 (10 rows per zone)
+    - Bay: 1-10 (10 bays per zone)
+    - Tier: 1-4 (max 4 stacking height)
+    - Sub-slot: A or B (for 20ft containers sharing a bay)
+
+    Bay Sub-Slot Logic:
+    - Each bay is sized for a 40ft container (12.2m)
+    - A 40ft/45ft container occupies the full bay (uses slot 'A')
+    - Two 20ft containers (6.1m each) can share a bay (slots 'A' and 'B')
+    - Slot A = left/front half of bay
+    - Slot B = right/back half of bay
+    """
+
+    from django.core.validators import MaxValueValidator, MinValueValidator
+
+    # Zone choices for the terminal
+    ZONE_CHOICES = [
+        ("A", "Zone A"),
+        ("B", "Zone B"),
+        ("C", "Zone C"),
+        ("D", "Zone D"),
+        ("E", "Zone E"),
+    ]
+
+    # Sub-slot choices for bay subdivision (20ft containers)
+    SUB_SLOT_CHOICES = [
+        ("A", "Slot A (Left/Front)"),
+        ("B", "Slot B (Right/Back)"),
+    ]
+
+    container_entry = models.OneToOneField(
+        ContainerEntry,
+        on_delete=models.CASCADE,
+        related_name="position",
+        help_text="Связанная запись въезда контейнера",
+    )
+
+    zone = models.CharField(
+        max_length=1,
+        choices=ZONE_CHOICES,
+        db_index=True,
+        help_text="Зона терминала (A-E)",
+    )
+
+    row = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Номер ряда (1-10)",
+    )
+
+    bay = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Номер отсека (1-10)",
+    )
+
+    tier = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(4)],
+        help_text="Ярус (1-4)",
+    )
+
+    sub_slot = models.CharField(
+        max_length=1,
+        choices=SUB_SLOT_CHOICES,
+        default="A",
+        help_text="Позиция внутри отсека: A (левая) или B (правая). 40ft контейнеры всегда занимают слот A.",
+    )
+
+    auto_assigned = models.BooleanField(
+        default=False,
+        help_text="Была ли позиция назначена автоматически",
+    )
+
+    class Meta:
+        ordering = ["zone", "row", "bay", "tier", "sub_slot"]
+        verbose_name = "Позиция контейнера"
+        verbose_name_plural = "Позиции контейнеров"
+        indexes = [
+            models.Index(
+                fields=["zone", "row", "bay", "tier", "sub_slot"],
+                name="position_coords_slot_idx",
+            ),
+            models.Index(fields=["zone"], name="position_zone_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["zone", "row", "bay", "tier", "sub_slot"],
+                name="unique_position_with_slot",
+                violation_error_message="Эта позиция уже занята другим контейнером",
+            )
+        ]
+
+    @property
+    def coordinate_string(self) -> str:
+        """Return formatted coordinate: A-R03-B15-T2-A"""
+        return (
+            f"{self.zone}-R{self.row:02d}-B{self.bay:02d}-T{self.tier}-{self.sub_slot}"
+        )
+
+    def __str__(self):
+        return f"{self.coordinate_string} ({self.container_entry.container.container_number})"

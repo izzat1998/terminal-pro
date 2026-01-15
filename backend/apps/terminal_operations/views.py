@@ -4,7 +4,7 @@ from django.db import models
 from django.http import FileResponse
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
@@ -22,7 +22,11 @@ from .serializers import (
     ContainerEntrySerializer,
     ContainerEntryWithImagesSerializer,
     ContainerOwnerSerializer,
+    ContainerPositionSerializer,
     CraneOperationSerializer,
+    PlacementAssignRequestSerializer,
+    PlacementMoveRequestSerializer,
+    PlacementSuggestRequestSerializer,
     PlateRecognitionRequestSerializer,
     PlateRecognitionResponseSerializer,
     PreOrderListSerializer,
@@ -142,8 +146,17 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = ContainerEntryFilter
-    # Disable PATCH - only allow PUT for full updates
-    http_method_names = ["get", "post", "put", "delete", "head", "options", "trace"]
+    # Allow all standard REST methods including PATCH for partial updates
+    http_method_names = [
+        "get",
+        "post",
+        "put",
+        "patch",
+        "delete",
+        "head",
+        "options",
+        "trace",
+    ]
     search_fields = [
         # Container information
         "container__container_number",
@@ -351,6 +364,51 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(entries, many=True)
         return Response({"success": True, "data": serializer.data})
+
+    @action(detail=False, methods=["get"], url_path="check-container")
+    def check_container(self, request):
+        """
+        Check if a container with given number is currently on terminal.
+
+        Used for real-time validation in the create container form.
+
+        GET /api/terminal/entries/check-container/?container_number=MSKU1234567
+
+        Response:
+        - 200: { "on_terminal": false }
+        - 200: { "on_terminal": true, "entry": { id, container_number, entry_time, status } }
+        """
+        container_number = (
+            request.query_params.get("container_number", "").strip().upper()
+        )
+
+        if not container_number or len(container_number) < 4:
+            return Response({"on_terminal": False})
+
+        # Check for containers currently on terminal (no exit_date)
+        entry = (
+            ContainerEntry.objects.filter(
+                container__container_number__iexact=container_number,
+                exit_date__isnull=True,
+            )
+            .select_related("container")
+            .first()
+        )
+
+        if entry:
+            return Response(
+                {
+                    "on_terminal": True,
+                    "entry": {
+                        "id": entry.id,
+                        "container_number": entry.container.container_number,
+                        "entry_time": entry.entry_time,
+                        "status": entry.status,
+                    },
+                }
+            )
+
+        return Response({"on_terminal": False})
 
     @action(detail=False, methods=["get"], url_path="customer-names")
     def customer_names(self, request):
@@ -950,3 +1008,308 @@ class PreOrderViewSet(viewsets.ReadOnlyModelViewSet):
         result = list(batches.values())
 
         return Response({"success": True, "data": result})
+
+
+# ============ Placement ViewSet ============
+
+
+class PlacementViewSet(viewsets.GenericViewSet):
+    """
+    ViewSet for 3D terminal container placement operations.
+
+    Provides endpoints for:
+    - Getting complete terminal layout for 3D visualization
+    - Auto-suggesting optimal positions for containers
+    - Assigning containers to positions
+    - Moving containers between positions
+    - Listing available positions
+    - Listing unplaced containers
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get_placement_service(self):
+        """Lazy-load PlacementService."""
+        from apps.terminal_operations.services.placement_service import PlacementService
+
+        return PlacementService()
+
+    @extend_schema(
+        summary="Get terminal layout for 3D visualization",
+        description=(
+            "Returns complete terminal data including all zones, dimensions, "
+            "positioned containers, and occupancy statistics. "
+            "Used by the frontend to render the 3D terminal view."
+        ),
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {"$ref": "#/components/schemas/PlacementLayout"},
+                },
+            }
+        },
+        tags=["Placement"],
+    )
+    @action(detail=False, methods=["get"])
+    def layout(self, request):
+        """Get complete terminal layout for 3D visualization."""
+        service = self.get_placement_service()
+        data = service.get_layout()
+        return Response({"success": True, "data": data})
+
+    @extend_schema(
+        summary="Auto-suggest position for container",
+        description=(
+            "Generates an optimal position suggestion for a container using "
+            "a greedy algorithm that prioritizes ground-level slots and "
+            "zones with the most availability."
+        ),
+        request=PlacementSuggestRequestSerializer,
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {"$ref": "#/components/schemas/PlacementSuggestResponse"},
+                },
+            }
+        },
+        tags=["Placement"],
+    )
+    @action(detail=False, methods=["post"])
+    def suggest(self, request):
+        """Auto-suggest optimal position for a container."""
+        serializer = PlacementSuggestRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        service = self.get_placement_service()
+        result = service.suggest_position(
+            container_entry_id=serializer.validated_data["container_entry_id"],
+            zone_preference=serializer.validated_data.get("zone_preference"),
+        )
+
+        return Response({"success": True, "data": result})
+
+    @extend_schema(
+        summary="Assign container to position",
+        description=(
+            "Assigns a container to a specific position in the terminal yard. "
+            "Validates stacking rules (tier > 1 requires support below) and "
+            "ensures the position is not already occupied."
+        ),
+        request=PlacementAssignRequestSerializer,
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {"$ref": "#/components/schemas/ContainerPosition"},
+                    "message": {"type": "string"},
+                },
+            }
+        },
+        tags=["Placement"],
+    )
+    @action(detail=False, methods=["post"])
+    def assign(self, request):
+        """Assign container to a specific position."""
+        serializer = PlacementAssignRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        position_data = serializer.validated_data["position"]
+        service = self.get_placement_service()
+
+        position = service.assign_position(
+            container_entry_id=serializer.validated_data["container_entry_id"],
+            zone=position_data["zone"],
+            row=position_data["row"],
+            bay=position_data["bay"],
+            tier=position_data["tier"],
+            auto_assigned=False,
+        )
+
+        return Response(
+            {
+                "success": True,
+                "data": ContainerPositionSerializer(position).data,
+                "message": "Позиция успешно назначена",
+            }
+        )
+
+    @extend_schema(
+        summary="Move container to new position",
+        description=(
+            "Moves a container from its current position to a new one. "
+            "Validates the new position is available and follows stacking rules."
+        ),
+        request=PlacementMoveRequestSerializer,
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {"$ref": "#/components/schemas/ContainerPosition"},
+                    "message": {"type": "string"},
+                },
+            }
+        },
+        tags=["Placement"],
+    )
+    @action(detail=True, methods=["patch"], url_path="move")
+    def move(self, request, pk=None):
+        """Move container to a new position."""
+        serializer = PlacementMoveRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        new_position = serializer.validated_data["new_position"]
+        service = self.get_placement_service()
+
+        position = service.move_container(
+            position_id=int(pk),
+            new_zone=new_position["zone"],
+            new_row=new_position["row"],
+            new_bay=new_position["bay"],
+            new_tier=new_position["tier"],
+        )
+
+        return Response(
+            {
+                "success": True,
+                "data": ContainerPositionSerializer(position).data,
+                "message": "Контейнер перемещён",
+            }
+        )
+
+    @extend_schema(
+        summary="Remove container from position",
+        description=(
+            "Removes a container from its position. "
+            "Typically used when container exits the terminal."
+        ),
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "message": {"type": "string"},
+                },
+            }
+        },
+        tags=["Placement"],
+    )
+    @action(detail=True, methods=["delete"], url_path="remove")
+    def remove(self, request, pk=None):
+        """Remove container from its position."""
+        service = self.get_placement_service()
+        service.remove_position(position_id=int(pk))
+
+        return Response(
+            {
+                "success": True,
+                "message": "Позиция освобождена",
+            }
+        )
+
+    @extend_schema(
+        summary="Get available positions",
+        description=(
+            "Returns list of available positions with optional filtering by zone and tier. "
+            "Only returns positions that satisfy stacking rules."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="zone",
+                type=str,
+                enum=["A", "B", "C", "D", "E"],
+                required=False,
+                description="Filter by zone",
+            ),
+            OpenApiParameter(
+                name="tier",
+                type=int,
+                required=False,
+                description="Filter by tier (1-4)",
+            ),
+            OpenApiParameter(
+                name="limit",
+                type=int,
+                required=False,
+                description="Max positions to return (default 50)",
+            ),
+        ],
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/Position"},
+                    },
+                    "count": {"type": "integer"},
+                },
+            }
+        },
+        tags=["Placement"],
+    )
+    @action(detail=False, methods=["get"])
+    def available(self, request):
+        """Get list of available positions."""
+        zone = request.query_params.get("zone")
+        tier = request.query_params.get("tier")
+        limit = int(request.query_params.get("limit", 50))
+
+        if tier:
+            tier = int(tier)
+
+        service = self.get_placement_service()
+        positions = service.get_available_positions(
+            zone=zone,
+            tier=tier,
+            limit=limit,
+        )
+
+        return Response(
+            {
+                "success": True,
+                "data": positions,
+                "count": len(positions),
+            }
+        )
+
+    @extend_schema(
+        summary="Get unplaced containers",
+        description=(
+            "Returns list of containers currently on terminal without an assigned position. "
+            "These containers need to be placed via the assign endpoint."
+        ),
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/UnplacedContainer"},
+                    },
+                    "count": {"type": "integer"},
+                },
+            }
+        },
+        tags=["Placement"],
+    )
+    @action(detail=False, methods=["get"])
+    def unplaced(self, request):
+        """Get containers without assigned positions."""
+        service = self.get_placement_service()
+        containers = service.get_unplaced_containers()
+
+        return Response(
+            {
+                "success": True,
+                "data": containers,
+                "count": len(containers),
+            }
+        )

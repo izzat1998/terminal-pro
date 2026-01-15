@@ -1,0 +1,717 @@
+/**
+ * Container mesh rendering composable using InstancedMesh for performance
+ * Supports: 20ft/40ft sizes, Standard/High Cube heights, Laden/Empty status
+ * Total: 8 mesh combinations for accurate visual representation
+ */
+
+import { shallowRef, type Ref } from 'vue';
+import * as THREE from 'three';
+import type { ContainerPlacement, Position, ZoneCode, ColorMode } from '../types/placement';
+import {
+  CONTAINER_COLORS,
+  CONTAINER_SIZE_COLORS,
+  ZONE_LAYOUT,
+  SPACING,
+  CONTAINER_DIMENSIONS,
+  getContainerSize,
+  isHighCube,
+  getDwellTimeColor,
+  getContainerColor,
+  getContainerEdgeColor,
+} from '../types/placement';
+
+// Mesh key type for all combinations
+type MeshKey = 'laden20' | 'laden20HC' | 'laden40' | 'laden40HC' |
+               'empty20' | 'empty20HC' | 'empty40' | 'empty40HC';
+
+interface ContainerMeshInfo {
+  meshKey: MeshKey;
+  instanceId: number;
+  isLaden: boolean;
+  size: '20ft' | '40ft' | '45ft';
+}
+
+export function useContainerMesh(scene: Ref<THREE.Scene | undefined>) {
+  const meshes = shallowRef<Record<MeshKey, THREE.InstancedMesh> | null>(null);
+  const containerMap = new Map<number, ContainerMeshInfo>();
+  const containerById = new Map<number, ContainerPlacement>(); // Quick lookup by id
+  const labelSprites: THREE.Sprite[] = [];
+  const wallTextMeshes: THREE.Mesh[] = []; // Text on container walls
+  const edgeLines: THREE.LineSegments[] = []; // Dark outlines for each container
+  const showLabels = shallowRef(true);
+  const showWallText = shallowRef(true);
+  const colorMode = shallowRef<ColorMode>('status'); // 'status' or 'dwell_time'
+  const filteredCompanyName = shallowRef<string | null>(null); // Company filter for dimming
+
+  // Track counts for each mesh type
+  const counts: Record<MeshKey, number> = {
+    laden20: 0, laden20HC: 0, laden40: 0, laden40HC: 0,
+    empty20: 0, empty20HC: 0, empty40: 0, empty40HC: 0,
+  };
+
+  // Raycaster for click detection
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  // Helper to safely get zone layout (throws if zone not found)
+  function getZoneLayout(zone: ZoneCode) {
+    const layout = ZONE_LAYOUT[zone];
+    if (!layout) {
+      throw new Error(`Zone ${zone} not configured in ZONE_LAYOUT`);
+    }
+    return layout;
+  }
+
+  function initMeshes(maxContainers: number = 2500): void {
+    if (!scene.value) return;
+
+    // Create geometries for all size/height combinations
+    const geometries = {
+      '20': new THREE.BoxGeometry(
+        CONTAINER_DIMENSIONS['20ft'].length,
+        CONTAINER_DIMENSIONS['20ft'].height,
+        CONTAINER_DIMENSIONS['20ft'].width
+      ),
+      '20HC': new THREE.BoxGeometry(
+        CONTAINER_DIMENSIONS['20ft_HC'].length,
+        CONTAINER_DIMENSIONS['20ft_HC'].height,
+        CONTAINER_DIMENSIONS['20ft_HC'].width
+      ),
+      '40': new THREE.BoxGeometry(
+        CONTAINER_DIMENSIONS['40ft'].length,
+        CONTAINER_DIMENSIONS['40ft'].height,
+        CONTAINER_DIMENSIONS['40ft'].width
+      ),
+      '40HC': new THREE.BoxGeometry(
+        CONTAINER_DIMENSIONS['40ft_HC'].length,
+        CONTAINER_DIMENSIONS['40ft_HC'].height,
+        CONTAINER_DIMENSIONS['40ft_HC'].width
+      ),
+    };
+
+    // Materials - size-specific colors (20ft = bright, 40ft = darker)
+    // This follows TOS industry best practice for visual size differentiation
+    const materials = {
+      laden20: new THREE.MeshLambertMaterial({ color: CONTAINER_SIZE_COLORS.LADEN_20 }),
+      laden40: new THREE.MeshLambertMaterial({ color: CONTAINER_SIZE_COLORS.LADEN_40 }),
+      empty20: new THREE.MeshLambertMaterial({ color: CONTAINER_SIZE_COLORS.EMPTY_20 }),
+      empty40: new THREE.MeshLambertMaterial({ color: CONTAINER_SIZE_COLORS.EMPTY_40 }),
+    };
+
+    // Create all 8 mesh combinations (4 size/status combos × 2 height variants)
+    const createMesh = (
+      geometry: THREE.BoxGeometry,
+      material: THREE.MeshLambertMaterial,
+      name: string
+    ): THREE.InstancedMesh => {
+      const mesh = new THREE.InstancedMesh(geometry, material.clone(), maxContainers);
+      mesh.count = 0;
+      mesh.name = name;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      // Disable frustum culling to prevent containers disappearing during zoom
+      // (InstancedMesh bounding box doesn't auto-update with instance positions)
+      mesh.frustumCulled = false;
+      return mesh;
+    };
+
+    meshes.value = {
+      // 20ft containers - bright colors
+      laden20: createMesh(geometries['20'], materials.laden20, 'laden20ft'),
+      laden20HC: createMesh(geometries['20HC'], materials.laden20, 'laden20ftHC'),
+      empty20: createMesh(geometries['20'], materials.empty20, 'empty20ft'),
+      empty20HC: createMesh(geometries['20HC'], materials.empty20, 'empty20ftHC'),
+      // 40ft containers - darker colors
+      laden40: createMesh(geometries['40'], materials.laden40, 'laden40ft'),
+      laden40HC: createMesh(geometries['40HC'], materials.laden40, 'laden40ftHC'),
+      empty40: createMesh(geometries['40'], materials.empty40, 'empty40ft'),
+      empty40HC: createMesh(geometries['40HC'], materials.empty40, 'empty40ftHC'),
+    };
+
+    // Add all meshes to scene
+    Object.values(meshes.value).forEach(mesh => scene.value!.add(mesh));
+  }
+
+  // Determine which mesh to use for a container
+  function getMeshKey(isoType: string, isLaden: boolean): MeshKey {
+    const size = getContainerSize(isoType);
+    const hc = isHighCube(isoType);
+
+    if (size === '20ft') {
+      return isLaden ? (hc ? 'laden20HC' : 'laden20') : (hc ? 'empty20HC' : 'empty20');
+    } else {
+      // 40ft and 45ft both use 40ft geometry
+      return isLaden ? (hc ? 'laden40HC' : 'laden40') : (hc ? 'empty40HC' : 'empty40');
+    }
+  }
+
+  // Create a text sprite for container number label
+  function createContainerLabel(containerNumber: string, x: number, y: number, z: number): THREE.Sprite {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d')!;
+
+    // High-resolution canvas for crisp text
+    canvas.width = 256;
+    canvas.height = 64;
+
+    // Background with rounded corners
+    context.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    context.beginPath();
+    context.roundRect(4, 4, 248, 56, 8);
+    context.fill();
+
+    // Text
+    context.fillStyle = '#ffffff';
+    context.font = 'bold 28px monospace';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+
+    // Truncate to last 7 chars if too long (e.g., "6565958" from "HDMU6565958")
+    const displayText = containerNumber.length > 11
+      ? containerNumber.slice(-7)
+      : containerNumber;
+    context.fillText(displayText, 128, 32);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+
+    const sprite = new THREE.Sprite(material);
+    sprite.position.set(x, y, z);
+    sprite.scale.set(5, 1.25, 1); // Wider for container number
+
+    return sprite;
+  }
+
+  // Clear all existing labels
+  function clearLabels(): void {
+    for (const sprite of labelSprites) {
+      if (sprite.material.map) {
+        sprite.material.map.dispose();
+      }
+      sprite.material.dispose();
+      scene.value?.remove(sprite);
+    }
+    labelSprites.length = 0;
+  }
+
+  // Toggle label visibility
+  function toggleLabels(visible?: boolean): void {
+    showLabels.value = visible ?? !showLabels.value;
+    for (const sprite of labelSprites) {
+      sprite.visible = showLabels.value;
+    }
+  }
+
+  // Create wall text for container side (like real shipping containers)
+  function createWallText(
+    containerNumber: string,
+    x: number,
+    y: number,
+    z: number,
+    containerLength: number,
+    _containerHeight: number, // Kept for future use (text vertical positioning)
+    containerWidth: number,
+    _isLaden: boolean // Kept for future use (text color based on status)
+  ): THREE.Mesh {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d')!;
+
+    // High-resolution canvas for crisp text
+    canvas.width = 512;
+    canvas.height = 128;
+
+    // Transparent background - text only
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Text styling - white text with dark shadow for readability
+    // Real containers use white or black text depending on container color
+    context.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    context.shadowBlur = 4;
+    context.shadowOffsetX = 2;
+    context.shadowOffsetY = 2;
+
+    context.fillStyle = '#ffffff';
+    context.font = 'bold 64px monospace';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+
+    // Full container number (e.g., "HDMU6565958")
+    context.fillText(containerNumber, 256, 64);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+
+    // Create plane geometry sized proportionally to container
+    // Text should be about 60% of container length
+    const textWidth = containerLength * 0.7;
+    const textHeight = textWidth * 0.25; // Maintain aspect ratio
+
+    const geometry = new THREE.PlaneGeometry(textWidth, textHeight);
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+
+    // Position on the front side of the container (positive Z direction)
+    // Offset slightly to prevent z-fighting
+    mesh.position.set(
+      x,
+      y, // Center vertically on the container
+      z + containerWidth / 2 + 0.05 // Slightly in front of the container wall
+    );
+
+    // No rotation needed - PlaneGeometry faces +Z by default
+    // which is the direction we want (outward from container front)
+
+    return mesh;
+  }
+
+  // Clear all wall text meshes
+  function clearWallText(): void {
+    for (const mesh of wallTextMeshes) {
+      if (mesh.material instanceof THREE.MeshBasicMaterial && mesh.material.map) {
+        mesh.material.map.dispose();
+      }
+      (mesh.material as THREE.Material).dispose();
+      mesh.geometry.dispose();
+      scene.value?.remove(mesh);
+    }
+    wallTextMeshes.length = 0;
+  }
+
+  // Toggle wall text visibility
+  function toggleWallText(visible?: boolean): void {
+    showWallText.value = visible ?? !showWallText.value;
+    for (const mesh of wallTextMeshes) {
+      mesh.visible = showWallText.value;
+    }
+  }
+
+  // Clear all edge lines
+  function clearEdgeLines(): void {
+    for (const line of edgeLines) {
+      line.geometry.dispose();
+      (line.material as THREE.LineBasicMaterial).dispose();
+      scene.value?.remove(line);
+    }
+    edgeLines.length = 0;
+  }
+
+  // Create edge outline for a container with size-specific colors
+  function createContainerEdges(
+    length: number,
+    height: number,
+    width: number,
+    x: number,
+    y: number,
+    z: number,
+    isLaden: boolean,
+    size: '20ft' | '40ft' | '45ft'
+  ): THREE.LineSegments {
+    const geometry = new THREE.BoxGeometry(length, height, width);
+    const edges = new THREE.EdgesGeometry(geometry);
+    // Size-specific edge colors (darker variants for contrast)
+    const edgeColor = getContainerEdgeColor(isLaden, size);
+    const material = new THREE.LineBasicMaterial({
+      color: edgeColor,
+      linewidth: 2,
+    });
+    const lineSegments = new THREE.LineSegments(edges, material);
+    lineSegments.position.set(x, y, z);
+    geometry.dispose(); // Original box geometry no longer needed
+    return lineSegments;
+  }
+
+  function updateContainers(containers: ContainerPlacement[]): void {
+    if (!meshes.value || !scene.value) return;
+
+    containerMap.clear();
+    containerById.clear();
+    clearLabels(); // Clear existing labels
+    clearWallText(); // Clear existing wall text
+    clearEdgeLines(); // Clear existing edge outlines
+
+    // Reset all counts
+    (Object.keys(counts) as MeshKey[]).forEach(key => counts[key] = 0);
+
+    const matrix = new THREE.Matrix4();
+
+    // Build a map of positions to find top containers (for label display)
+    const positionMap = new Map<string, ContainerPlacement>();
+    for (const container of containers) {
+      // Store in quick lookup map
+      containerById.set(container.id, container);
+
+      const pos = container.position;
+      const key = `${pos.zone}-${pos.row}-${pos.bay}`;
+      const existing = positionMap.get(key);
+      // Keep the one with highest tier
+      if (!existing || pos.tier > existing.position.tier) {
+        positionMap.set(key, container);
+      }
+    }
+    const topContainerIds = new Set([...positionMap.values()].map(c => c.id));
+
+    for (const container of containers) {
+      const pos = container.position;
+      const zoneLayout = getZoneLayout(pos.zone as ZoneCode);
+      const isLaden = container.status === 'LADEN';
+      const meshKey = getMeshKey(container.iso_type, isLaden);
+      const size = getContainerSize(container.iso_type);
+      const hc = isHighCube(container.iso_type);
+
+      // Get the correct dimensions for this container
+      const dimKey = hc
+        ? (size === '20ft' ? '20ft_HC' : '40ft_HC')
+        : (size === '20ft' ? '20ft' : '40ft');
+      const containerHeight = CONTAINER_DIMENSIONS[dimKey].height;
+      const containerLength = CONTAINER_DIMENSIONS[dimKey].length;
+      const containerWidth = CONTAINER_DIMENSIONS[dimKey].width;
+
+      // Calculate world position
+      // Bay spacing (13.0m) is sized to fit 40ft containers (12.2m) with 0.4m gap on each side
+      //
+      // Sub-slot positioning:
+      // - 40ft/45ft: Always slot A, CENTERED in bay (uses full slot width)
+      // - 20ft slot A: Left half of bay
+      // - 20ft slot B: Right half of bay
+      //
+      // This allows fitting 2 × 20ft containers in a single 40ft bay slot
+
+      // X: Bay position based on size and sub_slot
+      let x: number;
+      const subSlot = pos.sub_slot || 'A'; // Default to 'A' for backwards compatibility
+
+      if (size === '20ft') {
+        // 20ft container: position based on sub_slot (A=left, B=right)
+        const bayStartX = zoneLayout.xOffset + (pos.bay - 1) * SPACING.bay;
+        if (subSlot === 'A') {
+          // Slot A: left side of bay
+          x = bayStartX + containerLength / 2 + SPACING.gap;
+        } else {
+          // Slot B: right side of bay (after 20ft container + gap)
+          x = bayStartX + containerLength + SPACING.gap * 2 + containerLength / 2;
+        }
+      } else {
+        // 40ft/45ft container: centered in bay slot (always uses slot A)
+        x = zoneLayout.xOffset + (pos.bay - 0.5) * SPACING.bay;
+      }
+
+      // Y: Tier position (vertical stacking)
+      const y = (pos.tier - 1) * SPACING.tier + containerHeight / 2;
+
+      // Z: Row position (container width direction)
+      const z = zoneLayout.zOffset + (pos.row - 0.5) * SPACING.row;
+
+      matrix.setPosition(x, y, z);
+
+      const mesh = meshes.value[meshKey];
+      const instanceId = counts[meshKey];
+      mesh.setMatrixAt(instanceId, matrix);
+      containerMap.set(container.id, { meshKey, instanceId, isLaden, size });
+      counts[meshKey]++;
+
+      // Create edge outline for this container (color varies by status and size)
+      const edges = createContainerEdges(containerLength, containerHeight, containerWidth, x, y, z, isLaden, size);
+      scene.value.add(edges);
+      edgeLines.push(edges);
+
+      // Only create floating label for TOP container in each stack (reduces clutter)
+      if (topContainerIds.has(container.id)) {
+        const labelY = y + containerHeight / 2 + 1.2; // Above container top
+        const label = createContainerLabel(container.container_number, x, labelY, z);
+        label.visible = showLabels.value;
+        scene.value.add(label);
+        labelSprites.push(label);
+      }
+
+      // Create wall text for EVERY container (visible from the side)
+      const wallText = createWallText(
+        container.container_number,
+        x,
+        y,
+        z,
+        containerLength,
+        containerHeight,
+        containerWidth,
+        isLaden
+      );
+      wallText.visible = showWallText.value;
+      scene.value.add(wallText);
+      wallTextMeshes.push(wallText);
+    }
+
+    // Update counts and mark matrices dirty
+    (Object.keys(meshes.value) as MeshKey[]).forEach(key => {
+      const mesh = meshes.value![key];
+      mesh.count = counts[key];
+      mesh.instanceMatrix.needsUpdate = true;
+
+      // CRITICAL: Recompute bounding sphere for raycasting to work!
+      // InstancedMesh uses the original geometry's bounding sphere for ray tests.
+      // After positioning instances across the yard, we must update it.
+      if (mesh.count > 0) {
+        mesh.computeBoundingSphere();
+      }
+    });
+  }
+
+  // Placement preview - ghost container at suggested position
+  let previewMesh: THREE.Mesh | null = null;
+
+  function showPlacementPreview(position: Position, isoType: string): void {
+    hidePlacementPreview();
+    if (!scene.value) return;
+
+    const size = getContainerSize(isoType);
+    const hc = isHighCube(isoType);
+    const dimKey = hc
+      ? (size === '20ft' ? '20ft_HC' : '40ft_HC')
+      : (size === '20ft' ? '20ft' : '40ft');
+
+    const dimensions = CONTAINER_DIMENSIONS[dimKey as keyof typeof CONTAINER_DIMENSIONS];
+    const zoneLayout = getZoneLayout(position.zone as ZoneCode);
+
+    // Create semi-transparent geometry
+    const geometry = new THREE.BoxGeometry(
+      dimensions.length,
+      dimensions.height,
+      dimensions.width
+    );
+    const material = new THREE.MeshLambertMaterial({
+      color: 0xfaad14, // Gold color for preview
+      transparent: true,
+      opacity: 0.6,
+    });
+
+    previewMesh = new THREE.Mesh(geometry, material);
+
+    // Calculate position (same logic as regular containers)
+    // Uses sub_slot for 20ft containers
+    let x: number;
+    const subSlot = position.sub_slot || 'A';
+
+    if (size === '20ft') {
+      const bayStartX = zoneLayout.xOffset + (position.bay - 1) * SPACING.bay;
+      if (subSlot === 'A') {
+        x = bayStartX + dimensions.length / 2 + SPACING.gap;
+      } else {
+        x = bayStartX + dimensions.length + SPACING.gap * 2 + dimensions.length / 2;
+      }
+    } else {
+      x = zoneLayout.xOffset + (position.bay - 0.5) * SPACING.bay;
+    }
+    const y = (position.tier - 1) * SPACING.tier + dimensions.height / 2;
+    const z = zoneLayout.zOffset + (position.row - 0.5) * SPACING.row;
+
+    previewMesh.position.set(x, y, z);
+    previewMesh.castShadow = true;
+
+    scene.value.add(previewMesh);
+  }
+
+  function hidePlacementPreview(): void {
+    if (previewMesh) {
+      scene.value?.remove(previewMesh);
+      previewMesh.geometry.dispose();
+      (previewMesh.material as THREE.Material).dispose();
+      previewMesh = null;
+    }
+  }
+
+  // Track current hovered container for color management
+  let currentHoveredId: number | null = null;
+  let currentSelectedId: number | null = null;
+
+  // Get the base color for a container based on current color mode
+  function getContainerBaseColor(container: ContainerPlacement): number {
+    if (colorMode.value === 'dwell_time') {
+      return getDwellTimeColor(container.dwell_time_days);
+    }
+    // Status mode with size-specific colors: 20ft = bright, 40ft = darker
+    const isLaden = container.status === 'LADEN';
+    const size = getContainerSize(container.iso_type);
+    return getContainerColor(isLaden, size);
+  }
+
+  // Recolor all containers based on current color mode and company filter
+  function applyColorMode(): void {
+    if (!meshes.value) return;
+
+    // Reset colors for all containers based on color mode
+    for (const [id, info] of containerMap) {
+      const container = containerById.get(id);
+      if (!container) continue;
+
+      const mesh = meshes.value[info.meshKey];
+      const baseColorHex = getContainerBaseColor(container);
+      const color = new THREE.Color(baseColorHex);
+
+      // Apply company filter: dim containers that don't match the selected company
+      if (filteredCompanyName.value) {
+        const containerCompany = container.company_name || 'Без компании';
+        if (containerCompany !== filteredCompanyName.value) {
+          // Blend 70% toward gray to dim non-matching containers
+          color.lerp(new THREE.Color(0xcccccc), 0.7);
+        }
+      }
+
+      mesh.setColorAt(info.instanceId, color);
+    }
+
+    // Update all meshes
+    (Object.keys(meshes.value) as MeshKey[]).forEach(key => {
+      if (meshes.value![key].instanceColor) {
+        meshes.value![key].instanceColor!.needsUpdate = true;
+      }
+    });
+
+    // Re-apply hover/selection highlights
+    applyHighlights();
+  }
+
+  // Apply hover and selection highlights on top of base colors
+  function applyHighlights(): void {
+    if (!meshes.value) return;
+
+    // Apply hover highlight (orange) - lower priority
+    if (currentHoveredId !== null && currentHoveredId !== currentSelectedId) {
+      const info = containerMap.get(currentHoveredId);
+      if (info && meshes.value[info.meshKey]) {
+        const mesh = meshes.value[info.meshKey];
+        mesh.setColorAt(info.instanceId, new THREE.Color(CONTAINER_COLORS.HOVERED));
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      }
+    }
+
+    // Apply selection highlight (gold) - higher priority
+    if (currentSelectedId !== null) {
+      const info = containerMap.get(currentSelectedId);
+      if (info && meshes.value[info.meshKey]) {
+        const mesh = meshes.value[info.meshKey];
+        mesh.setColorAt(info.instanceId, new THREE.Color(CONTAINER_COLORS.SELECTED));
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      }
+    }
+  }
+
+  // Set color mode and recolor all containers
+  function setColorMode(mode: ColorMode): void {
+    colorMode.value = mode;
+    applyColorMode();
+  }
+
+  // Apply company filter (dim non-matching containers)
+  function applyCompanyFilter(companyName: string | null): void {
+    filteredCompanyName.value = companyName;
+    applyColorMode(); // Re-apply colors with filter
+  }
+
+  function highlightContainer(containerId: number | null, isHover: boolean = false): void {
+    if (!meshes.value) return;
+
+    // Update tracking
+    if (isHover) {
+      currentHoveredId = containerId;
+    } else {
+      currentSelectedId = containerId;
+    }
+
+    // Reset all colors based on current color mode
+    applyColorMode();
+  }
+
+  // Separate function for hover highlighting
+  function hoverContainer(containerId: number | null): void {
+    highlightContainer(containerId, true);
+  }
+
+  // Separate function for selection highlighting
+  function selectContainer(containerId: number | null): void {
+    highlightContainer(containerId, false);
+  }
+
+  function getContainerAtPoint(
+    clientX: number,
+    clientY: number,
+    canvas: HTMLCanvasElement,
+    camera: THREE.Camera
+  ): ContainerPlacement | null {
+    if (!meshes.value) {
+      console.warn('getContainerAtPoint: meshes.value is null');
+      return null;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const allMeshes = Object.values(meshes.value);
+
+    // Debug logging removed - was too noisy
+
+    const intersects = raycaster.intersectObjects(allMeshes);
+
+    const hit = intersects[0];
+    if (!hit) {
+      return null;
+    }
+
+    if (hit.instanceId === undefined || !hit.object) return null;
+
+    // Find container by instance ID and mesh
+    for (const [id, info] of containerMap) {
+      if (info.instanceId === hit.instanceId && meshes.value[info.meshKey] === hit.object) {
+        return containerById.get(id) ?? null;
+      }
+    }
+
+    return null;
+  }
+
+  function dispose(): void {
+    if (meshes.value) {
+      Object.values(meshes.value).forEach(mesh => mesh.dispose());
+    }
+    clearLabels();
+    clearWallText();
+    clearEdgeLines();
+    containerMap.clear();
+    containerById.clear();
+  }
+
+  return {
+    meshes,
+    showLabels,
+    showWallText,
+    colorMode,
+    filteredCompanyName,
+    initMeshes,
+    updateContainers,
+    highlightContainer,
+    hoverContainer,
+    selectContainer,
+    getContainerAtPoint,
+    toggleLabels,
+    toggleWallText,
+    setColorMode,
+    applyCompanyFilter,
+    showPlacementPreview,
+    hidePlacementPreview,
+    dispose,
+  };
+}

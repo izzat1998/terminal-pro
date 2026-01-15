@@ -5,6 +5,7 @@ from .views import (
     ContainerEntryViewSet,
     ContainerOwnerViewSet,
     CraneOperationViewSet,
+    PlacementViewSet,
     PlateRecognizerAPIView,
     PreOrderViewSet,
 )
@@ -14,8 +15,11 @@ router = DefaultRouter()
 router.register(r"entries", ContainerEntryViewSet)
 router.register(r"owners", ContainerOwnerViewSet)
 router.register(r"crane-operations", CraneOperationViewSet, basename="crane-operation")
-router.register(r"plate-recognizer", PlateRecognizerAPIView, basename="plate-recognizer")
+router.register(
+    r"plate-recognizer", PlateRecognizerAPIView, basename="plate-recognizer"
+)
 router.register(r"preorders", PreOrderViewSet, basename="preorder")
+router.register(r"placement", PlacementViewSet, basename="placement")
 
 urlpatterns = [
     path("", include(router.urls)),

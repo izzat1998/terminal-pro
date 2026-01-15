@@ -68,6 +68,7 @@ class UserNestedSerializer(serializers.Serializer):
     """
     Nested serializer for User (recorded_by) - read-only representation
     """
+
     id = serializers.IntegerField()
     username = serializers.CharField()
     first_name = serializers.CharField()
@@ -113,11 +114,11 @@ class ContainerEntrySerializer(serializers.ModelSerializer):
     # Accept company ID for write operations
     company_id = serializers.PrimaryKeyRelatedField(
         queryset=Company.objects.filter(is_active=True),
-        source='company',
+        source="company",
         write_only=True,
         required=False,
         allow_null=True,
-        help_text="Company ID (optional, auto-populates client_name)"
+        help_text="Company ID (optional, auto-populates client_name)",
     )
     # Make entry_time writable for historical entries (admin can override)
     # Don't use allow_null=True so Django's default=timezone.now works when not provided
@@ -219,7 +220,7 @@ class ContainerEntrySerializer(serializers.ModelSerializer):
                 "id": instance.company.id,
                 "name": instance.company.name,
                 "slug": instance.company.slug,
-                "is_active": instance.company.is_active
+                "is_active": instance.company.is_active,
             }
         else:
             data["company"] = None
@@ -586,6 +587,7 @@ class VehicleEntryNestedSerializer(serializers.Serializer):
     """
     Lightweight nested serializer for VehicleEntry in PreOrder responses
     """
+
     id = serializers.IntegerField()
     license_plate = serializers.CharField()
     status = serializers.CharField()
@@ -601,6 +603,7 @@ class ContainerEntryNestedSerializer(serializers.Serializer):
     """
     Lightweight nested serializer for ContainerEntry (matched_entry) in PreOrder responses
     """
+
     id = serializers.IntegerField()
     container_number = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
@@ -618,6 +621,7 @@ class CustomerNestedSerializer(serializers.Serializer):
     """
     Nested serializer for Customer in PreOrder responses
     """
+
     id = serializers.IntegerField()
     username = serializers.CharField()
     first_name = serializers.CharField()
@@ -632,7 +636,11 @@ class CustomerNestedSerializer(serializers.Serializer):
     def get_company(self, obj):
         """Get company info from profile or legacy field"""
         company = None
-        if hasattr(obj, "customer_profile") and obj.customer_profile and obj.customer_profile.company:
+        if (
+            hasattr(obj, "customer_profile")
+            and obj.customer_profile
+            and obj.customer_profile.company
+        ):
             company = obj.customer_profile.company
         elif hasattr(obj, "company") and obj.company:
             company = obj.company
@@ -698,13 +706,17 @@ class PreOrderSerializer(serializers.ModelSerializer):
 
         # Vehicle entry - return nested object
         if instance.vehicle_entry:
-            data["vehicle_entry"] = VehicleEntryNestedSerializer(instance.vehicle_entry).data
+            data["vehicle_entry"] = VehicleEntryNestedSerializer(
+                instance.vehicle_entry
+            ).data
         else:
             data["vehicle_entry"] = None
 
         # Matched entry - return nested object
         if instance.matched_entry:
-            data["matched_entry"] = ContainerEntryNestedSerializer(instance.matched_entry).data
+            data["matched_entry"] = ContainerEntryNestedSerializer(
+                instance.matched_entry
+            ).data
         else:
             data["matched_entry"] = None
 
@@ -895,3 +907,192 @@ class VehicleEntryUpdateStatusSerializer(serializers.Serializer):
 
     status = serializers.ChoiceField(choices=VehicleEntry.STATUS_CHOICES)
     notes = serializers.CharField(required=False, allow_blank=True)
+
+
+# ============ Placement Serializers ============
+
+
+class PositionSerializer(serializers.Serializer):
+    """
+    Serializer for position coordinates (used in requests and responses).
+    """
+
+    zone = serializers.ChoiceField(
+        choices=[("A", "A"), ("B", "B"), ("C", "C"), ("D", "D"), ("E", "E")],
+        help_text="Terminal zone (A-E)",
+    )
+    row = serializers.IntegerField(
+        min_value=1,
+        max_value=10,
+        help_text="Row number (1-10)",
+    )
+    bay = serializers.IntegerField(
+        min_value=1,
+        max_value=10,
+        help_text="Bay number (1-10)",
+    )
+    tier = serializers.IntegerField(
+        min_value=1,
+        max_value=4,
+        help_text="Tier/level (1-4)",
+    )
+    coordinate = serializers.CharField(
+        read_only=True,
+        help_text="Formatted coordinate (e.g., A-R03-B15-T2)",
+    )
+
+
+class ContainerPositionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for ContainerPosition model.
+    """
+
+    from .models import ContainerPosition
+
+    coordinate = serializers.CharField(
+        source="coordinate_string",
+        read_only=True,
+    )
+    container_number = serializers.CharField(
+        source="container_entry.container.container_number",
+        read_only=True,
+    )
+
+    class Meta:
+        from .models import ContainerPosition
+
+        model = ContainerPosition
+        fields = [
+            "id",
+            "container_entry",
+            "container_number",
+            "zone",
+            "row",
+            "bay",
+            "tier",
+            "sub_slot",
+            "coordinate",
+            "auto_assigned",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "container_number",
+            "coordinate",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class PlacementLayoutSerializer(serializers.Serializer):
+    """
+    Serializer for 3D terminal layout response.
+    """
+
+    zones = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="List of zone codes (A-E)",
+    )
+    dimensions = serializers.DictField(
+        help_text="Terminal dimensions (max_rows, max_bays, max_tiers)",
+    )
+    containers = serializers.ListField(
+        help_text="List of positioned containers with coordinates",
+    )
+    stats = serializers.DictField(
+        help_text="Occupancy statistics",
+    )
+
+
+class PlacementSuggestRequestSerializer(serializers.Serializer):
+    """
+    Request serializer for auto-suggest position.
+    """
+
+    container_entry_id = serializers.IntegerField(
+        help_text="ID of the container entry to place",
+    )
+    zone_preference = serializers.ChoiceField(
+        choices=[("A", "A"), ("B", "B"), ("C", "C"), ("D", "D"), ("E", "E")],
+        required=False,
+        allow_null=True,
+        help_text="Preferred zone (optional)",
+    )
+
+
+class PlacementSuggestResponseSerializer(serializers.Serializer):
+    """
+    Response serializer for auto-suggest position.
+    """
+
+    suggested_position = PositionSerializer()
+    reason = serializers.CharField(help_text="Human-readable reason for suggestion")
+    alternatives = serializers.ListField(
+        child=PositionSerializer(),
+        help_text="Alternative positions",
+    )
+
+
+class PlacementAssignRequestSerializer(serializers.Serializer):
+    """
+    Request serializer for assigning position to container.
+    """
+
+    container_entry_id = serializers.IntegerField(
+        help_text="ID of the container entry to place",
+    )
+    position = PositionSerializer(
+        help_text="Target position coordinates",
+    )
+
+
+class PlacementMoveRequestSerializer(serializers.Serializer):
+    """
+    Request serializer for moving container to new position.
+    """
+
+    new_position = PositionSerializer(
+        help_text="New position coordinates",
+    )
+
+
+class PlacementAvailableRequestSerializer(serializers.Serializer):
+    """
+    Query params serializer for available positions.
+    """
+
+    zone = serializers.ChoiceField(
+        choices=[("A", "A"), ("B", "B"), ("C", "C"), ("D", "D"), ("E", "E")],
+        required=False,
+        allow_null=True,
+        help_text="Filter by zone (optional)",
+    )
+    tier = serializers.IntegerField(
+        min_value=1,
+        max_value=4,
+        required=False,
+        allow_null=True,
+        help_text="Filter by tier (optional)",
+    )
+    limit = serializers.IntegerField(
+        min_value=1,
+        max_value=100,
+        required=False,
+        default=50,
+        help_text="Max positions to return (default 50)",
+    )
+
+
+class UnplacedContainerSerializer(serializers.Serializer):
+    """
+    Serializer for containers without assigned positions.
+    """
+
+    id = serializers.IntegerField(help_text="Container entry ID")
+    container_number = serializers.CharField(help_text="Container number")
+    iso_type = serializers.CharField(help_text="ISO container type")
+    status = serializers.CharField(help_text="LADEN or EMPTY")
+    entry_time = serializers.DateTimeField(help_text="Entry timestamp")
+    dwell_time_days = serializers.IntegerField(help_text="Days on terminal")
+    company_name = serializers.CharField(help_text="Company or client name")

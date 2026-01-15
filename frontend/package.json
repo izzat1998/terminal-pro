@@ -8,15 +8,22 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
+    "@types/three": "^0.182.0",
     "ant-design-vue": "^4.2.6",
+    "three": "^0.182.0",
     "vue": "^3.5.22",
     "vue-router": "^4.5.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@types/lodash-es": "^4.17.12",
     "@types/node": "^24.6.0",
     "@vitejs/plugin-vue": "^6.0.1",
