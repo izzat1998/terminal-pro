@@ -1,102 +1,145 @@
 <script setup lang="ts">
 /**
- * Container Placement Page - 3D Terminal View with Table Integration
+ * Container Placement Page - 3D-First Terminal View
+ *
+ * Streamlined UX: 3D view with floating unplaced containers list.
+ * Click "Разместить" → markers appear in 3D → click marker → confirmation modal.
+ *
+ * Auto-fullscreen: When entering placement mode, the view expands to fullscreen
+ * for an immersive, distraction-free placement experience.
  */
 
-import { ref, onMounted } from 'vue';
-import { ReloadOutlined } from '@ant-design/icons-vue';
+import { ref, computed, onMounted, watch } from 'vue';
+import { ReloadOutlined, FullscreenExitOutlined } from '@ant-design/icons-vue';
 import { usePlacementState } from '../composables/usePlacementState';
+import { useFullscreen } from '../composables/useFullscreen';
 import TerminalLayout3D from '../components/TerminalLayout3D.vue';
-import PlacementPanel from '../components/PlacementPanel.vue';
 import CompanyCards from '../components/CompanyCards.vue';
-import type { ContainerPlacement, UnplacedContainer } from '../types/placement';
+import UnplacedContainersList from '../components/UnplacedContainersList.vue';
+import PlacementConfirmModal from '../components/placement/PlacementConfirmModal.vue';
+import WorkOrderTaskPanel from '../components/placement/WorkOrderTaskPanel.vue';
+import type { ContainerPlacement, UnplacedContainer, Position, PositionMarkerData, WorkOrder } from '../types/placement';
 
-// View mode: table or 3d
-const viewMode = ref<'table' | '3d'>('3d');
-
-// State
+// State from composable
 const {
   positionedContainers,
   unplacedContainers,
   stats,
   loading,
-  selectedContainerId,
   selectContainer,
   refreshAll,
   // Company filtering
   companyStats,
   selectedCompanyName,
   selectCompany,
-  filteredPositionedContainers,
-  filteredUnplacedContainers,
+  // Placement mode
+  placingContainerId,
+  effectivePosition,
+  exitPlacementMode,
+  isPlacementMode,
 } = usePlacementState();
 
-// Selected unplaced container for placement
-const selectedUnplaced = ref<UnplacedContainer | null>(null);
+// Fullscreen state for immersive placement experience
+const { isFullscreen, enterFullscreen, exitFullscreen } = useFullscreen();
 
-// Placement modal
-const showPlacementModal = ref(false);
+// Auto-enter fullscreen when placement mode starts
+watch(isPlacementMode, (active) => {
+  if (active) {
+    enterFullscreen();
+  } else {
+    exitFullscreen();
+  }
+});
+
+// Sync: if user manually exits fullscreen (ESC), also exit placement mode
+watch(isFullscreen, (active) => {
+  if (!active && isPlacementMode.value) {
+    exitPlacementMode();
+  }
+});
+
+// Confirmation modal state
+const showConfirmModal = ref(false);
+const selectedMarkerData = ref<PositionMarkerData | null>(null);
+
+// Ref to TerminalLayout3D for camera control
+const terminalLayout3DRef = ref<InstanceType<typeof TerminalLayout3D> | null>(null);
+
+// Find the container being placed
+const placingContainer = computed((): UnplacedContainer | null => {
+  if (!placingContainerId.value) return null;
+  return unplacedContainers.value.find(c => c.id === placingContainerId.value) ?? null;
+});
+
+// Get selected position from marker data or effective position
+const selectedPosition = computed((): Position | null => {
+  if (!selectedMarkerData.value) return effectivePosition.value;
+  return selectedMarkerData.value.position;
+});
+
+// Get coordinate string for modal display
+const selectedCoordinate = computed((): string => {
+  if (selectedMarkerData.value) return selectedMarkerData.value.coordinate;
+  return effectivePosition.value?.coordinate ?? '';
+});
+
+// Check if selected position is recommended (primary or alternative) vs just available
+const isSelectedRecommended = computed((): boolean => {
+  if (!selectedMarkerData.value) return true;
+  return selectedMarkerData.value.type !== 'available';
+});
 
 // Initialize data
 onMounted(async () => {
   await refreshAll();
 });
 
-// Table columns for positioned containers
-const positionedColumns = [
-  { title: 'Номер контейнера', dataIndex: 'container_number', key: 'container_number' },
-  { title: 'Тип', dataIndex: 'iso_type', key: 'iso_type', width: 80 },
-  { title: 'Статус', dataIndex: 'status', key: 'status', width: 100 },
-  { title: 'Позиция', dataIndex: ['position', 'coordinate'], key: 'position', width: 140 },
-  { title: 'Дни на терминале', dataIndex: 'dwell_time_days', key: 'dwell_time_days', width: 120 },
-  { title: 'Компания', dataIndex: 'company_name', key: 'company_name' },
-];
-
-// Table columns for unplaced containers
-const unplacedColumns = [
-  { title: 'Номер контейнера', dataIndex: 'container_number', key: 'container_number' },
-  { title: 'Тип', dataIndex: 'iso_type', key: 'iso_type', width: 80 },
-  { title: 'Статус', dataIndex: 'status', key: 'status', width: 100 },
-  { title: 'Дни на терминале', dataIndex: 'dwell_time_days', key: 'dwell_time_days', width: 120 },
-  { title: 'Компания', dataIndex: 'company_name', key: 'company_name' },
-  { title: 'Действие', key: 'action', width: 120 },
-];
-
 // Handle 3D container click
 function handle3DContainerClick(container: ContainerPlacement): void {
   selectContainer(container.id);
 }
 
-// Open placement modal for unplaced container
-function openPlacement(container: UnplacedContainer): void {
-  selectedUnplaced.value = container;
-  showPlacementModal.value = true;
+// Handle marker selection in 3D view
+function handleMarkerSelect(marker: PositionMarkerData): void {
+  selectedMarkerData.value = marker;
+  showConfirmModal.value = true;
 }
 
-// Handle placement complete
-async function onPlacementComplete(): Promise<void> {
-  showPlacementModal.value = false;
-  selectedUnplaced.value = null;
+// Handle modal confirmation (work order created)
+async function handleModalConfirm(): Promise<void> {
+  showConfirmModal.value = false;
+  selectedMarkerData.value = null;
+  exitPlacementMode();
   await refreshAll();
 }
 
-// Table row click (positioned)
-function onPositionedRowClick(record: ContainerPlacement): void {
-  selectContainer(record.id);
+// Handle modal cancel
+function handleModalCancel(): void {
+  showConfirmModal.value = false;
+  selectedMarkerData.value = null;
+  // Don't exit placement mode - user might want to select a different marker
 }
 
-// Compute row class for highlighting
-function getRowClassName(record: ContainerPlacement): string {
-  return record.id === selectedContainerId.value ? 'selected-row' : '';
+// Handle focus request from task panel
+function handleFocusTask(task: WorkOrder): void {
+  const position: Position = {
+    zone: task.target_zone,
+    row: task.target_row,
+    bay: task.target_bay,
+    tier: task.target_tier,
+    sub_slot: task.target_sub_slot,
+    coordinate: task.target_coordinate,
+  };
+  terminalLayout3DRef.value?.focusOnPosition(position, task.iso_type);
 }
 </script>
 
 <template>
-  <div class="container-placement-page">
-    <!-- Header with stats and view toggle -->
-    <a-card class="header-card" :bordered="false">
+  <div :class="['container-placement-page', { 'is-fullscreen': isFullscreen }]">
+    <!-- Header with stats (hidden in fullscreen) -->
+    <a-card v-show="!isFullscreen" class="header-card" :bordered="false">
       <a-row :gutter="16" align="middle">
-        <a-col :span="16">
+        <a-col :span="18">
           <a-space size="large">
             <a-statistic
               title="На терминале"
@@ -115,134 +158,153 @@ function getRowClassName(record: ContainerPlacement): string {
             />
           </a-space>
         </a-col>
-        <a-col :span="8" style="text-align: right">
-          <a-space>
-            <a-button @click="refreshAll" :loading="loading">
-              <template #icon><ReloadOutlined /></template>
-              Обновить
-            </a-button>
-            <a-radio-group v-model:value="viewMode" button-style="solid">
-              <a-radio-button value="3d">3D вид</a-radio-button>
-              <a-radio-button value="table">Таблица</a-radio-button>
-            </a-radio-group>
-          </a-space>
+        <a-col :span="6" style="text-align: right">
+          <a-button @click="refreshAll" :loading="loading">
+            <template #icon><ReloadOutlined /></template>
+            Обновить
+          </a-button>
         </a-col>
       </a-row>
     </a-card>
 
-    <!-- Company filter cards -->
+    <!-- Company filter cards (hidden in fullscreen) -->
     <CompanyCards
+      v-show="!isFullscreen"
       :companies="companyStats"
       :selected-company="selectedCompanyName"
       :total-count="positionedContainers.length"
       @select="selectCompany"
     />
 
-    <!-- Main content -->
-    <a-row :gutter="16" class="main-content">
-      <!-- 3D View or Table -->
-      <a-col :span="showPlacementModal ? 16 : 24">
-        <a-card :bordered="false">
-          <!-- 3D View -->
-          <TerminalLayout3D
-            v-if="viewMode === '3d'"
-            @container-click="handle3DContainerClick"
-          />
-
-          <!-- Table View -->
-          <template v-else>
-            <!-- Positioned containers -->
-            <a-typography-title :level="5" class="mb-3">
-              Размещённые контейнеры ({{ filteredPositionedContainers.length }}{{ selectedCompanyName ? ` из ${positionedContainers.length}` : '' }})
-            </a-typography-title>
-            <a-table
-              :columns="positionedColumns"
-              :data-source="filteredPositionedContainers"
-              :row-key="(record: ContainerPlacement) => record.id"
-              :row-class-name="getRowClassName"
-              :pagination="{ pageSize: 10, showSizeChanger: true }"
-              :loading="loading"
-              size="small"
-              :custom-row="(record: ContainerPlacement) => ({
-                onClick: () => onPositionedRowClick(record),
-                style: { cursor: 'pointer' }
-              })"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'status'">
-                  <a-tag :color="record.status === 'LADEN' ? 'green' : 'blue'">
-                    {{ record.status === 'LADEN' ? 'Гружёный' : 'Порожний' }}
-                  </a-tag>
-                </template>
-              </template>
-            </a-table>
-
-            <!-- Unplaced containers -->
-            <a-divider />
-            <a-typography-title :level="5" class="mb-3">
-              <a-badge :count="filteredUnplacedContainers.length" :number-style="{ backgroundColor: '#fa8c16' }">
-                <span style="padding-right: 10px">Требуют размещения{{ selectedCompanyName ? ` (${filteredUnplacedContainers.length} из ${unplacedContainers.length})` : '' }}</span>
-              </a-badge>
-            </a-typography-title>
-            <a-table
-              :columns="unplacedColumns"
-              :data-source="filteredUnplacedContainers"
-              :row-key="(record: UnplacedContainer) => record.id"
-              :pagination="{ pageSize: 10 }"
-              :loading="loading"
-              size="small"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'status'">
-                  <a-tag :color="record.status === 'LADEN' ? 'green' : 'blue'">
-                    {{ record.status === 'LADEN' ? 'Гружёный' : 'Порожний' }}
-                  </a-tag>
-                </template>
-                <template v-if="column.key === 'action'">
-                  <a-button type="link" size="small" @click="openPlacement(record)">
-                    Разместить
-                  </a-button>
-                </template>
-              </template>
-            </a-table>
-          </template>
-        </a-card>
-      </a-col>
-
-      <!-- Placement Panel (sidebar) -->
-      <a-col v-if="showPlacementModal" :span="8">
-        <PlacementPanel
-          :selected-container="selectedUnplaced"
-          @close="showPlacementModal = false"
-          @placed="onPlacementComplete"
+    <!-- Main 3D content with floating panel -->
+    <a-card :bordered="false" :class="['main-content-card', { 'fullscreen-card': isFullscreen }]">
+      <div class="terminal-container">
+        <!-- 3D View (always visible) -->
+        <TerminalLayout3D
+          ref="terminalLayout3DRef"
+          :is-fullscreen="isFullscreen"
+          @container-click="handle3DContainerClick"
+          @marker-select="handleMarkerSelect"
         />
-      </a-col>
-    </a-row>
+
+        <!-- Floating Unplaced Containers List (top-left) -->
+        <UnplacedContainersList />
+
+        <!-- Floating Work Order Task Panel (top-right) -->
+        <WorkOrderTaskPanel @focus-task="handleFocusTask" />
+
+        <!-- Fullscreen Exit Hint -->
+        <div v-if="isFullscreen" class="fullscreen-exit-hint">
+          <a-button
+            type="text"
+            class="exit-btn"
+            @click="exitPlacementMode"
+          >
+            <template #icon><FullscreenExitOutlined /></template>
+            ESC для выхода
+          </a-button>
+        </div>
+      </div>
+    </a-card>
+
+    <!-- Placement Confirmation Modal -->
+    <PlacementConfirmModal
+      :open="showConfirmModal"
+      :container="placingContainer"
+      :position="selectedPosition"
+      :coordinate="selectedCoordinate"
+      :is-recommended="isSelectedRecommended"
+      @confirm="handleModalConfirm"
+      @cancel="handleModalCancel"
+    />
   </div>
 </template>
 
 <style scoped>
 .container-placement-page {
   padding: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .header-card {
   margin-bottom: 16px;
+  flex-shrink: 0;
 }
 
-.main-content {
+.main-content-card {
+  flex: 1;
+  min-height: 0;
+}
+
+.main-content-card :deep(.ant-card-body) {
+  height: 100%;
+  padding: 0;
+}
+
+/* Container for 3D view with floating panels */
+.terminal-container {
+  position: relative;
+  height: 100%;
   min-height: 600px;
 }
 
-.mb-3 {
-  margin-bottom: 12px;
+/* ═══════════════════════════════════════════════════════════════════
+   FULLSCREEN MODE STYLES
+   Immersive experience when placing containers - covers entire viewport
+   ═══════════════════════════════════════════════════════════════════ */
+
+.container-placement-page.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  padding: 0;
+  background: #d4d4d4; /* Matches ground color for seamless look */
 }
 
-:deep(.selected-row) {
-  background-color: rgba(22, 119, 255, 0.1) !important;
+.container-placement-page.is-fullscreen .fullscreen-card {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  border-radius: 0;
+  border: none;
 }
 
-:deep(.selected-row:hover td) {
-  background-color: rgba(22, 119, 255, 0.15) !important;
+.container-placement-page.is-fullscreen .fullscreen-card :deep(.ant-card-body) {
+  height: 100%;
+  padding: 0;
+}
+
+.container-placement-page.is-fullscreen .terminal-container {
+  min-height: 100%;
+  height: 100%;
+}
+
+/* Fullscreen exit hint - positioned at top right */
+.fullscreen-exit-hint {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
+}
+
+.fullscreen-exit-hint .exit-btn {
+  background: rgba(255, 255, 255, 0.9);
+  color: #595959;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  height: auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.fullscreen-exit-hint .exit-btn:hover {
+  background: #fff;
+  color: #262626;
+  border-color: #1677ff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
 }
 </style>
