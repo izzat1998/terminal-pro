@@ -331,6 +331,13 @@ class CustomerProfile(TimestampedModel):
         return self.telegram_user_id is not None
 
 
+class BillingMethod(models.TextChoices):
+    """Billing method for monthly statements."""
+
+    SPLIT = "split", "Раздельный расчёт"
+    EXIT_MONTH = "exit_month", "По месяцу выхода"
+
+
 class Company(TimestampedModel):
     """
     Company model representing terminal customers (businesses).
@@ -371,6 +378,13 @@ class Company(TimestampedModel):
         default=False,
         verbose_name="Уведомления включены",
         help_text="Отправлять уведомления в Telegram при создании записей контейнеров",
+    )
+    billing_method = models.CharField(
+        max_length=20,
+        choices=BillingMethod.choices,
+        default=BillingMethod.SPLIT,
+        verbose_name="Метод расчёта",
+        help_text="Метод расчёта для ежемесячных выписок",
     )
 
     class Meta:
