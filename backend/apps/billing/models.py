@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from apps.core.models import TimestampedModel
@@ -208,3 +208,163 @@ class TariffRate(TimestampedModel):
             f"{self.get_container_status_display()}: "
             f"${self.daily_rate_usd}/день"
         )
+
+
+class MonthlyStatement(TimestampedModel):
+    """
+    Persisted monthly billing statement for a company.
+
+    Statements are generated on-demand and cached for historical reference.
+    Each statement contains line items for containers billed in that period.
+    """
+
+    company = models.ForeignKey(
+        "accounts.Company",
+        on_delete=models.CASCADE,
+        related_name="statements",
+        verbose_name="Компания",
+    )
+    year = models.PositiveIntegerField(verbose_name="Год")
+    month = models.PositiveIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(12)],
+        verbose_name="Месяц",
+    )
+    billing_method = models.CharField(
+        max_length=20,
+        choices=[("split", "Раздельный расчёт"), ("exit_month", "По месяцу выхода")],
+        verbose_name="Метод расчёта",
+        help_text="Snapshot of billing method used at generation time",
+    )
+
+    # Cached totals
+    total_containers = models.PositiveIntegerField(default=0, verbose_name="Всего контейнеров")
+    total_billable_days = models.PositiveIntegerField(default=0, verbose_name="Оплачиваемых дней")
+    total_usd = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Итого USD"
+    )
+    total_uzs = models.DecimalField(
+        max_digits=15, decimal_places=2, default=Decimal("0.00"), verbose_name="Итого UZS"
+    )
+
+    # Metadata
+    generated_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата формирования")
+    generated_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="generated_statements",
+        verbose_name="Сформировано пользователем",
+    )
+
+    class Meta:
+        verbose_name = "Ежемесячная выписка"
+        verbose_name_plural = "Ежемесячные выписки"
+        ordering = ["-year", "-month"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "year", "month"],
+                name="unique_statement_per_company_month",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "year", "month"], name="statement_company_period_idx"),
+            models.Index(fields=["year", "month"], name="statement_period_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.company.name} - {self.month:02d}/{self.year}"
+
+    @property
+    def month_name(self) -> str:
+        """Return Russian month name."""
+        months = [
+            "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+            "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+        ]
+        return months[self.month - 1]
+
+    @property
+    def billing_method_display(self) -> str:
+        """Return display name for billing method."""
+        return "Раздельный расчёт" if self.billing_method == "split" else "По месяцу выхода"
+
+
+class StatementLineItem(TimestampedModel):
+    """
+    Individual container cost entry within a statement.
+
+    Stores a snapshot of container data at generation time so the statement
+    remains accurate even if container data is later modified.
+    """
+
+    statement = models.ForeignKey(
+        MonthlyStatement,
+        on_delete=models.CASCADE,
+        related_name="line_items",
+        verbose_name="Выписка",
+    )
+    container_entry = models.ForeignKey(
+        "terminal_operations.ContainerEntry",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="statement_line_items",
+        verbose_name="Запись контейнера",
+        help_text="Reference to original entry (may be null if deleted)",
+    )
+
+    # Snapshot data (won't change if container data updates)
+    container_number = models.CharField(max_length=20, verbose_name="Номер контейнера")
+    container_size = models.CharField(
+        max_length=10,
+        choices=ContainerSize.choices,
+        verbose_name="Размер контейнера",
+    )
+    container_status = models.CharField(
+        max_length=10,
+        choices=ContainerBillingStatus.choices,
+        verbose_name="Статус контейнера",
+    )
+
+    # Period for this statement (may be subset of total stay)
+    period_start = models.DateField(verbose_name="Начало периода")
+    period_end = models.DateField(verbose_name="Конец периода")
+    is_still_on_terminal = models.BooleanField(default=False, verbose_name="На терминале")
+
+    # Day breakdown
+    total_days = models.PositiveIntegerField(verbose_name="Всего дней")
+    free_days = models.PositiveIntegerField(verbose_name="Льготных дней")
+    billable_days = models.PositiveIntegerField(verbose_name="Оплачиваемых дней")
+
+    # Rates used
+    daily_rate_usd = models.DecimalField(
+        max_digits=10, decimal_places=2, verbose_name="Ставка USD/день"
+    )
+    daily_rate_uzs = models.DecimalField(
+        max_digits=12, decimal_places=2, verbose_name="Ставка UZS/день"
+    )
+
+    # Calculated amounts
+    amount_usd = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Сумма USD")
+    amount_uzs = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Сумма UZS")
+
+    class Meta:
+        verbose_name = "Позиция выписки"
+        verbose_name_plural = "Позиции выписки"
+        ordering = ["container_number"]
+        indexes = [
+            models.Index(fields=["statement", "container_number"], name="lineitem_stmt_container_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.container_number} ({self.statement})"
+
+    @property
+    def container_size_display(self) -> str:
+        """Return display name for container size."""
+        return "20 футов" if self.container_size == "20ft" else "40 футов"
+
+    @property
+    def container_status_display(self) -> str:
+        """Return display name for container status."""
+        return "Груженый" if self.container_status == "laden" else "Порожний"
