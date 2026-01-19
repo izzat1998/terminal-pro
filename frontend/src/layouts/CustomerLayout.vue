@@ -37,7 +37,7 @@
       <a-tabs v-if="company" v-model:activeKey="activeTab" class="header-tabs" @change="handleTabChange">
         <a-tab-pane key="dashboard" tab="Статистика" />
         <a-tab-pane key="containers" tab="Контейнеры" />
-        <a-tab-pane key="storage-costs" tab="Стоимость хранения" />
+        <a-tab-pane key="billing" tab="Биллинг" />
         <a-tab-pane key="orders" tab="Заказы" />
         <a-tab-pane key="users" tab="Пользователи" />
       </a-tabs>
@@ -73,7 +73,7 @@ const loading = computed(() => !user.value);
 const getTabFromRoute = (routeName: string | undefined): string => {
   if (routeName?.includes('Dashboard')) return 'dashboard';
   if (routeName?.includes('Containers')) return 'containers';
-  if (routeName?.includes('StorageCosts')) return 'storage-costs';
+  if (routeName?.includes('Billing')) return 'billing';
   if (routeName?.includes('Orders')) return 'orders';
   if (routeName?.includes('Users')) return 'users';
   return 'dashboard';
@@ -91,7 +91,7 @@ const handleTabChange = (key: string) => {
   const tabRoutes: Record<string, string> = {
     dashboard: '/customer/dashboard',
     containers: '/customer/containers',
-    'storage-costs': '/customer/storage-costs',
+    billing: '/customer/billing',
     orders: '/customer/orders',
     users: '/customer/users',
   };

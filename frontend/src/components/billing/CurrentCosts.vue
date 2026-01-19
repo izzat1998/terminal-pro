@@ -1,13 +1,7 @@
 <template>
-  <a-card :bordered="false" class="content-card">
-    <template #title>
-      <div class="card-title">
-        <DollarOutlined style="color: #52c41a; margin-right: 8px;" />
-        Стоимость хранения
-      </div>
-    </template>
-
-    <template #extra>
+  <div class="current-costs">
+    <!-- Header with search and export -->
+    <div class="header-actions">
       <a-space>
         <a-input-search
           v-model:value="searchText"
@@ -20,7 +14,7 @@
           Экспорт
         </a-button>
       </a-space>
-    </template>
+    </div>
 
     <!-- Summary Statistics -->
     <a-row :gutter="[16, 16]" style="margin-bottom: 20px;">
@@ -151,7 +145,7 @@
       :entry-id="selectedEntryId"
       :container-number="selectedContainerNumber"
     />
-  </a-card>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -160,7 +154,6 @@ import { message } from 'ant-design-vue';
 import type { TableProps } from 'ant-design-vue';
 import type { Dayjs } from 'dayjs';
 import {
-  DollarOutlined,
   DownloadOutlined,
   ContainerOutlined,
   CalendarOutlined,
@@ -168,7 +161,7 @@ import {
 } from '@ant-design/icons-vue';
 import { http } from '../../utils/httpClient';
 import type { PaginatedResponse } from '../../types/api';
-import StorageCostModal from '../../components/StorageCostModal.vue';
+import StorageCostModal from '../StorageCostModal.vue';
 
 interface StorageCostItem {
   container_entry_id: number;
@@ -193,20 +186,6 @@ interface CostSummary {
   total_usd: string;
   total_uzs: string;
 }
-
-interface Company {
-  id: number;
-  name: string;
-  slug: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-defineProps<{
-  company: Company | null;
-  loading: boolean;
-}>();
 
 const costs = ref<StorageCostItem[]>([]);
 const loading = ref(false);
@@ -397,13 +376,12 @@ fetchStorageCosts();
 </script>
 
 <style scoped>
-.content-card {
-  border-radius: 2px;
+.current-costs {
+  padding: 8px 0;
 }
 
-.card-title {
-  display: flex;
-  align-items: center;
+.header-actions {
+  margin-bottom: 16px;
 }
 
 .period-end {

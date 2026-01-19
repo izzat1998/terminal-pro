@@ -17,7 +17,7 @@ import CustomerPreOrders from '../views/customer/PreOrders.vue';
 import CustomerContainers from '../views/customer/Containers.vue';
 import CustomerUsers from '../views/customer/Users.vue';
 import CustomerDashboard from '../views/customer/Dashboard.vue';
-import CustomerStorageCosts from '../views/customer/StorageCosts.vue';
+import CustomerBilling from '../views/customer/Billing.vue';
 import CompanyContainers from '../views/company/CompanyContainers.vue';
 import { useAuth } from '../composables/useAuth';
 import AppLayout from '../components/AppLayout.vue'
@@ -96,10 +96,10 @@ const routes = [
             meta: { title: 'Пользователи компании - МТТ', roles: ['customer'] as UserRole[] },
           },
           {
-            path: 'storage-costs',
-            name: 'CustomerStorageCosts',
-            component: CustomerStorageCosts,
-            meta: { title: 'Стоимость хранения - МТТ', roles: ['customer'] as UserRole[] },
+            path: 'billing',
+            name: 'CustomerBilling',
+            component: CustomerBilling,
+            meta: { title: 'Биллинг - МТТ', roles: ['customer'] as UserRole[] },
           },
         ],
       },
