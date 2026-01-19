@@ -14,7 +14,7 @@
  * - Позиция (target_coordinate)
  * - Статус (status with badge) - PENDING or COMPLETED
  * - Техника (assigned_to_vehicle)
- * - Завершено (completed_at)
+ * - Создано (created_at)
  */
 
 import { computed } from 'vue';
@@ -94,12 +94,6 @@ const columns = computed<ColumnsType<WorkOrder>>(() => [
     title: 'Техника',
     key: 'vehicle',
     width: 160,
-  },
-  {
-    title: 'Завершено',
-    dataIndex: 'completed_at',
-    key: 'completed_at',
-    width: 140,
   },
   {
     title: 'Создано',
@@ -257,14 +251,6 @@ const hasActiveFilters = computed(() =>
               <div class="cell-secondary">
                 {{ record.assigned_to_vehicle.vehicle_type_display }}
               </div>
-            </template>
-            <span v-else class="cell-secondary">—</span>
-          </template>
-
-          <!-- Completed at -->
-          <template v-else-if="column.key === 'completed_at'">
-            <template v-if="record.completed_at">
-              {{ formatRelativeTime(record.completed_at) }}
             </template>
             <span v-else class="cell-secondary">—</span>
           </template>
