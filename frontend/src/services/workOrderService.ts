@@ -2,7 +2,7 @@
  * Work Order Service - API client for placement work order management
  *
  * Work orders represent placement tasks assigned to terminal vehicles (yard equipment).
- * Flow: Create → Assign → Accept → Start → Complete → Verify
+ * Simplified flow: PENDING → COMPLETED
  */
 
 import { http } from '../utils/httpClient';
@@ -151,13 +151,12 @@ export async function getAllWorkOrders(params?: WorkOrderFilterParams): Promise<
 }
 
 /**
- * Get count of work orders by status (for sidebar badge).
- * Returns only active (non-completed) work orders count.
+ * Get count of active work orders (for sidebar badge).
+ * Returns only PENDING work orders count.
  */
 export async function getActiveWorkOrdersCount(): Promise<number> {
-  // Get work orders that are not completed or verified
   const response = await http.get<PaginatedResponse<WorkOrder>>(
-    `${BASE_URL}/?status__in=PENDING,ASSIGNED,ACCEPTED,IN_PROGRESS&page_size=1`
+    `${BASE_URL}/?status=PENDING&page_size=1`
   );
   return response.count;
 }
