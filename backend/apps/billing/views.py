@@ -2,6 +2,7 @@
 API views for billing and storage cost functionality.
 """
 
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status, viewsets
@@ -25,7 +26,7 @@ from .serializers import (
     TariffSerializer,
     TariffUpdateSerializer,
 )
-from .services import StorageCostService
+from .services import StatementExportService, StorageCostService
 from .services.statement_service import MonthlyStatementService
 
 
@@ -447,3 +448,92 @@ class CustomerAvailablePeriodsView(APIView):
 
         serializer = AvailablePeriodSerializer(periods, many=True)
         return Response({"success": True, "data": serializer.data})
+
+
+class CustomerStatementExportExcelView(APIView):
+    """
+    Export statement to Excel.
+
+    GET /api/customer/billing/statements/{year}/{month}/export/excel/
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request, year: int, month: int):
+        profile = request.user.get_profile()
+        if not profile or not profile.company:
+            return Response(
+                {"success": False, "error": {"code": "NO_COMPANY", "message": "Компания не найдена"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate month
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Get or generate statement
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=profile.company,
+            year=year,
+            month=month,
+            user=request.user,
+        )
+
+        # Export to Excel
+        export_service = StatementExportService()
+        excel_file = export_service.export_to_excel(statement)
+        filename = export_service.get_excel_filename(statement)
+
+        response = HttpResponse(
+            excel_file.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class CustomerStatementExportPdfView(APIView):
+    """
+    Export statement to PDF.
+
+    GET /api/customer/billing/statements/{year}/{month}/export/pdf/
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request, year: int, month: int):
+        profile = request.user.get_profile()
+        if not profile or not profile.company:
+            return Response(
+                {"success": False, "error": {"code": "NO_COMPANY", "message": "Компания не найдена"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate month
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Get or generate statement
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=profile.company,
+            year=year,
+            month=month,
+            user=request.user,
+        )
+
+        # Export to PDF
+        export_service = StatementExportService()
+        pdf_file = export_service.export_to_pdf(statement)
+        filename = export_service.get_pdf_filename(statement)
+
+        response = HttpResponse(pdf_file.getvalue(), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response

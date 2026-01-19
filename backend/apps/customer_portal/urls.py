@@ -7,6 +7,8 @@ from rest_framework.routers import DefaultRouter
 
 from apps.billing.views import (
     CustomerAvailablePeriodsView,
+    CustomerStatementExportExcelView,
+    CustomerStatementExportPdfView,
     CustomerStatementListView,
     CustomerStatementView,
     CustomerStorageCostView,
@@ -55,5 +57,16 @@ urlpatterns = router.urls + [
         "billing/available-periods/",
         CustomerAvailablePeriodsView.as_view(),
         name="customer-available-periods",
+    ),
+    # Statement export endpoints
+    path(
+        "billing/statements/<int:year>/<int:month>/export/excel/",
+        CustomerStatementExportExcelView.as_view(),
+        name="customer-statement-export-excel",
+    ),
+    path(
+        "billing/statements/<int:year>/<int:month>/export/pdf/",
+        CustomerStatementExportPdfView.as_view(),
+        name="customer-statement-export-pdf",
     ),
 ]

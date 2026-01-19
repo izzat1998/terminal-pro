@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Выписка {{ statement.month_name }} {{ statement.year }}</title>
+    <style>
+        body {
+            font-family: 'DejaVu Sans', Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #333;
+            margin: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #4472C4;
+            padding-bottom: 15px;
+        }
+        .header h1 {
+            color: #4472C4;
+            margin: 0 0 10px 0;
+            font-size: 24px;
+        }
+        .company-info {
+            margin-bottom: 20px;
+        }
+        .company-info p {
+            margin: 5px 0;
+        }
+        .summary {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .summary h3 {
+            margin: 0 0 10px 0;
+            color: #4472C4;
+        }
+        .summary-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .summary-item {
+            flex: 1;
+            min-width: 150px;
+        }
+        .summary-item .label {
+            font-size: 11px;
+            color: #666;
+        }
+        .summary-item .value {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th {
+            background: #4472C4;
+            color: white;
+            padding: 10px 5px;
+            text-align: left;
+            font-size: 11px;
+        }
+        td {
+            padding: 8px 5px;
+            border-bottom: 1px solid #ddd;
+            font-size: 11px;
+        }
+        tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+        .number {
+            text-align: right;
+        }
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 10px;
+            color: #666;
+            border-top: 1px solid #ddd;
+            padding-top: 15px;
+        }
+        .on-terminal {
+            color: #52c41a;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>MTT Container Terminal</h1>
+        <p>ВЫПИСКА ЗА {{ statement.month_name|upper }} {{ statement.year }}</p>
+    </div>
+
+    <div class="company-info">
+        <p><strong>Компания:</strong> {{ statement.company.name }}</p>
+        <p><strong>Метод расчёта:</strong> {{ statement.billing_method_display }}</p>
+        <p><strong>Дата формирования:</strong> {{ statement.generated_at|date:"d.m.Y H:i" }}</p>
+    </div>
+
+    <div class="summary">
+        <h3>ИТОГО</h3>
+        <div class="summary-grid">
+            <div class="summary-item">
+                <div class="label">Контейнеров</div>
+                <div class="value">{{ statement.total_containers }}</div>
+            </div>
+            <div class="summary-item">
+                <div class="label">Оплачиваемых дней</div>
+                <div class="value">{{ statement.total_billable_days }}</div>
+            </div>
+            <div class="summary-item">
+                <div class="label">Сумма (USD)</div>
+                <div class="value">${{ statement.total_usd|floatformat:2 }}</div>
+            </div>
+            <div class="summary-item">
+                <div class="label">Сумма (UZS)</div>
+                <div class="value">{{ statement.total_uzs|floatformat:0 }} сум</div>
+            </div>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Контейнер</th>
+                <th>Размер</th>
+                <th>Статус</th>
+                <th>Начало</th>
+                <th>Конец</th>
+                <th class="number">Дней</th>
+                <th class="number">Льгот.</th>
+                <th class="number">Опл.</th>
+                <th class="number">USD</th>
+                <th class="number">UZS</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in line_items %}
+            <tr>
+                <td>{{ item.container_number }}</td>
+                <td>{{ item.container_size_display }}</td>
+                <td>{{ item.container_status_display }}</td>
+                <td>{{ item.period_start|date:"d.m.Y" }}</td>
+                <td>
+                    {% if item.is_still_on_terminal %}
+                    <span class="on-terminal">На терминале</span>
+                    {% else %}
+                    {{ item.period_end|date:"d.m.Y" }}
+                    {% endif %}
+                </td>
+                <td class="number">{{ item.total_days }}</td>
+                <td class="number">{{ item.free_days }}</td>
+                <td class="number">{{ item.billable_days }}</td>
+                <td class="number">${{ item.amount_usd|floatformat:2 }}</td>
+                <td class="number">{{ item.amount_uzs|floatformat:0 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="footer">
+        Сформировано автоматически системой MTT Container Terminal
+    </div>
+</body>
+</html>
