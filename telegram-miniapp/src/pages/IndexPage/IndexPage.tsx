@@ -92,7 +92,7 @@ export const IndexPage: FC = () => {
           </Card>
         )}
 
-        {stats && !loading && stats.current && stats.current.total_on_terminal !== undefined && stats.current.total_on_terminal !== null && (
+        {stats?.current?.total_on_terminal != null && !loading && (
           <List header="Терминалдаги ҳозирги ҳолат">
             <List.Item
               extra={<Tag color='primary' fill='solid' style={{ fontSize: '16px' }}>{stats.current.total_on_terminal}</Tag>}
@@ -102,7 +102,7 @@ export const IndexPage: FC = () => {
           </List>
         )}
 
-        {stats && !loading && stats.current && stats.current.by_vehicle_type && (
+        {stats?.current?.by_vehicle_type && !loading && (
           <List header="Транспорт тури бўйича">
             {Object.entries(stats.current.by_vehicle_type).map(([key, value]) => (
               <List.Item
@@ -115,7 +115,7 @@ export const IndexPage: FC = () => {
           </List>
         )}
 
-        {stats && !loading && stats.current && stats.current.by_transport_type && (
+        {stats?.current?.by_transport_type && !loading && (
           <List header="Ташиш тури бўйича">
             {Object.entries(stats.current.by_transport_type).map(([key, value]) => (
               <List.Item
@@ -128,7 +128,7 @@ export const IndexPage: FC = () => {
           </List>
         )}
 
-        {stats && !loading && stats.current && stats.current.by_load_status && (
+        {stats?.current?.by_load_status && !loading && (
           <List header="Юк ҳолати бўйича">
             {Object.entries(stats.current.by_load_status).map(([key, value]) => (
               <List.Item
@@ -141,16 +141,16 @@ export const IndexPage: FC = () => {
           </List>
         )}
 
-        {stats && !loading && stats.time_metrics && (
+        {stats?.time_metrics && !loading && (
           <List header="Вақт кўрсаткичлари">
-            {stats.time_metrics.avg_dwell_hours !== undefined && stats.time_metrics.avg_dwell_hours !== null && (
+            {stats.time_metrics.avg_dwell_hours != null && (
               <List.Item
                 extra={<span style={{ fontSize: '15px' }}>{stats.time_metrics.avg_dwell_hours.toFixed(1)} соат</span>}
               >
                 Ўртача турган вақти
               </List.Item>
             )}
-            {stats.time_metrics.avg_dwell_by_type && Object.entries(stats.time_metrics.avg_dwell_by_type).map(([type, hours]) => (
+            {stats.time_metrics.avg_dwell_by_type && Object.entries(stats.time_metrics.avg_dwell_by_type).map(([type, hours]: [string, number]) => (
               <List.Item
                 key={type}
                 extra={<span style={{ fontSize: '15px' }}>{hours.toFixed(1)} соат</span>}
@@ -159,7 +159,7 @@ export const IndexPage: FC = () => {
                 {type}
               </List.Item>
             ))}
-            {stats.time_metrics.longest_current_stay && stats.time_metrics.longest_current_stay.hours !== undefined && stats.time_metrics.longest_current_stay.license_plate && (
+            {stats.time_metrics.longest_current_stay?.hours != null && stats.time_metrics.longest_current_stay.license_plate && (
               <List.Item
                 extra={<span style={{ fontSize: '15px' }}>{stats.time_metrics.longest_current_stay.hours.toFixed(1)} соат</span>}
                 description={`Транспорт: ${stats.time_metrics.longest_current_stay.license_plate}`}
@@ -170,7 +170,7 @@ export const IndexPage: FC = () => {
           </List>
         )}
 
-        {stats && !loading && stats.overstayers && stats.overstayers.count > 0 && stats.overstayers.vehicles && stats.overstayers.threshold_hours !== undefined && (
+        {stats?.overstayers && stats.overstayers.count > 0 && stats.overstayers.threshold_hours != null && !loading && (
           <List header={`Муддатидан ошганлар (>${stats.overstayers.threshold_hours}с)`}>
             {stats.overstayers.vehicles.map((vehicle) => (
               <List.Item
@@ -184,14 +184,14 @@ export const IndexPage: FC = () => {
           </List>
         )}
 
-        {stats && !loading && stats.last_30_days && (
+        {stats?.last_30_days && !loading && (
           <List header="Сўнгги 30 кунлик фаолият">
-            {stats.last_30_days.total_entries !== undefined && stats.last_30_days.total_entries !== null && (
+            {stats.last_30_days.total_entries != null && (
               <List.Item extra={<span style={{ fontSize: '16px', fontWeight: '500' }}>{stats.last_30_days.total_entries}</span>}>
                 Жами кирганлар
               </List.Item>
             )}
-            {stats.last_30_days.total_exits !== undefined && stats.last_30_days.total_exits !== null && (
+            {stats.last_30_days.total_exits != null && (
               <List.Item extra={<span style={{ fontSize: '16px', fontWeight: '500' }}>{stats.last_30_days.total_exits}</span>}>
                 Жами чиққанлар
               </List.Item>
@@ -199,7 +199,7 @@ export const IndexPage: FC = () => {
           </List>
         )}
 
-        {stats && !loading && stats.last_30_days && stats.last_30_days.entries_by_day && (
+        {stats?.last_30_days?.entries_by_day && !loading && (
           <List header="Сўнгги кунлик киришлар">
             {stats.last_30_days.entries_by_day.map((entry) => (
               <List.Item

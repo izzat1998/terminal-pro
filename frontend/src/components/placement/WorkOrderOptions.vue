@@ -1,13 +1,10 @@
 <script setup lang="ts">
 /**
- * WorkOrderOptions - Vehicle select + Priority segmented control
+ * WorkOrderOptions - Vehicle select for work order configuration
  *
  * Work order configuration options for Step 3 of the placement workflow.
- * Includes SLA time estimates based on priority.
+ * Priority is set to MEDIUM by default and hidden from UI.
  */
-
-import { computed } from 'vue';
-import type { WorkOrderPriority } from '../../types/placement';
 
 interface TerminalVehicle {
   id: number;
@@ -21,32 +18,11 @@ const props = defineProps<{
   vehicles: TerminalVehicle[];
   loadingVehicles: boolean;
   selectedVehicleId?: number;
-  selectedPriority: WorkOrderPriority;
 }>();
 
 const emit = defineEmits<{
   'update:selectedVehicleId': [id: number | undefined];
-  'update:selectedPriority': [priority: WorkOrderPriority];
 }>();
-
-// SLA time estimates by priority
-const slaEstimates: Record<WorkOrderPriority, string> = {
-  LOW: '4 часа',
-  MEDIUM: '2 часа',
-  HIGH: '1 час',
-  URGENT: '30 минут',
-};
-
-// Computed SLA text
-const currentSLA = computed(() => slaEstimates[props.selectedPriority]);
-
-// Priority options for segmented control
-const priorityOptions = [
-  { value: 'LOW', label: 'Низкий' },
-  { value: 'MEDIUM', label: 'Средний' },
-  { value: 'HIGH', label: 'Высокий' },
-  { value: 'URGENT', label: 'Срочно' },
-];
 
 // Vehicle type icons (emoji)
 const vehicleTypeIcons: Record<string, string> = {
@@ -100,20 +76,6 @@ function getVehicleIcon(vehicleType: string): string {
       <div v-else class="unassigned-hint">
         Если не выбрано, задача будет в статусе "Ожидает назначения"
       </div>
-    </div>
-
-    <!-- Priority Selection -->
-    <div class="option-section">
-      <div class="option-header">
-        <span class="option-label">Приоритет</span>
-        <span class="sla-badge">SLA: {{ currentSLA }}</span>
-      </div>
-      <a-segmented
-        :value="selectedPriority"
-        :options="priorityOptions"
-        block
-        @change="(v: WorkOrderPriority) => emit('update:selectedPriority', v)"
-      />
     </div>
   </div>
 </template>

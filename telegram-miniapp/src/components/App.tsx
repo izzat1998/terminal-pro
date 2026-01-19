@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes, HashRouter } from 'react-router-dom';
-import { useLaunchParams, useSignal, miniApp } from '@tma.js/sdk-react';
+import { useLaunchParams } from '@tma.js/sdk-react';
 import { AppRoot } from '@telegram-apps/telegram-ui';
 
 import { routes } from '@/navigation/routes.tsx';
@@ -10,14 +10,13 @@ import { useAntdMobileTheme } from '@/hooks/useAntdMobileTheme.ts';
 
 export function App() {
   const lp = useLaunchParams();
-  const isDark = useSignal(miniApp.isDark);
 
-  // Sync Telegram dark mode with antd-mobile theme
-  useAntdMobileTheme();
+  // Force light mode for work orders app (outdoor workers need high contrast)
+  useAntdMobileTheme(true); // force light
 
   return (
     <AppRoot
-      appearance={isDark ? 'dark' : 'light'}
+      appearance="light"
       platform={['macos', 'ios'].includes(lp.tgWebAppPlatform) ? 'ios' : 'base'}
     >
       <CameraProvider>

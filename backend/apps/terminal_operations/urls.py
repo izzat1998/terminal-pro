@@ -8,6 +8,8 @@ from .views import (
     PlacementViewSet,
     PlateRecognizerAPIView,
     PreOrderViewSet,
+    TerminalVehicleViewSet,
+    WorkOrderViewSet,
 )
 
 
@@ -20,6 +22,8 @@ router.register(
 )
 router.register(r"preorders", PreOrderViewSet, basename="preorder")
 router.register(r"placement", PlacementViewSet, basename="placement")
+router.register(r"work-orders", WorkOrderViewSet, basename="work-order")
+router.register(r"terminal-vehicles", TerminalVehicleViewSet, basename="terminal-vehicle")
 
 urlpatterns = [
     path("", include(router.urls)),

@@ -1,0 +1,42 @@
+"""
+URL configuration for billing app.
+"""
+
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
+from .views import (
+    BulkStorageCostView,
+    CustomerStorageCostView,
+    StorageCostView,
+    TariffViewSet,
+)
+
+
+router = DefaultRouter()
+router.register(r"tariffs", TariffViewSet, basename="tariff")
+
+urlpatterns = [
+    # Tariff management (admin)
+    path("", include(router.urls)),
+    # Storage cost calculation
+    path(
+        "container-entries/<int:entry_id>/storage-cost/",
+        StorageCostView.as_view(),
+        name="container-storage-cost",
+    ),
+    path(
+        "storage-costs/calculate/",
+        BulkStorageCostView.as_view(),
+        name="bulk-storage-cost",
+    ),
+]
+
+# Customer portal URLs (to be included in customer_portal app)
+customer_urlpatterns = [
+    path(
+        "storage-costs/",
+        CustomerStorageCostView.as_view(),
+        name="customer-storage-costs",
+    ),
+]

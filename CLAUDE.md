@@ -32,7 +32,7 @@ make dev
 make prod
 
 # Individual services
-make backend           # Django on port 8000
+make backend           # Django on port 8008
 make frontend          # Vue on port 5174
 make telegram-miniapp  # React Telegram Mini App on port 5175
 
@@ -70,7 +70,7 @@ make makemigrations  # Create migrations
                           │ HTTP/REST
 ┌─────────────────────────▼───────────────────────────────────┐
 │                    Backend (Django DRF)                      │
-│                     localhost:8000/api                       │
+│                     localhost:8008/api                       │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  Service Layer (apps/*/services/)                     │   │
 │  │  - All business logic here                            │   │
@@ -120,7 +120,7 @@ Examples:
    ```env
    SECRET_KEY=your-secure-secret-key
    DEBUG=True
-   VITE_API_BASE_URL=http://localhost:8000/api
+   VITE_API_BASE_URL=http://localhost:8008/api
    ```
 
 3. Optional (for full features):
@@ -173,6 +173,6 @@ Read `telegram-miniapp/CLAUDE.md` for:
 |-------|-------|
 | Backend won't start | `python manage.py check` in backend/ |
 | Frontend build fails | `npm run build` shows TypeScript errors |
-| API connection refused | Backend running? Check `localhost:8000/api/docs` |
+| API connection refused | Backend running? Check `localhost:8008/api/docs` |
 | Docker issues | `docker-compose logs -f` for details |
 | Migration errors | `python manage.py showmigrations` |

@@ -13,6 +13,7 @@ import type {
   CraneOperation,
   FileAttachment,
 } from '../services/terminalService'
+import { formatDateLocale, formatDateTimeLocale } from '../utils/dateFormat'
 
 /**
  * Frontend record type used by ContainerTable.vue for display
@@ -50,39 +51,14 @@ export interface ContainerRecord {
   filesData: FileAttachment[]
   created: string
   updated: string
+  // Storage cost fields (populated by bulk fetch)
+  storageCostUsd?: string
+  storageCostUzs?: string
+  storageBillableDays?: number
+  storageCostLoading?: boolean
 }
 
 export function useContainerTransform() {
-  /**
-   * Format date string to localized Russian format (DD.MM.YYYY)
-   */
-  const formatDate = (dateString: string | null | undefined): string => {
-    if (!dateString) return ''
-    try {
-      return new Date(dateString).toLocaleDateString('ru-RU')
-    } catch {
-      return ''
-    }
-  }
-
-  /**
-   * Format datetime string to localized Russian format (DD.MM.YYYY, HH:MM)
-   */
-  const formatDateTime = (dateString: string | null | undefined): string => {
-    if (!dateString) return ''
-    try {
-      return new Date(dateString).toLocaleString('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    } catch {
-      return ''
-    }
-  }
-
   /**
    * Transform a single API entry to frontend record format
    */
@@ -96,14 +72,14 @@ export function useContainerTransform() {
     transportType: entry.transport_type,
     entryTrainNumber: entry.entry_train_number || '',
     transportNumber: entry.transport_number || '',
-    exitDate: entry.exit_date ? formatDate(entry.exit_date) : '',
+    exitDate: entry.exit_date ? formatDateLocale(entry.exit_date) : '',
     exitTransportType: entry.exit_transport_type || '',
     exitTrainNumber: entry.exit_train_number || '',
     exitTransportNumber: entry.exit_transport_number || '',
     destinationStation: entry.destination_station || '',
     location: entry.location || '',
     additionalCraneOperationDate: entry.additional_crane_operation_date
-      ? formatDate(entry.additional_crane_operation_date)
+      ? formatDateLocale(entry.additional_crane_operation_date)
       : '',
     craneOperations: entry.crane_operations || [],
     note: entry.note || '',
@@ -115,12 +91,12 @@ export function useContainerTransform() {
     companySlug: entry.company?.slug || '',
     containerOwner: entry.container_owner?.name || '',
     containerOwnerId: entry.container_owner?.id,
-    entryTime: formatDate(entry.entry_time),
+    entryTime: formatDateLocale(entry.entry_time),
     dwellTimeDays: entry.dwell_time_days || 0,
     files: entry.file_count,
     filesData: entry.files || [],
-    created: formatDateTime(entry.created_at),
-    updated: formatDateTime(entry.updated_at),
+    created: formatDateTimeLocale(entry.created_at),
+    updated: formatDateTimeLocale(entry.updated_at),
   })
 
   /**
@@ -132,7 +108,5 @@ export function useContainerTransform() {
   return {
     transformEntry,
     transformEntries,
-    formatDate,
-    formatDateTime,
   }
 }

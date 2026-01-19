@@ -6,8 +6,8 @@
 import { ref, shallowRef, onUnmounted, type Ref } from 'vue';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { ZONE_LAYOUT, SPACING } from '../types/placement';
-import type { ZoneCode } from '../types/placement';
+import { ZONE_LAYOUT, SPACING, getContainerSize, CONTAINER_DIMENSIONS } from '../types/placement';
+import type { ZoneCode, Position } from '../types/placement';
 
 // Camera preset types
 export type CameraPreset = 'isometric' | 'top' | 'front' | 'side';
@@ -24,9 +24,9 @@ export function use3DScene(canvasRef: Ref<HTMLCanvasElement | undefined>) {
   function initScene(): void {
     if (!canvasRef.value || isInitialized.value) return;
 
-    // Scene - Light theme
+    // Scene - Light theme (background matches ground for seamless fullscreen)
     scene.value = new THREE.Scene();
-    scene.value.background = new THREE.Color(0xf0f2f5);
+    scene.value.background = new THREE.Color(0xd4d4d4);
 
     // Camera (orthographic for bird's-eye view)
     // Zone A only: X ~130m (10 bays × 13.0m), Z ~30m (10 rows × 3.0m)
@@ -99,8 +99,8 @@ export function use3DScene(canvasRef: Ref<HTMLCanvasElement | undefined>) {
     scene.value.add(directionalLight);
 
     // Ground plane - Concrete/asphalt appearance
-    // Zone A only: X: 0 to ~130m, Z: 0 to ~30m (with padding)
-    const groundGeometry = new THREE.PlaneGeometry(160, 60);
+    // Extended to cover entire viewport in fullscreen mode (no visible edges)
+    const groundGeometry = new THREE.PlaneGeometry(800, 800);
     const groundMaterial = new THREE.MeshStandardMaterial({
       color: 0xd4d4d4,
       roughness: 0.95,
@@ -108,7 +108,7 @@ export function use3DScene(canvasRef: Ref<HTMLCanvasElement | undefined>) {
     });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
-    // Center ground under Zone A (130m/2 = 65, 30m/2 = 15)
+    // Center ground around Zone A (65, 15) to ensure yard is visible
     ground.position.set(65, -0.05, 15);
     ground.receiveShadow = true;
     scene.value.add(ground);
@@ -348,10 +348,104 @@ export function use3DScene(canvasRef: Ref<HTMLCanvasElement | undefined>) {
     controls.value.update();
   }
 
+  // Animation state for camera transitions
+  let cameraAnimationId: number | null = null;
+
+  /**
+   * Easing function: easeOutCubic
+   * Provides natural deceleration for camera animations
+   */
+  function easeOutCubic(t: number): number {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  /**
+   * Focus camera on a specific position with smooth animation
+   *
+   * @param position - The placement position (zone, row, bay, tier)
+   * @param isoType - Container ISO type for size calculation
+   * @param duration - Animation duration in ms (default: 500)
+   */
+  function focusOnPosition(position: Position, isoType: string, duration: number = 500): void {
+    if (!camera.value || !controls.value) return;
+
+    // Cancel any existing animation
+    if (cameraAnimationId !== null) {
+      cancelAnimationFrame(cameraAnimationId);
+      cameraAnimationId = null;
+    }
+
+    // Calculate target world position from placement coordinates
+    const zoneLayout = ZONE_LAYOUT[position.zone];
+    if (!zoneLayout) return;
+
+    // Get container dimensions for height calculation
+    const containerSize = getContainerSize(isoType);
+    const dimensions = CONTAINER_DIMENSIONS[containerSize];
+
+    // Calculate world coordinates
+    // X: bay position (0-indexed, so bay-1) * spacing + zone offset + half container width
+    // Y: tier position * spacing (vertical)
+    // Z: row position (0-indexed, so row-1) * spacing + zone offset
+    const targetX = zoneLayout.xOffset + (position.bay - 1) * SPACING.bay + SPACING.bay / 2;
+    const targetY = (position.tier - 1) * SPACING.tier + dimensions.height / 2;
+    const targetZ = zoneLayout.zOffset + (position.row - 1) * SPACING.row + SPACING.row / 2;
+
+    const targetPosition = new THREE.Vector3(targetX, targetY, targetZ);
+
+    // Store starting values
+    const startPosition = camera.value.position.clone();
+    const startTarget = controls.value.target.clone();
+    const startZoom = camera.value.zoom;
+
+    // Calculate ending camera position (offset from target for isometric view)
+    // Position camera at an angle that gives a good view of the container
+    const cameraOffset = new THREE.Vector3(25, 30, 25);
+    const endPosition = targetPosition.clone().add(cameraOffset);
+    const endTarget = targetPosition.clone();
+    const endZoom = 2.5; // Zoom in for detail view
+
+    // Animation loop
+    const startTime = performance.now();
+
+    function animateCamera(): void {
+      const elapsed = performance.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const easedProgress = easeOutCubic(progress);
+
+      if (!camera.value || !controls.value) return;
+
+      // Interpolate camera position
+      camera.value.position.lerpVectors(startPosition, endPosition, easedProgress);
+
+      // Interpolate target
+      controls.value.target.lerpVectors(startTarget, endTarget, easedProgress);
+
+      // Interpolate zoom
+      camera.value.zoom = startZoom + (endZoom - startZoom) * easedProgress;
+      camera.value.updateProjectionMatrix();
+
+      // Update controls
+      controls.value.update();
+
+      if (progress < 1) {
+        cameraAnimationId = requestAnimationFrame(animateCamera);
+      } else {
+        cameraAnimationId = null;
+      }
+    }
+
+    cameraAnimationId = requestAnimationFrame(animateCamera);
+  }
+
   function dispose(): void {
     if (animationId) {
       cancelAnimationFrame(animationId);
       animationId = null;
+    }
+    if (cameraAnimationId) {
+      cancelAnimationFrame(cameraAnimationId);
+      cameraAnimationId = null;
     }
     controls.value?.dispose();
     renderer.value?.dispose();
@@ -375,6 +469,7 @@ export function use3DScene(canvasRef: Ref<HTMLCanvasElement | undefined>) {
     resetCamera,
     setCameraPreset,
     fitToContainers,
+    focusOnPosition,
     dispose,
   };
 }

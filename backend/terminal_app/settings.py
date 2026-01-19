@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "apps.files",
     "apps.vehicles",
     "apps.customer_portal",
+    "apps.billing",
 ]
 
 MIDDLEWARE = [

@@ -3,7 +3,7 @@
     <!-- Dark sidebar with nested ConfigProvider -->
     <a-config-provider v-if="isAdmin" :theme="sidebarTheme">
       <a-layout-sider v-model:collapsed="collapsed" :trigger="null" collapsible theme="dark"
-        :style="{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0, top: 0, bottom: 0 }">
+        :style="{ overflow: 'auto', height: '100vh', position: 'fixed', left: 0, top: 0, bottom: 0, display: 'flex', flexDirection: 'column' }">
         <div class="logo">
           <span v-if="!collapsed">MTT Terminal</span>
           <span v-else>MTT</span>
@@ -15,6 +15,10 @@
           <a-menu-item key="dashboard">
             <DashboardOutlined />
             <span>Главная</span>
+          </a-menu-item>
+          <a-menu-item key="executive">
+            <FundOutlined />
+            <span>Аналитика</span>
           </a-menu-item>
 
           <!-- КПП Section -->
@@ -37,6 +41,15 @@
           <a-menu-item key="placement">
             <AppstoreOutlined />
             <span>Площадка 3D</span>
+          </a-menu-item>
+          <a-menu-item key="tasks">
+            <UnorderedListOutlined />
+            <span>Задания</span>
+            <a-badge
+              v-if="!collapsed && taskCount > 0"
+              :count="taskCount"
+              :number-style="{ backgroundColor: '#1677ff', marginLeft: '8px' }"
+            />
           </a-menu-item>
 
           <!-- Directory Section -->
@@ -64,11 +77,22 @@
             <TeamOutlined />
             <span>Менеджеры</span>
           </a-menu-item>
+          <a-menu-item key="terminal-vehicles">
+            <ToolOutlined />
+            <span>Техника</span>
+          </a-menu-item>
+          <a-menu-item key="tariffs">
+            <DollarOutlined />
+            <span>Тарифы</span>
+          </a-menu-item>
           <a-menu-item key="telegram-bot">
             <RobotOutlined />
             <span>Telegram Бот</span>
           </a-menu-item>
         </a-menu>
+
+        <!-- Vehicle Status Panel -->
+        <SidebarVehicleStatus :collapsed="collapsed" />
       </a-layout-sider>
     </a-config-provider>
 
@@ -113,7 +137,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import {
   AppstoreOutlined,
@@ -121,7 +145,9 @@ import {
   CarOutlined,
   ContainerOutlined,
   DashboardOutlined,
+  DollarOutlined,
   DownOutlined,
+  FundOutlined,
   IdcardOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
@@ -129,10 +155,14 @@ import {
   RobotOutlined,
   ShopOutlined,
   TeamOutlined,
+  ToolOutlined,
+  UnorderedListOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue';
 import { useAuth } from '../composables/useAuth';
 import { sidebarTheme } from '../theme';
+import { getActiveWorkOrdersCount } from '../services/workOrderService';
+import SidebarVehicleStatus from './SidebarVehicleStatus.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -140,19 +170,41 @@ const { user, logout } = useAuth();
 const selectedKeys = ref<string[]>(['dashboard']);
 const openKeys = ref<string[]>([]);
 const collapsed = ref<boolean>(false);
+const taskCount = ref<number>(0);
+
+// Fetch active work orders count for sidebar badge
+async function fetchTaskCount(): Promise<void> {
+  try {
+    taskCount.value = await getActiveWorkOrdersCount();
+  } catch {
+    // Silently fail - badge just won't show
+    taskCount.value = 0;
+  }
+}
+
+// Refresh task count periodically
+onMounted(() => {
+  fetchTaskCount();
+  // Refresh every 60 seconds
+  setInterval(fetchTaskCount, 60_000);
+});
 
 // Route to menu key mapping
 const routeToKey: Record<string, string> = {
   '/': 'dashboard',
   '/dashboard': 'dashboard',
+  '/executive': 'executive',
   '/gate': 'gate',
   '/vehicles': 'gate',
   '/containers': 'containers',
   '/placement': 'placement',
+  '/tasks': 'tasks',
   '/accounts/companies': 'companies',
   '/owners': 'owners',
   '/vehicles-customers': 'vehicles-customers',
   '/managers': 'managers',
+  '/terminal-vehicles': 'terminal-vehicles',
+  '/tariffs': 'tariffs',
   '/telegram-bot': 'telegram-bot',
 };
 
@@ -171,13 +223,17 @@ watch(() => route.path, (newPath) => {
 // Menu key to route mapping
 const keyToRoute: Record<string, string> = {
   'dashboard': '/',
+  'executive': '/executive',
   'gate': '/gate',
   'containers': '/containers',
   'placement': '/placement',
+  'tasks': '/tasks',
   'companies': '/accounts/companies',
   'owners': '/owners',
   'vehicles-customers': '/vehicles-customers',
   'managers': '/managers',
+  'terminal-vehicles': '/terminal-vehicles',
+  'tariffs': '/tariffs',
   'telegram-bot': '/telegram-bot',
 };
 

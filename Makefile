@@ -18,7 +18,7 @@ help:
 	@echo "Development:"
 	@echo "  make install           - Install all dependencies (backend + frontend + telegram-miniapp)"
 	@echo "  make dev               - Start all services locally (backend, frontend, telegram-miniapp)"
-	@echo "  make backend           - Start only Django backend (port 8000)"
+	@echo "  make backend           - Start only Django backend (port 8008)"
 	@echo "  make frontend          - Start only Vue frontend (port 5174)"
 	@echo "  make telegram-miniapp  - Start only Telegram Mini App (port 5175)"
 	@echo ""
@@ -61,7 +61,7 @@ dev:
 	@$(MAKE) -j3 backend frontend telegram-miniapp
 
 backend:
-	$(BACKEND_PYTHON) backend/manage.py runserver 0.0.0.0:8000
+	$(BACKEND_PYTHON) backend/manage.py runserver 0.0.0.0:8008
 
 frontend:
 	cd frontend && npm run dev

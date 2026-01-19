@@ -6,6 +6,27 @@ from django.db.models import Q
 from .models import ContainerEntry
 
 
+def _parse_date_flexible(value):
+    """
+    Parse date string supporting both YYYY-MM-DD and YYYY.MM.DD formats.
+
+    Args:
+        value: Date string in either format
+
+    Returns:
+        date object or None if parsing fails
+    """
+    if not value:
+        return None
+
+    for fmt in ["%Y.%m.%d", "%Y-%m-%d"]:
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 class ContainerEntryFilter(django_filters.FilterSet):
     """
     Filters for ContainerEntry model
@@ -32,23 +53,41 @@ class ContainerEntryFilter(django_filters.FilterSet):
     # Custom date filters that handle YYYY.MM.DD format (with dots)
     entry_time = django_filters.CharFilter(method="filter_entry_time")
     exit_date = django_filters.CharFilter(method="filter_exit_date_custom")
-    additional_crane_operation_date = django_filters.CharFilter(method="filter_crane_operation_date")
+    additional_crane_operation_date = django_filters.CharFilter(
+        method="filter_crane_operation_date"
+    )
 
     # Numeric range filters
-    cargo_weight_min = django_filters.NumberFilter(field_name="cargo_weight", lookup_expr="gte")
-    cargo_weight_max = django_filters.NumberFilter(field_name="cargo_weight", lookup_expr="lte")
+    cargo_weight_min = django_filters.NumberFilter(
+        field_name="cargo_weight", lookup_expr="gte"
+    )
+    cargo_weight_max = django_filters.NumberFilter(
+        field_name="cargo_weight", lookup_expr="lte"
+    )
     cargo_weight_range = django_filters.CharFilter(method="filter_cargo_weight_range")
 
-    dwell_time_min = django_filters.NumberFilter(field_name="dwell_time_days", lookup_expr="gte")
-    dwell_time_max = django_filters.NumberFilter(field_name="dwell_time_days", lookup_expr="lte")
+    dwell_time_min = django_filters.NumberFilter(
+        field_name="dwell_time_days", lookup_expr="gte"
+    )
+    dwell_time_max = django_filters.NumberFilter(
+        field_name="dwell_time_days", lookup_expr="lte"
+    )
     dwell_time_range = django_filters.CharFilter(method="filter_dwell_time_range")
 
     # Combined datetime filters
-    entry_time_after = django_filters.DateTimeFilter(field_name="entry_time", lookup_expr="gte")
-    entry_time_before = django_filters.DateTimeFilter(field_name="entry_time", lookup_expr="lte")
+    entry_time_after = django_filters.DateTimeFilter(
+        field_name="entry_time", lookup_expr="gte"
+    )
+    entry_time_before = django_filters.DateTimeFilter(
+        field_name="entry_time", lookup_expr="lte"
+    )
 
-    exit_time_after = django_filters.DateTimeFilter(field_name="exit_date", lookup_expr="gte")
-    exit_time_before = django_filters.DateTimeFilter(field_name="exit_date", lookup_expr="lte")
+    exit_time_after = django_filters.DateTimeFilter(
+        field_name="exit_date", lookup_expr="gte"
+    )
+    exit_time_before = django_filters.DateTimeFilter(
+        field_name="exit_date", lookup_expr="lte"
+    )
 
     def filter_status(self, queryset, name, value):
         """
@@ -69,14 +108,19 @@ class ContainerEntryFilter(django_filters.FilterSet):
     def filter_transport_type(self, queryset, name, value):
         """Filter by transport type, accepting both DB values and Russian names"""
         # Mapping: Russian name -> database value
-        russian_to_db = {display: db_value for db_value, display in ContainerEntry.TRANSPORT_CHOICES}
+        russian_to_db = {
+            display: db_value for db_value, display in ContainerEntry.TRANSPORT_CHOICES
+        }
         db_value = russian_to_db.get(value, value)
         return queryset.filter(transport_type=db_value)
 
     def filter_exit_transport_type(self, queryset, name, value):
         """Filter by exit transport type, accepting both DB values and Russian names"""
         # Mapping: Russian name -> database value
-        russian_to_db = {display: db_value for db_value, display in ContainerEntry.EXIT_TRANSPORT_CHOICES}
+        russian_to_db = {
+            display: db_value
+            for db_value, display in ContainerEntry.EXIT_TRANSPORT_CHOICES
+        }
         db_value = russian_to_db.get(value, value)
         return queryset.filter(exit_transport_type=db_value)
 
@@ -95,7 +139,9 @@ class ContainerEntryFilter(django_filters.FilterSet):
             return queryset
         try:
             # Split comma-separated values and convert to integers
-            owner_ids = [int(id_str.strip()) for id_str in value.split(",") if id_str.strip()]
+            owner_ids = [
+                int(id_str.strip()) for id_str in value.split(",") if id_str.strip()
+            ]
             if owner_ids:
                 return queryset.filter(container_owner_id__in=owner_ids)
         except (ValueError, TypeError):
@@ -127,7 +173,9 @@ class ContainerEntryFilter(django_filters.FilterSet):
         if not value:
             return queryset
         try:
-            company_ids = [int(id_str.strip()) for id_str in value.split(",") if id_str.strip()]
+            company_ids = [
+                int(id_str.strip()) for id_str in value.split(",") if id_str.strip()
+            ]
             if company_ids:
                 return queryset.filter(company_id__in=company_ids)
         except (ValueError, TypeError):
@@ -159,122 +207,96 @@ class ContainerEntryFilter(django_filters.FilterSet):
             return queryset.filter(company__name__icontains=value)
 
     def filter_entry_time(self, queryset, name, value):
-        """
-        Filter by entry date. Handles both formats:
-        - YYYY-MM-DD (standard ISO format)
-        - YYYY.MM.DD (frontend format with dots)
-        Example: ?entry_time=2025.11.10
-        """
-        if not value:
-            return queryset
-
-        # Try parsing with dots first (frontend format)
-        try:
-            date_obj = datetime.strptime(value, "%Y.%m.%d").date()
+        """Filter by entry date (supports YYYY-MM-DD and YYYY.MM.DD formats)"""
+        date_obj = _parse_date_flexible(value)
+        if date_obj:
             return queryset.filter(entry_time__date=date_obj)
-        except ValueError:
-            pass
-
-        # Try standard ISO format
-        try:
-            date_obj = datetime.strptime(value, "%Y-%m-%d").date()
-            return queryset.filter(entry_time__date=date_obj)
-        except ValueError:
-            pass
-
-        # If both fail, return unfiltered queryset
         return queryset
 
     def filter_exit_date_custom(self, queryset, name, value):
-        """
-        Filter by exit date. Handles both formats:
-        - YYYY-MM-DD (standard ISO format)
-        - YYYY.MM.DD (frontend format with dots)
-        Example: ?exit_date=2025.11.10
-        """
-        if not value:
-            return queryset
-
-        # Try parsing with dots first (frontend format)
-        try:
-            date_obj = datetime.strptime(value, "%Y.%m.%d").date()
+        """Filter by exit date (supports YYYY-MM-DD and YYYY.MM.DD formats)"""
+        date_obj = _parse_date_flexible(value)
+        if date_obj:
             return queryset.filter(exit_date__date=date_obj)
-        except ValueError:
-            pass
-
-        # Try standard ISO format
-        try:
-            date_obj = datetime.strptime(value, "%Y-%m-%d").date()
-            return queryset.filter(exit_date__date=date_obj)
-        except ValueError:
-            pass
-
-        # If both fail, return unfiltered queryset
         return queryset
 
     def filter_crane_operation_date(self, queryset, name, value):
-        """
-        Filter by additional crane operation date. Handles both formats:
-        - YYYY-MM-DD (standard ISO format)
-        - YYYY.MM.DD (frontend format with dots)
-        Example: ?additional_crane_operation_date=2025.11.10
-        """
-        if not value:
-            return queryset
-
-        # Try parsing with dots first (frontend format)
-        try:
-            date_obj = datetime.strptime(value, "%Y.%m.%d").date()
-            return queryset.filter(crane_operations__operation_date__date=date_obj).distinct()
-        except ValueError:
-            pass
-
-        # Try standard ISO format
-        try:
-            date_obj = datetime.strptime(value, "%Y-%m-%d").date()
-            return queryset.filter(crane_operations__operation_date__date=date_obj).distinct()
-        except ValueError:
-            pass
-
-        # If both fail, return unfiltered queryset
+        """Filter by crane operation date (supports YYYY-MM-DD and YYYY.MM.DD formats)"""
+        date_obj = _parse_date_flexible(value)
+        if date_obj:
+            return queryset.filter(
+                crane_operations__operation_date__date=date_obj
+            ).distinct()
         return queryset
 
-    container_number = django_filters.CharFilter(field_name="container__container_number", lookup_expr="iexact")
+    container_number = django_filters.CharFilter(
+        field_name="container__container_number", lookup_expr="iexact"
+    )
 
     # Date range filters (using standard ISO format YYYY-MM-DD)
     entry_date = django_filters.DateFilter(field_name="entry_time", lookup_expr="date")
-    entry_date_after = django_filters.DateFilter(field_name="entry_time", lookup_expr="date__gte")
-    entry_date_before = django_filters.DateFilter(field_name="entry_time", lookup_expr="date__lte")
+    entry_date_after = django_filters.DateFilter(
+        field_name="entry_time", lookup_expr="date__gte"
+    )
+    entry_date_before = django_filters.DateFilter(
+        field_name="entry_time", lookup_expr="date__lte"
+    )
 
     # Exit date range filters (using standard ISO format YYYY-MM-DD)
     # Note: exit_date exact match handled by filter_exit_date_custom() above for YYYY.MM.DD format
-    exit_date_after = django_filters.DateFilter(field_name="exit_date", lookup_expr="date__gte")
-    exit_date_before = django_filters.DateFilter(field_name="exit_date", lookup_expr="date__lte")
+    exit_date_after = django_filters.DateFilter(
+        field_name="exit_date", lookup_expr="date__gte"
+    )
+    exit_date_before = django_filters.DateFilter(
+        field_name="exit_date", lookup_expr="date__lte"
+    )
 
     # Container filters
-    container_iso_type = django_filters.CharFilter(field_name="container__iso_type", lookup_expr="exact")
+    container_iso_type = django_filters.CharFilter(
+        field_name="container__iso_type", lookup_expr="exact"
+    )
 
     # Text search filters - explicit definitions for frontend compatibility
     # These use icontains by default for partial matching
-    client_name = django_filters.CharFilter(field_name="client_name", lookup_expr="icontains")
+    client_name = django_filters.CharFilter(
+        field_name="client_name", lookup_expr="icontains"
+    )
     # Company filters (parallel to container_owner filters)
     company_id = django_filters.CharFilter(method="filter_company_ids")
     company_ids = django_filters.CharFilter(method="filter_company_ids")
     company_slug = django_filters.CharFilter(method="filter_company_slug")
     company_name = django_filters.CharFilter(method="filter_company_text")
-    cargo_name = django_filters.CharFilter(field_name="cargo_name", lookup_expr="icontains")
-    entry_train_number = django_filters.CharFilter(field_name="entry_train_number", lookup_expr="icontains")
-    transport_number = django_filters.CharFilter(field_name="transport_number", lookup_expr="icontains")
-    exit_train_number = django_filters.CharFilter(field_name="exit_train_number", lookup_expr="icontains")
-    exit_transport_number = django_filters.CharFilter(field_name="exit_transport_number", lookup_expr="icontains")
-    destination_station = django_filters.CharFilter(field_name="destination_station", lookup_expr="icontains")
+    cargo_name = django_filters.CharFilter(
+        field_name="cargo_name", lookup_expr="icontains"
+    )
+    entry_train_number = django_filters.CharFilter(
+        field_name="entry_train_number", lookup_expr="icontains"
+    )
+    transport_number = django_filters.CharFilter(
+        field_name="transport_number", lookup_expr="icontains"
+    )
+    exit_train_number = django_filters.CharFilter(
+        field_name="exit_train_number", lookup_expr="icontains"
+    )
+    exit_transport_number = django_filters.CharFilter(
+        field_name="exit_transport_number", lookup_expr="icontains"
+    )
+    destination_station = django_filters.CharFilter(
+        field_name="destination_station", lookup_expr="icontains"
+    )
     location = django_filters.CharFilter(field_name="location", lookup_expr="icontains")
     note = django_filters.CharFilter(field_name="note", lookup_expr="icontains")
-    cargo_weight = django_filters.NumberFilter(field_name="cargo_weight", lookup_expr="exact")
+    cargo_weight = django_filters.NumberFilter(
+        field_name="cargo_weight", lookup_expr="exact"
+    )
 
     # User filters
-    recorded_by_username = django_filters.CharFilter(field_name="recorded_by__username", lookup_expr="iexact")
-    recorded_by_email = django_filters.CharFilter(field_name="recorded_by__email", lookup_expr="icontains")
+    recorded_by_username = django_filters.CharFilter(
+        field_name="recorded_by__username", lookup_expr="iexact"
+    )
+    recorded_by_email = django_filters.CharFilter(
+        field_name="recorded_by__email", lookup_expr="icontains"
+    )
 
     def filter_search_text(self, queryset, name, value):
         """
@@ -312,7 +334,9 @@ class ContainerEntryFilter(django_filters.FilterSet):
             if len(parts) == 2:
                 min_weight = float(parts[0])
                 max_weight = float(parts[1])
-                return queryset.filter(cargo_weight__gte=min_weight, cargo_weight__lte=max_weight)
+                return queryset.filter(
+                    cargo_weight__gte=min_weight, cargo_weight__lte=max_weight
+                )
         except (ValueError, IndexError):
             pass
         return queryset
@@ -329,7 +353,9 @@ class ContainerEntryFilter(django_filters.FilterSet):
             if len(parts) == 2:
                 min_days = int(parts[0])
                 max_days = int(parts[1])
-                return queryset.filter(dwell_time_days__gte=min_days, dwell_time_days__lte=max_days)
+                return queryset.filter(
+                    dwell_time_days__gte=min_days, dwell_time_days__lte=max_days
+                )
         except (ValueError, IndexError):
             pass
         return queryset

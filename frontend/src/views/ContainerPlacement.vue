@@ -2,23 +2,35 @@
 /**
  * Container Placement Page - 3D-First Terminal View
  *
- * Streamlined UX: 3D view with floating unplaced containers list.
+ * Canvas-first UX: Toggleable stats bar and company cards for maximum 3D space.
  * Click "Разместить" → markers appear in 3D → click marker → confirmation modal.
+ *
+ * Toggle States:
+ * - Stats OFF + Companies OFF = Operator Mode (default, max canvas)
+ * - Stats ON + Companies OFF = Quick Overview
+ * - Stats ON + Companies ON = Presentation Mode (CEO demos)
  *
  * Auto-fullscreen: When entering placement mode, the view expands to fullscreen
  * for an immersive, distraction-free placement experience.
  */
 
 import { ref, computed, onMounted, watch } from 'vue';
-import { ReloadOutlined, FullscreenExitOutlined } from '@ant-design/icons-vue';
+import { useRoute } from 'vue-router';
+import { FullscreenExitOutlined } from '@ant-design/icons-vue';
 import { usePlacementState } from '../composables/usePlacementState';
 import { useFullscreen } from '../composables/useFullscreen';
+import { useYardPreferences } from '../composables/useYardPreferences';
 import TerminalLayout3D from '../components/TerminalLayout3D.vue';
 import CompanyCards from '../components/CompanyCards.vue';
+import YardStatsBar from '../components/YardStatsBar.vue';
+import YardControls from '../components/YardControls.vue';
 import UnplacedContainersList from '../components/UnplacedContainersList.vue';
 import PlacementConfirmModal from '../components/placement/PlacementConfirmModal.vue';
-import WorkOrderTaskPanel from '../components/placement/WorkOrderTaskPanel.vue';
-import type { ContainerPlacement, UnplacedContainer, Position, PositionMarkerData, WorkOrder } from '../types/placement';
+import type { ContainerPlacement, UnplacedContainer, Position, PositionMarkerData } from '../types/placement';
+import { parseCoordinate } from '../utils/coordinateParser';
+
+// Route for query params (focus navigation)
+const route = useRoute();
 
 // State from composable
 const {
@@ -41,6 +53,40 @@ const {
 
 // Fullscreen state for immersive placement experience
 const { isFullscreen, enterFullscreen, exitFullscreen } = useFullscreen();
+
+// Yard preferences (toggleable UI elements)
+const {
+  showStatsBar,
+  showCompanyCards,
+  toggleStatsBar,
+  toggleCompanyCards,
+} = useYardPreferences();
+
+// Calculate company-filtered stats for stats bar
+const filteredStats = computed(() => {
+  if (!selectedCompanyName.value) {
+    // All containers - use global stats
+    const ladenCount = positionedContainers.value.filter(c => c.status === 'LADEN').length;
+    const emptyCount = positionedContainers.value.filter(c => c.status === 'EMPTY').length;
+    return {
+      occupied: stats.value?.occupied ?? 0,
+      available: stats.value?.available ?? 0,
+      ladenCount,
+      emptyCount,
+    };
+  }
+
+  // Filtered by company
+  const companyContainers = positionedContainers.value.filter(
+    c => c.company_name === selectedCompanyName.value
+  );
+  return {
+    occupied: companyContainers.length,
+    available: stats.value?.available ?? 0, // Available stays global
+    ladenCount: companyContainers.filter(c => c.status === 'LADEN').length,
+    emptyCount: companyContainers.filter(c => c.status === 'EMPTY').length,
+  };
+});
 
 // Auto-enter fullscreen when placement mode starts
 watch(isPlacementMode, (active) => {
@@ -89,9 +135,30 @@ const isSelectedRecommended = computed((): boolean => {
   return selectedMarkerData.value.type !== 'available';
 });
 
+// Handle focus query parameter for navigation from Tasks page
+function handleFocusFromQuery(): void {
+  const focusCoordinate = route.query.focus as string | undefined;
+  if (focusCoordinate && terminalLayout3DRef.value) {
+    const position = parseCoordinate(focusCoordinate);
+    if (position) {
+      // Small delay to ensure 3D scene is ready
+      // Use default 40ft container size for focusing (most common)
+      setTimeout(() => {
+        terminalLayout3DRef.value?.focusOnPosition(position, '45G1');
+      }, 500);
+    }
+  }
+}
+
 // Initialize data
 onMounted(async () => {
   await refreshAll();
+  handleFocusFromQuery();
+});
+
+// Watch for route changes to handle focus navigation
+watch(() => route.query.focus, () => {
+  handleFocusFromQuery();
 });
 
 // Handle 3D container click
@@ -119,66 +186,43 @@ function handleModalCancel(): void {
   selectedMarkerData.value = null;
   // Don't exit placement mode - user might want to select a different marker
 }
-
-// Handle focus request from task panel
-function handleFocusTask(task: WorkOrder): void {
-  const position: Position = {
-    zone: task.target_zone,
-    row: task.target_row,
-    bay: task.target_bay,
-    tier: task.target_tier,
-    sub_slot: task.target_sub_slot,
-    coordinate: task.target_coordinate,
-  };
-  terminalLayout3DRef.value?.focusOnPosition(position, task.iso_type);
-}
 </script>
 
 <template>
   <div :class="['container-placement-page', { 'is-fullscreen': isFullscreen }]">
-    <!-- Header with stats (hidden in fullscreen) -->
-    <a-card v-show="!isFullscreen" class="header-card" :bordered="false">
-      <a-row :gutter="16" align="middle">
-        <a-col :span="18">
-          <a-space size="large">
-            <a-statistic
-              title="На терминале"
-              :value="stats?.occupied ?? 0"
-              :value-style="{ color: '#1677ff' }"
-            />
-            <a-statistic
-              title="Свободных позиций"
-              :value="stats?.available ?? 0"
-              :value-style="{ color: '#52c41a' }"
-            />
-            <a-statistic
-              title="Без позиции"
-              :value="unplacedContainers.length"
-              :value-style="{ color: unplacedContainers.length > 0 ? '#fa8c16' : '#52c41a' }"
-            />
-          </a-space>
-        </a-col>
-        <a-col :span="6" style="text-align: right">
-          <a-button @click="refreshAll" :loading="loading">
-            <template #icon><ReloadOutlined /></template>
-            Обновить
-          </a-button>
-        </a-col>
-      </a-row>
-    </a-card>
+    <!-- Toggleable Stats Bar (hidden in fullscreen and when toggled off) -->
+    <YardStatsBar
+      v-if="showStatsBar && !isFullscreen"
+      :occupied="filteredStats.occupied"
+      :available="filteredStats.available"
+      :laden-count="filteredStats.ladenCount"
+      :empty-count="filteredStats.emptyCount"
+      :selected-company="selectedCompanyName"
+    />
 
-    <!-- Company filter cards (hidden in fullscreen) -->
+    <!-- Toggleable Company filter cards (hidden in fullscreen and when toggled off) -->
     <CompanyCards
-      v-show="!isFullscreen"
+      v-if="showCompanyCards && !isFullscreen"
       :companies="companyStats"
       :selected-company="selectedCompanyName"
       :total-count="positionedContainers.length"
       @select="selectCompany"
     />
 
-    <!-- Main 3D content with floating panel -->
+    <!-- Main 3D content with floating panels -->
     <a-card :bordered="false" :class="['main-content-card', { 'fullscreen-card': isFullscreen }]">
       <div class="terminal-container">
+        <!-- Floating Controls (always visible, top-left) -->
+        <YardControls
+          v-if="!isFullscreen"
+          :show-stats="showStatsBar"
+          :show-companies="showCompanyCards"
+          :loading="loading"
+          @toggle-stats="toggleStatsBar"
+          @toggle-companies="toggleCompanyCards"
+          @refresh="refreshAll"
+        />
+
         <!-- 3D View (always visible) -->
         <TerminalLayout3D
           ref="terminalLayout3DRef"
@@ -187,11 +231,8 @@ function handleFocusTask(task: WorkOrder): void {
           @marker-select="handleMarkerSelect"
         />
 
-        <!-- Floating Unplaced Containers List (top-left) -->
+        <!-- Floating Unplaced Containers List (top-left, below controls) -->
         <UnplacedContainersList />
-
-        <!-- Floating Work Order Task Panel (top-right) -->
-        <WorkOrderTaskPanel @focus-task="handleFocusTask" />
 
         <!-- Fullscreen Exit Hint -->
         <div v-if="isFullscreen" class="fullscreen-exit-hint">
@@ -226,11 +267,6 @@ function handleFocusTask(task: WorkOrder): void {
   height: 100%;
   display: flex;
   flex-direction: column;
-}
-
-.header-card {
-  margin-bottom: 16px;
-  flex-shrink: 0;
 }
 
 .main-content-card {

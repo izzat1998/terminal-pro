@@ -477,3 +477,359 @@ class ContainerPosition(TimestampedModel):
 
     def __str__(self):
         return f"{self.coordinate_string} ({self.container_entry.container.container_number})"
+
+
+class TerminalVehicle(TimestampedModel):
+    """
+    Terminal yard equipment for container handling operations.
+    Used for assigning work orders to specific vehicles.
+    """
+
+    # Vehicle type choices
+    TYPE_CHOICES = [
+        ("REACH_STACKER", "Ричстакер"),
+        ("FORKLIFT", "Погрузчик"),
+        ("YARD_TRUCK", "Тягач"),
+        ("RTG_CRANE", "Козловой кран (RTG)"),
+    ]
+
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Название/номер техники (например, RS-01, Погрузчик-3)",
+    )
+
+    vehicle_type = models.CharField(
+        max_length=20,
+        choices=TYPE_CHOICES,
+        db_index=True,
+        help_text="Тип техники",
+    )
+
+    license_plate = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Госномер (если есть)",
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Активна ли техника",
+    )
+
+    # Operator assignment (links vehicle to user via telegram_id)
+    operator = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="operated_vehicles",
+        help_text="Оператор, работающий на этой технике",
+    )
+
+    class Meta:
+        ordering = ["vehicle_type", "name"]
+        verbose_name = "Техника терминала"
+        verbose_name_plural = "Техника терминала"
+        indexes = [
+            models.Index(fields=["operator"], name="tv_operator_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_vehicle_type_display()})"
+
+
+class WorkOrder(TimestampedModel):
+    """
+    Work order for container operations (placement or retrieval).
+    Tracks the assignment of container handling tasks to terminal vehicles.
+
+    Workflow:
+    PENDING → ASSIGNED → ACCEPTED → IN_PROGRESS → COMPLETED → VERIFIED
+                                                           ↘ FAILED
+
+    - PENDING: Created by control room, not yet assigned
+    - ASSIGNED: Assigned to a specific vehicle
+    - ACCEPTED: Operator accepted the work order
+    - IN_PROGRESS: Operator is navigating to location / placing or retrieving container
+    - COMPLETED: Operator confirmed placement/retrieval with photo
+    - VERIFIED: System verified correct placement (optional auto-verification)
+    - FAILED: Operation was incorrect or could not be completed
+    """
+
+    from django.core.validators import MaxValueValidator, MinValueValidator
+
+    # Operation type choices
+    OPERATION_CHOICES = [
+        ("PLACEMENT", "Размещение"),
+        ("RETRIEVAL", "Извлечение"),
+    ]
+
+    # Status workflow
+    STATUS_CHOICES = [
+        ("PENDING", "Ожидает"),
+        ("ASSIGNED", "Назначен"),
+        ("ACCEPTED", "Принят"),
+        ("IN_PROGRESS", "Выполняется"),
+        ("COMPLETED", "Завершён"),
+        ("VERIFIED", "Подтверждён"),
+        ("FAILED", "Ошибка"),
+    ]
+
+    # Priority levels
+    PRIORITY_CHOICES = [
+        ("LOW", "Низкий"),
+        ("MEDIUM", "Средний"),
+        ("HIGH", "Высокий"),
+        ("URGENT", "Срочный"),
+    ]
+
+    # Zone choices (same as ContainerPosition)
+    ZONE_CHOICES = [
+        ("A", "Zone A"),
+        ("B", "Zone B"),
+        ("C", "Zone C"),
+        ("D", "Zone D"),
+        ("E", "Zone E"),
+    ]
+
+    # Sub-slot choices (same as ContainerPosition)
+    SUB_SLOT_CHOICES = [
+        ("A", "Slot A (Left/Front)"),
+        ("B", "Slot B (Right/Back)"),
+    ]
+
+    # Operation type: placement (incoming) or retrieval (outgoing)
+    operation_type = models.CharField(
+        max_length=10,
+        choices=OPERATION_CHOICES,
+        default="PLACEMENT",
+        db_index=True,
+        help_text="Тип операции: размещение контейнера на терминал или извлечение с терминала",
+    )
+
+    # Unique order number for display
+    order_number = models.CharField(
+        max_length=20,
+        unique=True,
+        db_index=True,
+        help_text="Номер наряда (автогенерируемый)",
+    )
+
+    # Container entry to be placed or retrieved
+    container_entry = models.ForeignKey(
+        ContainerEntry,
+        on_delete=models.CASCADE,
+        related_name="work_orders",
+        help_text="Контейнер для размещения или извлечения",
+    )
+
+    # Current status
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="PENDING",
+        db_index=True,
+        help_text="Текущий статус наряда",
+    )
+
+    # Priority
+    priority = models.CharField(
+        max_length=10,
+        choices=PRIORITY_CHOICES,
+        default="MEDIUM",
+        db_index=True,
+        help_text="Приоритет выполнения",
+    )
+
+    # Target position coordinates (where to place the container)
+    target_zone = models.CharField(
+        max_length=1,
+        choices=ZONE_CHOICES,
+        help_text="Целевая зона",
+    )
+
+    target_row = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(20)],
+        help_text="Целевой ряд (1-20)",
+    )
+
+    target_bay = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Целевой отсек (1-10)",
+    )
+
+    target_tier = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(4)],
+        help_text="Целевой ярус (1-4)",
+    )
+
+    target_sub_slot = models.CharField(
+        max_length=1,
+        choices=SUB_SLOT_CHOICES,
+        default="A",
+        help_text="Целевая позиция в отсеке",
+    )
+
+    # Assigned vehicle (nullable until assigned)
+    assigned_to_vehicle = models.ForeignKey(
+        TerminalVehicle,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="work_orders",
+        help_text="Техника, которой назначен наряд",
+    )
+
+    # Created by (control room operator)
+    created_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_work_orders",
+        help_text="Оператор, создавший наряд",
+    )
+
+    # SLA deadline
+    sla_deadline = models.DateTimeField(
+        help_text="Крайний срок выполнения",
+    )
+
+    # Timestamps for status transitions
+    assigned_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Время назначения менеджеру",
+    )
+
+    accepted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Время принятия менеджером",
+    )
+
+    started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Время начала выполнения",
+    )
+
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Время завершения (фото подтверждение)",
+    )
+
+    verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Время системной верификации",
+    )
+
+    # Placement verification
+    placement_photo = models.ImageField(
+        upload_to="work_orders/placement_photos/%Y/%m/",
+        null=True,
+        blank=True,
+        help_text="Фото подтверждения размещения",
+    )
+
+    verification_status = models.CharField(
+        max_length=20,
+        choices=[
+            ("PENDING", "Ожидает проверки"),
+            ("CORRECT", "Верно"),
+            ("INCORRECT", "Неверно"),
+        ],
+        null=True,
+        blank=True,
+        help_text="Результат верификации",
+    )
+
+    verification_notes = models.TextField(
+        blank=True,
+        default="",
+        help_text="Примечания к верификации",
+    )
+
+    # Optional notes
+    notes = models.TextField(
+        blank=True,
+        default="",
+        help_text="Дополнительные примечания",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Наряд на операцию"
+        verbose_name_plural = "Наряды на операции"
+        indexes = [
+            models.Index(fields=["operation_type"], name="wo_operation_type_idx"),
+            models.Index(
+                fields=["status", "-created_at"], name="wo_status_created_idx"
+            ),
+            models.Index(
+                fields=["assigned_to_vehicle", "status"], name="wo_vehicle_status_idx"
+            ),
+            models.Index(
+                fields=["priority", "-created_at"], name="wo_priority_created_idx"
+            ),
+            models.Index(fields=["-sla_deadline"], name="wo_sla_deadline_idx"),
+            models.Index(fields=["order_number"], name="wo_order_number_idx"),
+        ]
+
+    @property
+    def target_coordinate_string(self) -> str:
+        """Return formatted target coordinate: A-R03-B15-T2-A"""
+        return (
+            f"{self.target_zone}-R{self.target_row:02d}-B{self.target_bay:02d}-"
+            f"T{self.target_tier}-{self.target_sub_slot}"
+        )
+
+    @property
+    def is_overdue(self) -> bool:
+        """Check if work order has passed SLA deadline"""
+        return timezone.now() > self.sla_deadline
+
+    @property
+    def time_remaining_minutes(self) -> int | None:
+        """Minutes remaining until SLA deadline (negative if overdue)"""
+        if not self.sla_deadline:
+            return None
+        delta = self.sla_deadline - timezone.now()
+        return int(delta.total_seconds() / 60)
+
+    def save(self, *args, **kwargs):
+        """Auto-generate order number if not set"""
+        if not self.order_number:
+            # Format: WO-YYYYMMDD-XXXX (e.g., WO-20260115-0001)
+            from django.db.models import Max
+
+            today = timezone.now().strftime("%Y%m%d")
+            prefix = f"WO-{today}-"
+
+            # Find max order number for today
+            last_order = (
+                WorkOrder.objects.filter(order_number__startswith=prefix)
+                .aggregate(Max("order_number"))
+                .get("order_number__max")
+            )
+
+            if last_order:
+                # Extract sequence number and increment
+                seq = int(last_order.split("-")[-1]) + 1
+            else:
+                seq = 1
+
+            self.order_number = f"{prefix}{seq:04d}"
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return (
+            f"{self.order_number}: {self.container_entry.container.container_number} "
+            f"→ {self.target_coordinate_string} ({self.get_status_display()})"
+        )

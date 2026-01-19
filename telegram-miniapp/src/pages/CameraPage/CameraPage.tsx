@@ -643,7 +643,7 @@ export const CameraPage: FC = () => {
 
             <Card title="Rasmlar">
               <Grid columns={3} gap={16}>
-                {allPhotos.map((photo, photo_index) => {
+                {allPhotos.map((photo, photoIndex) => {
 
                   const isSuccessfulPhoto = capturedImage === photo && recognitionResult?.success;
 
@@ -651,7 +651,7 @@ export const CameraPage: FC = () => {
                     <Grid.Item className='relative'>
                       <Image className={`rounded ${isSuccessfulPhoto ? 'border-4 border-green-400' : ''}`} fit={'cover'} width={100} height={100} src={photo} />
                       <div
-                        onClick={() => void deletePhoto(photo_index)}
+                        onClick={() => void deletePhoto(photoIndex)}
                         className='absolute top-1 -right-0.5 bg-red-500 rounded-full p-1'>
                         <X size={14}></X>
                       </div>

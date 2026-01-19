@@ -12,6 +12,7 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
+from apps.accounts.models import CustomerProfile
 from apps.core.exceptions import BusinessLogicError
 from apps.terminal_operations.filters import ContainerEntryFilter
 from apps.terminal_operations.models import ContainerEntry, PreOrder
@@ -66,7 +67,7 @@ class CustomerProfileViewSet(viewsets.ViewSet):
         """Get the company associated with the user."""
         try:
             return user.customer_profile.company
-        except Exception:
+        except (CustomerProfile.DoesNotExist, AttributeError):
             if hasattr(user, "company"):
                 return user.company
         return None
@@ -194,7 +195,7 @@ class CustomerContainerEntryViewSet(viewsets.ReadOnlyModelViewSet):
         customer_company = None
         try:
             customer_company = self.request.user.customer_profile.company
-        except Exception:
+        except (CustomerProfile.DoesNotExist, AttributeError):
             if hasattr(self.request.user, "company"):
                 customer_company = self.request.user.company
 
@@ -241,7 +242,9 @@ class CustomerContainerEntryViewSet(viewsets.ReadOnlyModelViewSet):
         tags=["Customer Pre-Orders"],
         summary="Cancel pre-order",
         description="Cancel a pre-order. Only PENDING status orders can be cancelled.",
-        responses={200: OpenApiResponse(description="Pre-order cancelled successfully")},
+        responses={
+            200: OpenApiResponse(description="Pre-order cancelled successfully")
+        },
     ),
     pending=extend_schema(
         tags=["Customer Pre-Orders"],

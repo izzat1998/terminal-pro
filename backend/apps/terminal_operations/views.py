@@ -5,7 +5,7 @@ from django.http import FileResponse
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
-from rest_framework import status, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -36,6 +36,7 @@ from .services import (
     ContainerEntryExportService,
     ContainerEntryImportService,
     ContainerEntryService,
+    CraneOperationService,
 )
 
 
@@ -69,41 +70,36 @@ class CraneOperationViewSet(viewsets.ModelViewSet):
     ordering_fields = ["operation_date", "created_at"]
     ordering = ["-operation_date"]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.crane_service = CraneOperationService()
+
     def get_queryset(self):
         """
         Filter crane operations by container_entry_id if provided in query params.
-        Optimize with select_related for performance.
         """
-        queryset = CraneOperation.objects.select_related(
-            "container_entry", "container_entry__container"
-        ).all()
         entry_id = self.request.query_params.get("container_entry_id")
-        if entry_id:
-            queryset = queryset.filter(container_entry_id=entry_id)
-        return queryset
+        return self.crane_service.get_operations_queryset(
+            entry_id=int(entry_id) if entry_id else None
+        )
 
     def perform_create(self, serializer):
         """
-        Create crane operation with container_entry from request data or query params
+        Create crane operation with container_entry from request data or query params.
+        Uses CraneOperationService for business logic.
         """
         entry_id = self.request.data.get(
             "container_entry_id"
         ) or self.request.query_params.get("container_entry_id")
-        if not entry_id:
-            raise BusinessLogicError(
-                message="Необходимо указать ID записи контейнера",
-                error_code="MISSING_PARAMETER",
-            )
 
-        try:
-            entry = ContainerEntry.objects.get(id=entry_id)
-        except ContainerEntry.DoesNotExist:
-            raise BusinessLogicError(
-                message=f"Запись контейнера с ID {entry_id} не найдена",
-                error_code="NOT_FOUND",
-            )
+        # Service handles validation and entity lookup
+        operation = self.crane_service.create_operation(
+            entry_id=int(entry_id) if entry_id else None,
+            operation_date=serializer.validated_data["operation_date"],
+        )
 
-        serializer.save(container_entry=entry)
+        # Update serializer instance for response
+        serializer.instance = operation
 
     @action(detail=False, methods=["post"], url_path="for-entry")
     def for_entry(self, request):
@@ -112,27 +108,18 @@ class CraneOperationViewSet(viewsets.ModelViewSet):
         POST /api/terminal/crane-operations/for-entry/
         Body: {"container_entry_id": 123, "operation_date": "2025-10-28T10:30:00Z"}
         """
-        entry_id = request.data.get("container_entry_id")
-        if not entry_id:
-            raise BusinessLogicError(
-                message="Необходимо указать ID записи контейнера",
-                error_code="MISSING_PARAMETER",
-            )
-
-        try:
-            entry = ContainerEntry.objects.get(id=entry_id)
-        except ContainerEntry.DoesNotExist:
-            raise BusinessLogicError(
-                message=f"Запись контейнера с ID {entry_id} не найдена",
-                error_code="NOT_FOUND",
-            )
-
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(container_entry=entry)
+
+        entry_id = request.data.get("container_entry_id")
+        operation = self.crane_service.create_operation(
+            entry_id=int(entry_id) if entry_id else None,
+            operation_date=serializer.validated_data["operation_date"],
+        )
 
         return Response(
-            {"success": True, "data": serializer.data}, status=status.HTTP_201_CREATED
+            {"success": True, "data": CraneOperationSerializer(operation).data},
+            status=status.HTTP_201_CREATED,
         )
 
 
@@ -344,6 +331,32 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
         """
         stats = self.entry_service.get_container_stats()
         return Response({"success": True, "data": stats})
+
+    @action(detail=False, methods=["get"], url_path="executive-dashboard")
+    def executive_dashboard(self, request):
+        """
+        Get comprehensive executive dashboard data.
+
+        GET /api/terminal/entries/executive-dashboard/
+
+        Returns all executive KPIs in a single optimized call:
+        - summary: High-level metrics (containers, revenue, vehicles, customers)
+        - container_status: Laden/empty breakdown with size distribution
+        - revenue_trends: 30-day daily revenue and entry/exit trends
+        - top_customers: Top 10 customers by revenue and container count
+        - throughput: Entry/exit throughput with 7-day and 30-day totals
+        - vehicle_metrics: Vehicles on terminal with dwell time
+        - preorder_stats: Pre-order status breakdown
+
+        Query Parameters:
+            days: Number of days for historical trends (default: 30)
+        """
+        from .services import ExecutiveDashboardService
+
+        days = int(request.query_params.get("days", 30))
+        dashboard_service = ExecutiveDashboardService()
+        data = dashboard_service.get_executive_dashboard(days=days)
+        return Response({"success": True, "data": data})
 
     @action(detail=False, methods=["get"], url_path="by-container")
     def by_container(self, request):
@@ -1311,5 +1324,839 @@ class PlacementViewSet(viewsets.GenericViewSet):
                 "success": True,
                 "data": containers,
                 "count": len(containers),
+            }
+        )
+
+
+# ============ Work Order ViewSet ============
+
+
+class WorkOrderViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    ViewSet for container placement work orders.
+
+    Provides endpoints for:
+    - Creating work orders (control room)
+    - Assigning work orders to managers
+    - Manager actions: accept, start, complete
+    - Verification of completed placements
+    - Listing active, pending, and overdue orders
+    """
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        """Return base queryset for work orders."""
+        from .models import WorkOrder
+
+        return WorkOrder.objects.select_related(
+            "container_entry__container",
+            "container_entry__company",
+            "assigned_to_vehicle",
+        ).order_by("-priority", "-created_at")
+
+    def get_work_order_service(self):
+        """Lazy-load WorkOrderService."""
+        from apps.terminal_operations.services.work_order_service import (
+            WorkOrderService,
+        )
+
+        return WorkOrderService()
+
+    def _work_order_response(self, work_order, request, message: str):
+        """Helper to create consistent work order response."""
+        from .serializers import WorkOrderSerializer
+
+        serializer = WorkOrderSerializer(work_order, context={"request": request})
+        return Response(
+            {
+                "success": True,
+                "data": serializer.data,
+                "message": message,
+            }
+        )
+
+    def _paginated_list_response(self, queryset, request):
+        """Helper for paginated list responses."""
+        from .serializers import WorkOrderListSerializer
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = WorkOrderListSerializer(
+                page, many=True, context={"request": request}
+            )
+            return self.get_paginated_response(serializer.data)
+
+        serializer = WorkOrderListSerializer(
+            queryset, many=True, context={"request": request}
+        )
+        return Response({"success": True, "data": serializer.data})
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action."""
+        from .serializers import (
+            WorkOrderAssignSerializer,
+            WorkOrderCompleteSerializer,
+            WorkOrderCreateSerializer,
+            WorkOrderFailSerializer,
+            WorkOrderListSerializer,
+            WorkOrderSerializer,
+            WorkOrderVerifySerializer,
+        )
+
+        action_serializers = {
+            "create": WorkOrderCreateSerializer,
+            "assign": WorkOrderAssignSerializer,
+            "complete": WorkOrderCompleteSerializer,
+            "verify": WorkOrderVerifySerializer,
+            "fail": WorkOrderFailSerializer,
+        }
+        if self.action in action_serializers:
+            return action_serializers[self.action]
+        if self.action == "list":
+            return WorkOrderListSerializer
+        return WorkOrderSerializer
+
+    @extend_schema(
+        summary="List work orders",
+        description="List all active work orders. Filter by status, priority, or assigned manager.",
+        parameters=[
+            OpenApiParameter(
+                name="status",
+                type=str,
+                required=False,
+                description="Filter by status (comma-separated: PENDING,ASSIGNED,ACCEPTED,IN_PROGRESS,COMPLETED,VERIFIED,FAILED)",
+            ),
+            OpenApiParameter(
+                name="assigned_to",
+                type=int,
+                required=False,
+                description="Filter by assigned manager ID",
+            ),
+            OpenApiParameter(
+                name="priority",
+                type=str,
+                required=False,
+                description="Filter by priority (LOW,MEDIUM,HIGH,URGENT)",
+            ),
+        ],
+        tags=["Work Orders"],
+    )
+    def list(self, request):
+        """List work orders with optional filters."""
+        queryset = self.get_queryset()
+
+        # Apply filters
+        status_param = request.query_params.get("status")
+        if status_param:
+            statuses = [s.strip().upper() for s in status_param.split(",")]
+            queryset = queryset.filter(status__in=statuses)
+
+        assigned_to = request.query_params.get("assigned_to")
+        if assigned_to:
+            queryset = queryset.filter(assigned_to_id=assigned_to)
+
+        priority = request.query_params.get("priority")
+        if priority:
+            queryset = queryset.filter(priority=priority.upper())
+
+        # Paginate
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Get work order detail",
+        description="Get detailed information about a specific work order.",
+        tags=["Work Orders"],
+    )
+    def retrieve(self, request, pk=None):
+        """Get single work order detail."""
+        work_order = self.get_queryset().filter(id=pk).first()
+        if not work_order:
+            raise BusinessLogicError(
+                message=f"Наряд #{pk} не найден",
+                error_code="WORK_ORDER_NOT_FOUND",
+            )
+
+        serializer = self.get_serializer(work_order)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Create work order",
+        description="Create a new placement work order. Position is auto-suggested if not provided.",
+        tags=["Work Orders"],
+    )
+    def create(self, request):
+        """Create a new work order."""
+        from .serializers import WorkOrderSerializer
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        service = self.get_work_order_service()
+        work_order = service.create_work_order(
+            container_entry_id=serializer.validated_data["container_entry_id"],
+            zone=serializer.validated_data.get("zone"),
+            row=serializer.validated_data.get("row"),
+            bay=serializer.validated_data.get("bay"),
+            tier=serializer.validated_data.get("tier"),
+            sub_slot=serializer.validated_data.get("sub_slot", "A"),
+            priority=serializer.validated_data.get("priority", "MEDIUM"),
+            assigned_to_vehicle_id=serializer.validated_data.get("assigned_to_vehicle_id"),
+            created_by=request.user,
+            notes=serializer.validated_data.get("notes", ""),
+        )
+
+        response_serializer = WorkOrderSerializer(
+            work_order, context={"request": request}
+        )
+        return Response(
+            {
+                "success": True,
+                "data": response_serializer.data,
+                "message": "Наряд создан",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        summary="Assign work order to vehicle",
+        description="Assign a pending work order to a terminal vehicle.",
+        tags=["Work Orders"],
+    )
+    @action(detail=True, methods=["post"])
+    def assign(self, request, pk=None):
+        """Assign work order to a terminal vehicle."""
+        from .serializers import WorkOrderSerializer
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        service = self.get_work_order_service()
+        work_order = service.assign_to_vehicle(
+            work_order_id=int(pk),
+            vehicle_id=serializer.validated_data["vehicle_id"],
+        )
+
+        response_serializer = WorkOrderSerializer(
+            work_order, context={"request": request}
+        )
+        return Response(
+            {
+                "success": True,
+                "data": response_serializer.data,
+                "message": "Наряд назначен",
+            }
+        )
+
+    @extend_schema(
+        summary="Accept work order",
+        description="Accept an assigned work order for a vehicle.",
+        tags=["Work Orders"],
+        parameters=[
+            OpenApiParameter(
+                name="vehicle_id",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Terminal vehicle ID accepting the order",
+                required=True,
+            ),
+        ],
+    )
+    @action(detail=True, methods=["post"])
+    def accept(self, request, pk=None):
+        """Accept the work order for a vehicle."""
+        vehicle_id = request.query_params.get("vehicle_id")
+        if not vehicle_id:
+            raise BusinessLogicError(
+                message="Не указан ID техники",
+                error_code="VEHICLE_ID_REQUIRED",
+            )
+
+        service = self.get_work_order_service()
+        work_order = service.accept_order(
+            work_order_id=int(pk),
+            vehicle_id=int(vehicle_id),
+            operator=request.user if request.user.is_authenticated else None,
+        )
+
+        return self._work_order_response(work_order, request, "Наряд принят")
+
+    @extend_schema(
+        summary="Start work order",
+        description="Start working on the work order (navigating to location).",
+        tags=["Work Orders"],
+        parameters=[
+            OpenApiParameter(
+                name="vehicle_id",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Terminal vehicle ID starting the order",
+                required=True,
+            ),
+        ],
+    )
+    @action(detail=True, methods=["post"])
+    def start(self, request, pk=None):
+        """Start working on the order."""
+        vehicle_id = request.query_params.get("vehicle_id")
+        if not vehicle_id:
+            raise BusinessLogicError(
+                message="Не указан ID техники",
+                error_code="VEHICLE_ID_REQUIRED",
+            )
+
+        service = self.get_work_order_service()
+        work_order = service.start_order(
+            work_order_id=int(pk),
+            vehicle_id=int(vehicle_id),
+            operator=request.user if request.user.is_authenticated else None,
+        )
+
+        return self._work_order_response(work_order, request, "Выполнение начато")
+
+    @extend_schema(
+        summary="Complete work order",
+        description="Complete the work order with placement photo confirmation.",
+        tags=["Work Orders"],
+        parameters=[
+            OpenApiParameter(
+                name="vehicle_id",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Terminal vehicle ID completing the order",
+                required=True,
+            ),
+        ],
+    )
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        """Complete the work order with photo."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        vehicle_id = request.query_params.get("vehicle_id")
+        if not vehicle_id:
+            raise BusinessLogicError(
+                message="Не указан ID техники",
+                error_code="VEHICLE_ID_REQUIRED",
+            )
+
+        service = self.get_work_order_service()
+        work_order = service.complete_order(
+            work_order_id=int(pk),
+            vehicle_id=int(vehicle_id),
+            operator=request.user if request.user.is_authenticated else None,
+            placement_photo=serializer.validated_data.get("placement_photo"),
+        )
+
+        return self._work_order_response(work_order, request, "Размещение завершено")
+
+    @extend_schema(
+        summary="Verify placement",
+        description="Control room verifies a completed placement (correct or incorrect).",
+        tags=["Work Orders"],
+    )
+    @action(detail=True, methods=["post"])
+    def verify(self, request, pk=None):
+        """Verify completed placement."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        service = self.get_work_order_service()
+        work_order = service.verify_placement(
+            work_order_id=int(pk),
+            is_correct=serializer.validated_data["is_correct"],
+            notes=serializer.validated_data.get("notes", ""),
+            verified_by=request.user,
+        )
+
+        return self._work_order_response(work_order, request, "Размещение проверено")
+
+    @extend_schema(
+        summary="Fail work order",
+        description="Mark work order as failed with reason.",
+        tags=["Work Orders"],
+        parameters=[
+            OpenApiParameter(
+                name="vehicle_id",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Terminal vehicle ID reporting the failure (optional)",
+                required=False,
+            ),
+        ],
+    )
+    @action(detail=True, methods=["post"])
+    def fail(self, request, pk=None):
+        """Mark work order as failed."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        vehicle_id = request.query_params.get("vehicle_id")
+
+        service = self.get_work_order_service()
+        work_order = service.fail_order(
+            work_order_id=int(pk),
+            reason=serializer.validated_data["reason"],
+            vehicle_id=int(vehicle_id) if vehicle_id else None,
+        )
+
+        return self._work_order_response(
+            work_order, request, "Наряд отмечен как ошибочный"
+        )
+
+    @extend_schema(
+        summary="Get vehicle work orders",
+        description="Get work orders assigned to a specific terminal vehicle.",
+        tags=["Work Orders"],
+        parameters=[
+            OpenApiParameter(
+                name="vehicle_id",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Terminal vehicle ID to get orders for",
+                required=True,
+            ),
+        ],
+    )
+    @action(detail=False, methods=["get"], url_path="vehicle-orders")
+    def vehicle_orders(self, request):
+        """Get work orders assigned to a specific vehicle."""
+        vehicle_id = request.query_params.get("vehicle_id")
+        if not vehicle_id:
+            raise BusinessLogicError(
+                message="Не указан ID техники",
+                error_code="VEHICLE_ID_REQUIRED",
+            )
+
+        service = self.get_work_order_service()
+        queryset = service.get_vehicle_orders(vehicle_id=int(vehicle_id))
+
+        return self._paginated_list_response(queryset, request)
+
+    @extend_schema(
+        summary="Get my work orders (for Telegram Mini App)",
+        description="Get work orders assigned to the vehicle operated by the user with the given telegram_id.",
+        tags=["Work Orders"],
+        parameters=[
+            OpenApiParameter(
+                name="telegram_id",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Telegram user ID of the operator",
+                required=False,
+            ),
+        ],
+    )
+    @action(detail=False, methods=["get"], url_path="my-orders")
+    def my_orders(self, request):
+        """
+        Get work orders for the current operator (identified by telegram_id).
+
+        Looks up the user by telegram_id, finds their assigned vehicle,
+        and returns active work orders for that vehicle.
+        """
+        from apps.accounts.models import CustomUser
+
+        from .models import TerminalVehicle
+        from .serializers import WorkOrderListSerializer
+
+        telegram_id = request.query_params.get("telegram_id")
+
+        # Find user by telegram_id (check both legacy field and profile)
+        user = None
+        if telegram_id:
+            # Try legacy field first
+            user = CustomUser.objects.filter(telegram_user_id=telegram_id).first()
+            # If not found, try manager profile
+            if not user:
+                from apps.accounts.models import ManagerProfile
+
+                profile = ManagerProfile.objects.filter(
+                    telegram_user_id=telegram_id
+                ).first()
+                if profile:
+                    user = profile.user
+
+        # Find vehicle(s) operated by this user
+        vehicles = []
+        if user:
+            vehicles = TerminalVehicle.objects.filter(
+                operator=user, is_active=True
+            ).values_list("id", flat=True)
+
+        # If no vehicles found, return empty list
+        if not vehicles:
+            return Response(
+                {
+                    "success": True,
+                    "count": 0,
+                    "next": None,
+                    "previous": None,
+                    "results": [],
+                }
+            )
+
+        # Get active work orders for these vehicles
+        service = self.get_work_order_service()
+        queryset = (
+            service.get_queryset()
+            if hasattr(service, "get_queryset")
+            else self.get_queryset()
+        )
+        queryset = queryset.filter(
+            assigned_to_vehicle_id__in=list(vehicles),
+            status__in=["ASSIGNED", "ACCEPTED", "IN_PROGRESS"],
+        ).order_by("-priority", "-created_at")
+
+        # Return paginated response
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = WorkOrderListSerializer(
+                page, many=True, context={"request": request}
+            )
+            return self.get_paginated_response(serializer.data)
+
+        serializer = WorkOrderListSerializer(
+            queryset, many=True, context={"request": request}
+        )
+        return Response(
+            {
+                "success": True,
+                "count": queryset.count(),
+                "next": None,
+                "previous": None,
+                "results": serializer.data,
+            }
+        )
+
+    @extend_schema(
+        summary="Get pending work orders",
+        description="Get unassigned work orders (for control room dashboard).",
+        tags=["Work Orders"],
+    )
+    @action(detail=False, methods=["get"])
+    def pending(self, request):
+        """Get unassigned work orders."""
+        service = self.get_work_order_service()
+        queryset = service.get_pending_orders()
+
+        return self._paginated_list_response(queryset, request)
+
+    @extend_schema(
+        summary="Get overdue work orders",
+        description="Get work orders that have passed their SLA deadline.",
+        tags=["Work Orders"],
+    )
+    @action(detail=False, methods=["get"])
+    def overdue(self, request):
+        """Get overdue work orders."""
+        from .serializers import WorkOrderListSerializer
+
+        service = self.get_work_order_service()
+        queryset = service.get_overdue_orders()
+
+        serializer = WorkOrderListSerializer(
+            queryset, many=True, context={"request": request}
+        )
+        return Response(
+            {
+                "success": True,
+                "data": serializer.data,
+                "count": queryset.count(),
+            }
+        )
+
+    @extend_schema(
+        summary="Get work order statistics",
+        description="Get aggregated statistics about work orders.",
+        tags=["Work Orders"],
+    )
+    @action(detail=False, methods=["get"])
+    def stats(self, request):
+        """Get work order statistics."""
+        from django.db.models import Count, Q
+
+        from .models import WorkOrder
+
+        stats = WorkOrder.objects.aggregate(
+            total=Count("id"),
+            pending=Count("id", filter=Q(status="PENDING")),
+            assigned=Count("id", filter=Q(status="ASSIGNED")),
+            accepted=Count("id", filter=Q(status="ACCEPTED")),
+            in_progress=Count("id", filter=Q(status="IN_PROGRESS")),
+            completed=Count("id", filter=Q(status="COMPLETED")),
+            verified=Count("id", filter=Q(status="VERIFIED")),
+            failed=Count("id", filter=Q(status="FAILED")),
+            overdue=Count(
+                "id",
+                filter=Q(
+                    status__in=["PENDING", "ASSIGNED", "ACCEPTED", "IN_PROGRESS"],
+                    sla_deadline__lt=timezone.now(),
+                ),
+            ),
+        )
+
+        return Response({"success": True, "data": stats})
+
+
+class TerminalVehicleViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for terminal vehicles (yard equipment).
+
+    Provides full CRUD access to terminal vehicles for admin management
+    and read-only access for work order assignment.
+    """
+
+    from .models import TerminalVehicle
+    from .serializers import TerminalVehicleSerializer, TerminalVehicleWriteSerializer
+
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Return all vehicles ordered by type and name.
+        Includes inactive vehicles for admin management.
+        """
+        from .models import TerminalVehicle
+
+        return TerminalVehicle.objects.select_related("operator").order_by(
+            "vehicle_type", "name"
+        )
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action."""
+        from .serializers import TerminalVehicleSerializer, TerminalVehicleWriteSerializer
+
+        if self.action in ["create", "update", "partial_update"]:
+            return TerminalVehicleWriteSerializer
+        return TerminalVehicleSerializer
+
+    def get_vehicle_service(self):
+        """Lazy-load TerminalVehicleService."""
+        from .services.terminal_vehicle_service import TerminalVehicleService
+
+        return TerminalVehicleService()
+
+    @extend_schema(
+        summary="List terminal vehicles",
+        description="Get all terminal vehicles for admin management.",
+        tags=["Terminal Vehicles"],
+    )
+    def list(self, request, *args, **kwargs):
+        """List all terminal vehicles."""
+        from .serializers import TerminalVehicleSerializer
+
+        queryset = self.get_queryset()
+        serializer = TerminalVehicleSerializer(queryset, many=True)
+        return Response(
+            {
+                "success": True,
+                "data": serializer.data,
+                "count": queryset.count(),
+            }
+        )
+
+    @extend_schema(
+        summary="Get terminal vehicle details",
+        description="Get details for a specific terminal vehicle.",
+        tags=["Terminal Vehicles"],
+    )
+    def retrieve(self, request, *args, **kwargs):
+        """Get terminal vehicle details."""
+        from .serializers import TerminalVehicleSerializer
+
+        instance = self.get_object()
+        serializer = TerminalVehicleSerializer(instance)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Create terminal vehicle",
+        description="Create a new terminal vehicle (yard equipment).",
+        tags=["Terminal Vehicles"],
+    )
+    def create(self, request, *args, **kwargs):
+        """Create a new terminal vehicle."""
+        from .serializers import TerminalVehicleSerializer
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        service = self.get_vehicle_service()
+        vehicle = service.create_vehicle(
+            name=serializer.validated_data["name"],
+            vehicle_type=serializer.validated_data["vehicle_type"],
+            license_plate=serializer.validated_data.get("license_plate", ""),
+            operator_id=serializer.validated_data.get("operator_id"),
+            is_active=serializer.validated_data.get("is_active", True),
+        )
+
+        response_serializer = TerminalVehicleSerializer(vehicle)
+        return Response(
+            {
+                "success": True,
+                "data": response_serializer.data,
+                "message": "Техника успешно создана",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        summary="Update terminal vehicle",
+        description="Update an existing terminal vehicle.",
+        tags=["Terminal Vehicles"],
+    )
+    def update(self, request, *args, **kwargs):
+        """Update a terminal vehicle (full update)."""
+        return self._perform_update(request, partial=False)
+
+    @extend_schema(
+        summary="Partial update terminal vehicle",
+        description="Partially update an existing terminal vehicle.",
+        tags=["Terminal Vehicles"],
+    )
+    def partial_update(self, request, *args, **kwargs):
+        """Partially update a terminal vehicle."""
+        return self._perform_update(request, partial=True)
+
+    def _perform_update(self, request, partial: bool):
+        """Shared update logic for PUT and PATCH."""
+        from .serializers import TerminalVehicleSerializer
+
+        instance = self.get_object()
+        serializer = self.get_serializer(data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+
+        service = self.get_vehicle_service()
+
+        # Determine if we should clear operator (operator_id is null in request)
+        clear_operator = "operator_id" in request.data and request.data.get("operator_id") is None
+
+        vehicle = service.update_vehicle(
+            vehicle_id=instance.id,
+            name=serializer.validated_data.get("name"),
+            vehicle_type=serializer.validated_data.get("vehicle_type"),
+            license_plate=serializer.validated_data.get("license_plate"),
+            operator_id=serializer.validated_data.get("operator_id") if not clear_operator else None,
+            is_active=serializer.validated_data.get("is_active"),
+            clear_operator=clear_operator,
+        )
+
+        response_serializer = TerminalVehicleSerializer(vehicle)
+        return Response(
+            {
+                "success": True,
+                "data": response_serializer.data,
+                "message": "Техника успешно обновлена",
+            }
+        )
+
+    @extend_schema(
+        summary="Delete terminal vehicle",
+        description="Delete a terminal vehicle. Cannot delete vehicles with active work orders.",
+        tags=["Terminal Vehicles"],
+    )
+    def destroy(self, request, *args, **kwargs):
+        """Delete a terminal vehicle."""
+        instance = self.get_object()
+        service = self.get_vehicle_service()
+        service.delete_vehicle(vehicle_id=instance.id)
+
+        return Response(
+            {
+                "success": True,
+                "message": "Техника успешно удалена",
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        summary="Get available operators",
+        description="Get list of managers who can be assigned as operators.",
+        tags=["Terminal Vehicles"],
+    )
+    @action(detail=False, methods=["get"], url_path="operators")
+    def operators(self, request):
+        """Get list of available operators (managers)."""
+        service = self.get_vehicle_service()
+        operators = service.get_available_operators()
+
+        data = [
+            {"id": op.id, "full_name": op.full_name or op.username}
+            for op in operators
+        ]
+
+        return Response(
+            {
+                "success": True,
+                "data": data,
+                "count": len(data),
+            }
+        )
+
+    @extend_schema(
+        summary="Get terminal vehicles with work status",
+        description=(
+            "Returns all terminal vehicles with computed work status. "
+            "Used for sidebar display showing vehicles with operators and current work. "
+            "Statuses: available (active with operator), working (has active order), offline (inactive/no operator)."
+        ),
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {"type": "array"},
+                    "count": {"type": "integer"},
+                    "working_count": {"type": "integer"},
+                },
+            }
+        },
+        tags=["Terminal Vehicles"],
+    )
+    @action(detail=False, methods=["get"], url_path="with-status")
+    def with_status(self, request):
+        """
+        Get all terminal vehicles with computed work status.
+
+        Returns vehicles with:
+        - operator_name: Full name of assigned operator
+        - status: 'available', 'working', or 'offline'
+        - current_task: Container number and target coordinate if working
+        """
+        from .models import TerminalVehicle
+        from .serializers import TerminalVehicleStatusSerializer
+
+        # Fetch all vehicles (not just active) with related data
+        vehicles = (
+            TerminalVehicle.objects.select_related("operator")
+            .prefetch_related("work_orders__container_entry__container")
+            .order_by("vehicle_type", "name")
+        )
+
+        serializer = TerminalVehicleStatusSerializer(vehicles, many=True)
+        data = serializer.data
+
+        # Count working vehicles
+        working_count = sum(1 for v in data if v["status"] == "working")
+
+        return Response(
+            {
+                "success": True,
+                "data": data,
+                "count": len(data),
+                "working_count": working_count,
             }
         )

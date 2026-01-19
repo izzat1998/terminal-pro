@@ -23,16 +23,30 @@ export interface Position {
   coordinate?: string; // Formatted: "A-R03-B15-T2-A"
 }
 
+// Placement status distinguishes physically placed vs pending work order
+export type PlacementStatus = 'placed' | 'pending';
+
+// Work order info embedded in pending containers (inline types to avoid forward reference)
+export interface PendingWorkOrderInfo {
+  id: number;
+  order_number: string;
+  status: 'PENDING' | 'ASSIGNED' | 'ACCEPTED' | 'IN_PROGRESS' | 'COMPLETED' | 'VERIFIED' | 'FAILED';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  assigned_to: string | null;
+}
+
 // Container with position (for 3D rendering)
 export interface ContainerPlacement {
   id: number;
   container_number: string;
   iso_type: string;
   status: 'LADEN' | 'EMPTY';
+  placement_status: PlacementStatus;  // 'placed' = physical, 'pending' = work order created
   position: Position;
   entry_time: string;
   dwell_time_days: number;
   company_name: string;
+  work_order?: PendingWorkOrderInfo;  // Present when placement_status === 'pending'
 }
 
 // Terminal dimensions
@@ -171,26 +185,27 @@ export const CONTAINER_COLORS = {
   LADEN: 0x52c41a,   // Green
   EMPTY: 0x1677ff,   // Blue
   SELECTED: 0xfaad14, // Gold
-  HOVERED: 0xfa8c16,  // Orange
+  HOVERED: 0xfa8c16,  // Orange (hover state)
+  PENDING: 0xfa8c16, // Orange - for containers with pending work orders (solid, no animation)
 } as const;
 
-// Size-variant colors: 20ft = bright, 40ft = darker (same hue, different saturation/lightness)
-// This follows TOS industry best practice: size as secondary visual channel via saturation
+// Size-variant colors: All bright, distinguished by hue shift (no dark colors)
+// 20ft vs 40ft differentiated by hue, not brightness - easier to see in 3D
 export const CONTAINER_SIZE_COLORS = {
-  // Laden containers (green family)
-  LADEN_20: 0x73d13d,  // Bright green - HSL(96, 64%, 53%)
-  LADEN_40: 0x237804,  // Dark green - HSL(102, 94%, 24%)
-  // Empty containers (blue family)
-  EMPTY_20: 0x40a9ff,  // Bright blue - HSL(209, 100%, 63%)
-  EMPTY_40: 0x003eb3,  // Dark blue - HSL(221, 100%, 35%)
+  // Laden containers (green family - 20ft green, 40ft lime-yellow)
+  LADEN_20: 0x52c41a,  // Green - HSL(102, 77%, 44%)
+  LADEN_40: 0x7cb305,  // Lime-green - HSL(75, 94%, 36%) - shifted toward yellow
+  // Empty containers (blue family - 20ft blue, 40ft purple)
+  EMPTY_20: 0x1890ff,  // Bright blue - HSL(209, 100%, 55%)
+  EMPTY_40: 0x722ed1,  // Purple - HSL(265, 67%, 50%) - distinct hue, not dark blue
 } as const;
 
-// Edge colors for container outlines (darker versions for contrast)
+// Edge colors for container outlines (medium-dark versions for contrast against bright faces)
 export const CONTAINER_EDGE_COLORS = {
-  LADEN_20: 0x389e0d,  // Medium-dark green
-  LADEN_40: 0x135200,  // Very dark green
-  EMPTY_20: 0x096dd9,  // Medium-dark blue
-  EMPTY_40: 0x002766,  // Very dark blue
+  LADEN_20: 0x389e0d,  // Dark green (edge for green 20ft)
+  LADEN_40: 0x5b8c00,  // Dark lime (edge for lime 40ft)
+  EMPTY_20: 0x096dd9,  // Dark blue (edge for blue 20ft)
+  EMPTY_40: 0x531dab,  // Dark purple (edge for purple 40ft)
 } as const;
 
 // Get color based on status and size
@@ -268,3 +283,79 @@ export const FULL_ZONE_LAYOUT: Partial<Record<ZoneCode, { xOffset: number; zOffs
   D: { xOffset: 0, zOffset: 40 },    // 30m zone + 10m gap
   E: { xOffset: 140, zOffset: 40 },
 } as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Position Marker Types - For 3D visualization of placement suggestions
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Marker colors for position visualization
+export const MARKER_COLORS = {
+  PRIMARY: 0x52c41a,    // Green - recommended position (★)
+  ALTERNATIVE: 0x1677ff, // Blue - alternative positions
+  AVAILABLE: 0x8c8c8c,  // Gray - any valid empty slot (not suggested)
+  HOVERED: 0x00ff00,    // Pure lime green - intense hover (maximum visibility)
+  SELECTED: 0x722ed1,   // Purple - selected alternative
+} as const;
+
+// Metadata attached to position markers for click detection
+export interface PositionMarkerData {
+  type: 'primary' | 'alternative' | 'available';
+  index: number;        // -1 for primary, 0+ for alternatives, -2 for available (non-recommended)
+  position: Position;
+  coordinate: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Work Order Types - For placement task management
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type WorkOrderStatus =
+  | 'PENDING'      // Created, waiting for assignment
+  | 'ASSIGNED'     // Assigned to manager
+  | 'ACCEPTED'     // Manager accepted
+  | 'IN_PROGRESS'  // Manager is navigating
+  | 'COMPLETED'    // Manager confirmed placement
+  | 'VERIFIED'     // Control room verified
+  | 'FAILED';      // Placement failed
+
+export type WorkOrderPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export interface WorkOrderCreateRequest {
+  container_entry_id: number;
+  zone?: ZoneCode;
+  row?: number;
+  bay?: number;
+  tier?: number;
+  sub_slot?: SubSlot;
+  priority?: WorkOrderPriority;
+  assigned_to_vehicle_id?: number;
+  notes?: string;
+}
+
+// Terminal vehicle info embedded in work order response
+export interface WorkOrderVehicle {
+  id: number;
+  name: string;
+  vehicle_type: 'REACH_STACKER' | 'FORKLIFT' | 'YARD_TRUCK' | 'RTG_CRANE';
+  vehicle_type_display: string;
+}
+
+export interface WorkOrder {
+  id: number;
+  order_number: string;
+  container_entry_id: number;
+  container_number: string;
+  iso_type: string;
+  status: WorkOrderStatus;
+  priority: WorkOrderPriority;
+  target_zone: ZoneCode;
+  target_row: number;
+  target_bay: number;
+  target_tier: number;
+  target_sub_slot: SubSlot;
+  target_coordinate: string;
+  assigned_to_vehicle: WorkOrderVehicle | null;
+  sla_deadline: string;
+  created_at: string;
+  company_name: string;
+}

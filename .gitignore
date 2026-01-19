@@ -63,6 +63,10 @@ frontend/dist/
 !backend/.env.example
 !frontend/.env.example
 
+# MCP configuration (contains credentials)
+.mcp.json
+!.mcp.json.example
+
 # ==================== IDE ====================
 .idea/
 .vscode/*

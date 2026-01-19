@@ -17,6 +17,7 @@ import CustomerPreOrders from '../views/customer/PreOrders.vue';
 import CustomerContainers from '../views/customer/Containers.vue';
 import CustomerUsers from '../views/customer/Users.vue';
 import CustomerDashboard from '../views/customer/Dashboard.vue';
+import CustomerStorageCosts from '../views/customer/StorageCosts.vue';
 import CompanyContainers from '../views/company/CompanyContainers.vue';
 import { useAuth } from '../composables/useAuth';
 import AppLayout from '../components/AppLayout.vue'
@@ -56,6 +57,12 @@ const routes = [
         meta: { title: 'Главная - МТТ', roles: ['admin'] as UserRole[] },
       },
       {
+        path: '/executive',
+        name: 'ExecutiveDashboard',
+        component: () => import('../views/ExecutiveDashboard.vue'),
+        meta: { title: 'Аналитика - МТТ', roles: ['admin'] as UserRole[] },
+      },
+      {
         path: '/customer',
         component: CustomerLayout,
         meta: { title: 'Моя компания - МТТ', roles: ['customer', 'admin'] as UserRole[] },
@@ -88,6 +95,12 @@ const routes = [
             component: CustomerUsers,
             meta: { title: 'Пользователи компании - МТТ', roles: ['customer'] as UserRole[] },
           },
+          {
+            path: 'storage-costs',
+            name: 'CustomerStorageCosts',
+            component: CustomerStorageCosts,
+            meta: { title: 'Стоимость хранения - МТТ', roles: ['customer'] as UserRole[] },
+          },
         ],
       },
       {
@@ -111,6 +124,12 @@ const routes = [
         name: 'ContainerPlacement',
         component: () => import('../views/ContainerPlacement.vue'),
         meta: { title: 'Площадка 3D - МТТ', roles: ['admin'] as UserRole[] },
+      },
+      {
+        path: '/tasks',
+        name: 'WorkOrders',
+        component: () => import('../views/WorkOrdersPage.vue'),
+        meta: { title: 'Задания - МТТ', roles: ['admin'] as UserRole[] },
       },
       {
         path: '/owners',
@@ -141,6 +160,18 @@ const routes = [
         name: 'Companies',
         component: Companies,
         meta: { title: 'Компании - МТТ', roles: ['admin'] as UserRole[] },
+      },
+      {
+        path: '/tariffs',
+        name: 'Tariffs',
+        component: () => import('../views/Tariffs.vue'),
+        meta: { title: 'Тарифы - МТТ', roles: ['admin'] as UserRole[] },
+      },
+      {
+        path: '/terminal-vehicles',
+        name: 'TerminalVehicles',
+        component: () => import('../views/TerminalVehicles.vue'),
+        meta: { title: 'Техника терминала - МТТ', roles: ['admin'] as UserRole[] },
       },
       {
         path: '/accounts/companies/:slug',

@@ -4,18 +4,18 @@ import { App } from '@/components/App.tsx';
 import { ErrorBoundary } from '@/components/ErrorBoundary.tsx';
 import { publicUrl } from '@/helpers/publicUrl.ts';
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return JSON.stringify(error);
+}
+
 function ErrorBoundaryError({ error }: { error: unknown }) {
   return (
     <div>
       <p>An unhandled error occurred:</p>
       <blockquote>
-        <code>
-          {error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : JSON.stringify(error)}
-        </code>
+        <code>{getErrorMessage(error)}</code>
       </blockquote>
     </div>
   );

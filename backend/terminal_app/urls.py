@@ -37,6 +37,7 @@ urlpatterns = [
     path("api/files/", include("apps.files.urls")),
     path("api/vehicles/", include("apps.vehicles.urls")),
     path("api/customer/", include("apps.customer_portal.urls")),
+    path("api/billing/", include("apps.billing.urls")),
     path("api/telegram/", include("apps.core.urls")),
     path(
         "api/schema/",

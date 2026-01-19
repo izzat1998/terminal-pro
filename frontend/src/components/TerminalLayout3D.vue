@@ -20,7 +20,7 @@ import {
 import { use3DScene, type CameraPreset } from '../composables/use3DScene';
 import { useContainerMesh } from '../composables/useContainerMesh';
 import { usePlacementState } from '../composables/usePlacementState';
-import type { ContainerPlacement, ZoneCode } from '../types/placement';
+import type { ContainerPlacement, ZoneCode, PositionMarkerData } from '../types/placement';
 import { ZONE_LAYOUT, SPACING, getContainerSize, isHighCube } from '../types/placement';
 
 // Simple throttle function for performance
@@ -51,9 +51,19 @@ function getLegendColor(zone: ZoneCode): string {
   return '#' + color.toString(16).padStart(6, '0');
 }
 
+// Props
+interface Props {
+  isFullscreen?: boolean;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  isFullscreen: false,
+});
+
 const emit = defineEmits<{
   containerClick: [container: ContainerPlacement];
   containerHover: [container: ContainerPlacement | null];
+  markerSelect: [marker: PositionMarkerData];
 }>();
 
 // Canvas ref
@@ -63,7 +73,7 @@ const canvasRef = ref<HTMLCanvasElement>();
 const threeError = ref<string | null>(null);
 
 // Composables
-const { scene, camera, currentPreset, initScene, handleResize, resetCamera, setCameraPreset, fitToContainers } = use3DScene(canvasRef);
+const { scene, camera, currentPreset, initScene, handleResize, resetCamera, setCameraPreset, fitToContainers, focusOnPosition } = use3DScene(canvasRef);
 
 // Navigation help popover visibility
 const showNavHelp = ref(false);
@@ -87,15 +97,38 @@ const {
   showWallText,
   colorMode,
   setColorMode,
-  showPlacementPreview,
+  // Placement mode visual functions
+  enterPlacementModeVisuals,
+  exitPlacementModeVisuals,
   hidePlacementPreview,
+  // Position marker functions
+  showPositionMarkers,
+  hidePositionMarkers,
+  highlightMarker,
+  selectMarker,
+  getMarkerAtPoint,
   dispose: disposeMeshes
 } = useContainerMesh(scene);
-const { filteredPositionedContainers, selectedContainerId, loading, currentSuggestion, placingContainerId, unplacedContainers } = usePlacementState();
+const {
+  filteredPositionedContainers,
+  selectedContainerId,
+  loading,
+  currentSuggestion,
+  placingContainerId,
+  unplacedContainers,
+  selectedAlternativeIndex,
+  selectAlternative,
+  isPlacementMode,
+  availablePositions, // All empty valid positions for hybrid placement mode
+} = usePlacementState();
 
 // Hovered container for tooltip
 const hoveredContainer = ref<ContainerPlacement | null>(null);
 const tooltipPosition = ref({ x: 0, y: 0 });
+
+// Hovered position marker for marker tooltip
+const hoveredMarker = ref<PositionMarkerData | null>(null);
+const markerTooltipPosition = ref({ x: 0, y: 0 });
 
 
 // Computed: container size display with HC indicator
@@ -105,6 +138,9 @@ const hoveredSize = computed(() => {
   const hc = isHighCube(hoveredContainer.value.iso_type);
   return hc ? `${size} HC` : size;
 });
+
+// ResizeObserver for container resize (when layout changes)
+let resizeObserver: ResizeObserver | null = null;
 
 // Initialize scene and meshes with error handling
 onMounted(() => {
@@ -120,6 +156,12 @@ onMounted(() => {
 
     window.addEventListener('resize', handleResize);
     window.addEventListener('keydown', handleKeyDown);
+
+    // Watch for container resize (when panel opens/closes)
+    resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+    resizeObserver.observe(canvasRef.value);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     threeError.value = `3D visualization unavailable: ${message}`;
@@ -149,8 +191,8 @@ watch(selectedContainerId, (id) => {
   selectContainer(id);
 });
 
-// Show placement preview when suggestion is available
-watch(currentSuggestion, (suggestion) => {
+// Show position markers when suggestion is available (includes all empty slots)
+watch([currentSuggestion, availablePositions], ([suggestion, available]) => {
   if (suggestion) {
     // Find the actual container being placed to get its ISO type
     const containerBeingPlaced = unplacedContainers.value.find(
@@ -158,16 +200,46 @@ watch(currentSuggestion, (suggestion) => {
     );
     // Use actual ISO type or fallback to 45G1 (standard 40ft)
     const isoType = containerBeingPlaced?.iso_type ?? '45G1';
-    showPlacementPreview(suggestion.suggested_position, isoType);
-  } else {
-    // Hide preview when no suggestion
+    // Show position markers for primary, alternatives, AND all available slots
+    showPositionMarkers(suggestion, isoType, available);
+    // Hide the old single preview (replaced by markers)
     hidePlacementPreview();
+  } else {
+    // Hide markers when no suggestion
+    hidePositionMarkers();
+    hidePlacementPreview();
+  }
+});
+
+// Sync marker selection with state
+watch(selectedAlternativeIndex, (index) => {
+  selectMarker(index);
+});
+
+// Adjust container visuals when entering/exiting placement mode
+// Hides labels, wall text, and dims containers for better marker visibility
+watch(isPlacementMode, (active) => {
+  if (active) {
+    enterPlacementModeVisuals();
+  } else {
+    exitPlacementModeVisuals();
+  }
+});
+
+// Auto-fit and zoom when entering fullscreen mode
+// Gives a small delay for the CSS/canvas to resize first
+watch(() => props.isFullscreen, (isFullscreen) => {
+  if (isFullscreen) {
+    // Wait for canvas resize to complete, then fit to containers with better zoom
+    setTimeout(() => {
+      handleResize();
+      fitToContainers();
+    }, 100);
   }
 });
 
 // Note: Company filtering now handled by filteredPositionedContainers watcher above
 // The 3D view completely re-renders with only matching containers when a company is selected
-
 
 // Create zone labels, row labels, and bay labels
 function createZoneWireframes(): void {
@@ -279,6 +351,23 @@ function addZoneLabel(zone: ZoneCode, x: number, y: number, z: number): void {
 function handleClick(event: MouseEvent): void {
   if (!canvasRef.value || !camera.value) return;
 
+  // Check markers first (higher priority during placement)
+  const marker = getMarkerAtPoint(
+    event.clientX,
+    event.clientY,
+    canvasRef.value,
+    camera.value
+  );
+
+  if (marker) {
+    // Select the clicked marker visually
+    selectAlternative(marker.data.index);
+    // Emit event to open confirmation modal
+    emit('markerSelect', marker.data);
+    return;
+  }
+
+  // Then check containers
   const container = getContainerAtPoint(
     event.clientX,
     event.clientY,
@@ -301,6 +390,38 @@ function handleMouseMove(event: MouseEvent): void {
 
 // Throttled raycasting function (50ms interval)
 const throttledRaycast = throttle((event: MouseEvent) => {
+  const rect = canvasRef.value!.getBoundingClientRect();
+
+  // Check markers first (higher priority during placement)
+  const marker = getMarkerAtPoint(
+    event.clientX,
+    event.clientY,
+    canvasRef.value!,
+    camera.value!
+  );
+
+  if (marker) {
+    // Hovering over a marker - extract data and group
+    hoveredMarker.value = marker.data;
+    hoveredContainer.value = null;
+    hoverContainer(null);
+    // Pass group reference for available markers (index -2) to enable hover highlight
+    highlightMarker(marker.data.index, marker.group);
+
+    // Position marker tooltip
+    markerTooltipPosition.value = {
+      x: event.clientX - rect.left + 15,
+      y: event.clientY - rect.top + 15,
+    };
+    emit('containerHover', null);
+    return;
+  }
+
+  // Not hovering over marker - clear marker state
+  hoveredMarker.value = null;
+  highlightMarker(null, null);
+
+  // Check containers
   const container = getContainerAtPoint(
     event.clientX,
     event.clientY,
@@ -315,7 +436,6 @@ const throttledRaycast = throttle((event: MouseEvent) => {
 
   if (container) {
     // Position tooltip near cursor
-    const rect = canvasRef.value!.getBoundingClientRect();
     tooltipPosition.value = {
       x: event.clientX - rect.left + 15,
       y: event.clientY - rect.top + 15,
@@ -328,7 +448,9 @@ const throttledRaycast = throttle((event: MouseEvent) => {
 // Handle mouse leave
 function handleMouseLeave(): void {
   hoveredContainer.value = null;
+  hoveredMarker.value = null;
   hoverContainer(null); // Clear hover highlight
+  highlightMarker(null); // Clear marker highlight
 }
 
 // Toggle heatmap mode
@@ -397,6 +519,8 @@ function handleKeyDown(event: KeyboardEvent): void {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('keydown', handleKeyDown);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
   disposeMeshes();
 });
 
@@ -405,11 +529,12 @@ defineExpose({
   resetCamera,
   fitToContainers,
   setCameraPreset,
+  focusOnPosition,
 });
 </script>
 
 <template>
-  <div class="terminal-3d-container">
+  <div :class="['terminal-3d-container', { 'is-fullscreen': props.isFullscreen }]">
     <!-- Error display -->
     <div v-if="threeError" class="error-overlay">
       <a-alert
@@ -465,6 +590,33 @@ defineExpose({
       </div>
     </div>
 
+    <!-- Position marker tooltip -->
+    <div
+      v-if="hoveredMarker"
+      class="marker-tooltip"
+      :style="{ left: markerTooltipPosition.x + 'px', top: markerTooltipPosition.y + 'px' }"
+    >
+      <div class="marker-tooltip-header">
+        <span v-if="hoveredMarker.type === 'primary'" class="marker-badge primary">★ Рекомендуемая</span>
+        <span v-else-if="hoveredMarker.type === 'alternative'" class="marker-badge alternative">Альтернатива {{ hoveredMarker.index + 1 }}</span>
+        <span v-else class="marker-badge available">Свободная позиция</span>
+      </div>
+      <div class="marker-tooltip-body">
+        <span class="marker-coordinate">{{ hoveredMarker.coordinate }}</span>
+        <span class="marker-hint">Нажмите для выбора</span>
+      </div>
+    </div>
+
+    <!-- Placement mode instruction overlay -->
+    <Transition name="fade">
+      <div v-if="isPlacementMode" class="placement-mode-overlay">
+        <div class="placement-instruction">
+          <span class="instruction-icon">👆</span>
+          <span class="instruction-text">Нажмите на позицию для размещения</span>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Zone legend -->
     <div class="zone-legend">
       <div class="legend-section">
@@ -488,14 +640,18 @@ defineExpose({
             <div class="legend-header">40ft</div>
             <!-- Laden row -->
             <div class="legend-row-label">Гружёный</div>
-            <div class="legend-color-cell" style="background-color: #73d13d;" title="Гружёный 20ft"></div>
-            <div class="legend-color-cell" style="background-color: #237804;" title="Гружёный 40ft"></div>
+            <div class="legend-color-cell" style="background-color: #52c41a;" title="Гружёный 20ft"></div>
+            <div class="legend-color-cell" style="background-color: #7cb305;" title="Гружёный 40ft"></div>
             <!-- Empty row -->
             <div class="legend-row-label">Порожний</div>
-            <div class="legend-color-cell" style="background-color: #40a9ff;" title="Порожний 20ft"></div>
-            <div class="legend-color-cell" style="background-color: #003eb3;" title="Порожний 40ft"></div>
+            <div class="legend-color-cell" style="background-color: #1890ff;" title="Порожний 20ft"></div>
+            <div class="legend-color-cell" style="background-color: #722ed1;" title="Порожний 40ft"></div>
+            <!-- Pending row -->
+            <div class="legend-row-label">Ожидает</div>
+            <div class="legend-color-cell" style="background-color: #fa8c16;" title="Ожидает размещения" colspan="2"></div>
+            <div class="legend-color-cell" style="background-color: #fa8c16;" title="Ожидает размещения"></div>
           </div>
-          <div class="legend-note">Яркие = 20ft, Тёмные = 40ft</div>
+          <div class="legend-note">Зелёные = Груж., Синие = Пор., Оранж. = Ожидает</div>
         </template>
         <!-- Dwell time heatmap legend -->
         <template v-else>
@@ -652,6 +808,15 @@ defineExpose({
   border: 1px solid #e0e0e0;
 }
 
+/* Fullscreen mode - fill entire viewport */
+.terminal-3d-container.is-fullscreen {
+  height: 100vh;
+  min-height: 100vh;
+  border-radius: 0;
+  border: none;
+  background: #d4d4d4; /* Matches ground color for seamless look */
+}
+
 .terminal-canvas {
   width: 100%;
   height: 100%;
@@ -732,7 +897,7 @@ defineExpose({
 /* Legend styles - Light theme */
 .zone-legend {
   position: absolute;
-  top: 12px;
+  bottom: 12px;
   left: 12px;
   background: white;
   padding: 12px 16px;
@@ -892,5 +1057,118 @@ defineExpose({
 
 .nav-help-item span {
   color: #8c8c8c;
+}
+
+/* Position marker tooltip styles */
+.marker-tooltip {
+  position: absolute;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 10px 14px;
+  min-width: 180px;
+  pointer-events: none;
+  z-index: 100;
+  border: 1px solid #e8e8e8;
+}
+
+.marker-tooltip-header {
+  margin-bottom: 6px;
+}
+
+.marker-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.marker-badge.primary {
+  background: #f6ffed;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+}
+
+.marker-badge.alternative {
+  background: #e6f4ff;
+  color: #1677ff;
+  border: 1px solid #91caff;
+}
+
+.marker-badge.available {
+  background: #f5f5f5;
+  color: #8c8c8c;
+  border: 1px solid #d9d9d9;
+}
+
+.marker-tooltip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.marker-coordinate {
+  font-family: monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.marker-hint {
+  font-size: 11px;
+  color: #8c8c8c;
+}
+
+/* Placement mode instruction overlay */
+.placement-mode-overlay {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  pointer-events: none;
+}
+
+.placement-instruction {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(22, 119, 255, 0.95);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 24px;
+  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.3);
+  font-size: 14px;
+  font-weight: 500;
+  animation: pulse-shadow 2s ease-in-out infinite;
+}
+
+.instruction-icon {
+  font-size: 18px;
+}
+
+.instruction-text {
+  white-space: nowrap;
+}
+
+@keyframes pulse-shadow {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(22, 119, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 4px 20px rgba(22, 119, 255, 0.5);
+  }
+}
+
+/* Fade transition for overlay */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

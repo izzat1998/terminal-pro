@@ -3,7 +3,6 @@ Service for sending Telegram notifications about container entries to groups.
 Uses best-effort approach: logs errors but never raises exceptions.
 """
 
-
 from aiogram import Bot
 from aiogram.types import FSInputFile, InputMediaPhoto
 from asgiref.sync import sync_to_async
@@ -50,13 +49,17 @@ class TelegramNotificationService(BaseService):
             # Get photos (async-safe)
             photos = await self._get_entry_photos_async(entry)
             if not photos:
-                self.logger.info(f"Entry {entry.id}: No photos attached, skipping notification")
+                self.logger.info(
+                    f"Entry {entry.id}: No photos attached, skipping notification"
+                )
                 return False
 
             # Determine target group
             group_id = self._get_target_group_id(entry)
             if not group_id:
-                self.logger.warning(f"Entry {entry.id}: Unknown status '{entry.status}', cannot determine group")
+                self.logger.warning(
+                    f"Entry {entry.id}: Unknown status '{entry.status}', cannot determine group"
+                )
                 return False
 
             # Build caption (async-safe)
@@ -70,7 +73,9 @@ class TelegramNotificationService(BaseService):
                     f"Entry {entry.id}: Successfully sent notification to group {group_id} with {len(photos)} photo(s)"
                 )
             else:
-                self.logger.warning(f"Entry {entry.id}: Failed to send notification to group {group_id}")
+                self.logger.warning(
+                    f"Entry {entry.id}: Failed to send notification to group {group_id}"
+                )
 
             return success
 
@@ -96,7 +101,9 @@ class TelegramNotificationService(BaseService):
             return False
 
         # Check if company has notifications enabled and has a group configured
-        return bool(entry.company.notifications_enabled and entry.company.telegram_group_id)
+        return bool(
+            entry.company.notifications_enabled and entry.company.telegram_group_id
+        )
 
     def _get_target_group_id(self, entry: ContainerEntry) -> str | None:
         """
@@ -141,7 +148,9 @@ class TelegramNotificationService(BaseService):
             return valid_photos
 
         except Exception as e:
-            self.logger.error(f"Entry {entry.id}: Error fetching photos: {e}", exc_info=True)
+            self.logger.error(
+                f"Entry {entry.id}: Error fetching photos: {e}", exc_info=True
+            )
             return []
 
     def _format_caption(self, entry: ContainerEntry) -> str:
@@ -181,7 +190,9 @@ class TelegramNotificationService(BaseService):
 
         # Add manager name if available
         if entry.recorded_by:
-            manager_name = entry.recorded_by.get_full_name() or entry.recorded_by.username
+            manager_name = (
+                entry.recorded_by.get_full_name() or entry.recorded_by.username
+            )
             lines.append(f"👤 Менеджер: {manager_name}")
 
         # Add entry time
@@ -195,7 +206,9 @@ class TelegramNotificationService(BaseService):
 
         return "\n".join(lines)
 
-    async def _send_media_album(self, chat_id: str, photos: list[FileAttachment], caption: str) -> bool:
+    async def _send_media_album(
+        self, chat_id: str, photos: list[FileAttachment], caption: str
+    ) -> bool:
         """
         Send photos as media album to Telegram group.
 
@@ -229,7 +242,9 @@ class TelegramNotificationService(BaseService):
 
                     # First photo gets caption, others don't
                     if idx == 0:
-                        media_group.append(InputMediaPhoto(media=input_file, caption=caption))
+                        media_group.append(
+                            InputMediaPhoto(media=input_file, caption=caption)
+                        )
                     else:
                         media_group.append(InputMediaPhoto(media=input_file))
 
@@ -248,7 +263,9 @@ class TelegramNotificationService(BaseService):
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to send media album to group {chat_id}: {e}", exc_info=True)
+            self.logger.error(
+                f"Failed to send media album to group {chat_id}: {e}", exc_info=True
+            )
             return False
 
         finally:
@@ -264,7 +281,9 @@ class TelegramNotificationService(BaseService):
         """Async-safe wrapper for _should_notify that accesses database."""
         return await sync_to_async(self._should_notify)(entry)
 
-    async def _get_entry_photos_async(self, entry: ContainerEntry) -> list[FileAttachment]:
+    async def _get_entry_photos_async(
+        self, entry: ContainerEntry
+    ) -> list[FileAttachment]:
         """Async-safe wrapper for _get_entry_photos that accesses database."""
         return await sync_to_async(self._get_entry_photos)(entry)
 
@@ -290,12 +309,16 @@ class TelegramNotificationService(BaseService):
             # Check if customer exists and has telegram_user_id
             customer = await sync_to_async(lambda: vehicle_entry.customer)()
             if not customer:
-                self.logger.debug(f"VehicleEntry {vehicle_entry.id}: No customer, skipping notification")
+                self.logger.debug(
+                    f"VehicleEntry {vehicle_entry.id}: No customer, skipping notification"
+                )
                 return False
 
             telegram_user_id = customer.telegram_user_id
             if not telegram_user_id:
-                self.logger.debug(f"VehicleEntry {vehicle_entry.id}: Customer has no telegram_user_id")
+                self.logger.debug(
+                    f"VehicleEntry {vehicle_entry.id}: Customer has no telegram_user_id"
+                )
                 return False
 
             # Check bot token
@@ -321,7 +344,9 @@ class TelegramNotificationService(BaseService):
 
             # Create bot and send message
             bot = Bot(token=self.bot_token)
-            await bot.send_message(chat_id=telegram_user_id, text=message, parse_mode="HTML")
+            await bot.send_message(
+                chat_id=telegram_user_id, text=message, parse_mode="HTML"
+            )
 
             self.logger.info(
                 f"VehicleEntry {vehicle_entry.id}: Sent entry notification to customer "
@@ -382,7 +407,9 @@ class TelegramNotificationService(BaseService):
             )
 
             bot = Bot(token=self.bot_token)
-            await bot.send_message(chat_id=telegram_user_id, text=message, parse_mode="HTML")
+            await bot.send_message(
+                chat_id=telegram_user_id, text=message, parse_mode="HTML"
+            )
 
             self.logger.info(
                 f"VehicleEntry {vehicle_entry.id}: Sent exit notification to customer "
@@ -442,3 +469,196 @@ class TelegramNotificationService(BaseService):
         except Exception as e:
             self.logger.debug(f"Could not get language from Redis: {e}")
             return "ru"
+
+    # ========== Work Order Notifications ==========
+
+    async def notify_manager_work_order_assigned(self, work_order) -> bool:
+        """
+        Send notification to manager when a work order is assigned to them.
+        Best-effort: logs errors but never raises exceptions.
+
+        Args:
+            work_order: WorkOrder instance with assigned_to manager
+
+        Returns:
+            bool: True if notification sent successfully, False otherwise
+        """
+        bot = None
+        try:
+            # Check if manager exists and has telegram_user_id
+            manager = await sync_to_async(lambda: work_order.assigned_to)()
+            if not manager:
+                self.logger.debug(f"WorkOrder {work_order.id}: No assigned manager")
+                return False
+
+            telegram_user_id = manager.profile_telegram_user_id
+            if not telegram_user_id:
+                self.logger.debug(
+                    f"WorkOrder {work_order.id}: Manager {manager.id} has no telegram_user_id"
+                )
+                return False
+
+            if not self.bot_token:
+                self.logger.error("TELEGRAM_BOT_TOKEN not configured")
+                return False
+
+            # Get manager's language preference
+            language = await self._get_customer_language(telegram_user_id)
+
+            # Format message
+            message = await sync_to_async(self._format_work_order_assigned_message)(
+                work_order, language
+            )
+
+            # Create bot and send message
+            bot = Bot(token=self.bot_token)
+            await bot.send_message(
+                chat_id=telegram_user_id, text=message, parse_mode="HTML"
+            )
+
+            self.logger.info(
+                f"WorkOrder {work_order.id}: Sent assignment notification to manager "
+                f"{manager.first_name} ({telegram_user_id})"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(
+                f"WorkOrder {work_order.id if work_order else 'unknown'}: "
+                f"Failed to notify manager: {e}",
+                exc_info=True,
+            )
+            return False
+
+        finally:
+            if bot:
+                try:
+                    await bot.session.close()
+                except Exception:
+                    pass
+
+    def _format_work_order_assigned_message(
+        self, work_order, language: str = "ru"
+    ) -> str:
+        """
+        Format work order assignment notification message.
+
+        Args:
+            work_order: WorkOrder instance
+            language: Language code ('ru' or 'uz')
+
+        Returns:
+            str: Formatted message with HTML
+        """
+        from django.utils import timezone
+
+        container = work_order.container_entry.container
+        priority_icon = {"LOW": "🟢", "MEDIUM": "🟡", "HIGH": "🟠", "URGENT": "🔴"}.get(
+            work_order.priority, "🟡"
+        )
+        deadline_str = timezone.localtime(work_order.sla_deadline).strftime("%H:%M")
+        time_remaining = work_order.time_remaining_minutes
+        is_uz = language == "uz"
+
+        # Build message lines based on language
+        if is_uz:
+            lines = [
+                f"{priority_icon} <b>YANGI ISHCHI BUYRUQ</b>",
+                "",
+                f"📦 Konteyner: <code>{container.container_number}</code>",
+                f"📏 Turi: {container.iso_type}",
+                f"📍 Manzil: <code>{work_order.target_coordinate_string}</code>",
+                f"⏰ Muddat: {deadline_str} ({time_remaining} daqiqa)",
+                f"🎯 Muhimlik: {work_order.get_priority_display()}",
+                "",
+                f"🆔 Buyruq: #{work_order.order_number}",
+            ]
+            if work_order.notes:
+                lines.append(f"📝 Izoh: {work_order.notes}")
+            lines.extend(["", "👆 Qabul qilish uchun mini-ilovani oching"])
+        else:
+            lines = [
+                f"{priority_icon} <b>НОВЫЙ НАРЯД НА РАЗМЕЩЕНИЕ</b>",
+                "",
+                f"📦 Контейнер: <code>{container.container_number}</code>",
+                f"📏 Тип: {container.iso_type}",
+                f"📍 Позиция: <code>{work_order.target_coordinate_string}</code>",
+                f"⏰ Срок: {deadline_str} ({time_remaining} мин.)",
+                f"🎯 Приоритет: {work_order.get_priority_display()}",
+                "",
+                f"🆔 Наряд: #{work_order.order_number}",
+            ]
+            if work_order.notes:
+                lines.append(f"📝 Примечание: {work_order.notes}")
+            lines.extend(["", "👆 Откройте мини-приложение для принятия"])
+
+        return "\n".join(lines)
+
+    async def notify_manager_work_order_urgent(self, work_order) -> bool:
+        """
+        Send urgent reminder to manager when work order is approaching deadline.
+        Best-effort: logs errors but never raises exceptions.
+
+        Args:
+            work_order: WorkOrder instance
+
+        Returns:
+            bool: True if notification sent successfully, False otherwise
+        """
+        bot = None
+        try:
+            manager = await sync_to_async(lambda: work_order.assigned_to)()
+            if not manager:
+                return False
+
+            telegram_user_id = manager.profile_telegram_user_id
+            if not telegram_user_id or not self.bot_token:
+                return False
+
+            language = await self._get_customer_language(telegram_user_id)
+
+            # Format urgent message
+            container_number = await sync_to_async(
+                lambda: work_order.container_entry.container.container_number
+            )()
+            time_remaining = work_order.time_remaining_minutes
+
+            if language == "uz":
+                message = (
+                    f"⚠️ <b>SHOSHILINCH!</b>\n\n"
+                    f"Buyruq #{work_order.order_number} muddati tugashiga "
+                    f"<b>{time_remaining} daqiqa</b> qoldi!\n\n"
+                    f"📦 Konteyner: <code>{container_number}</code>\n"
+                    f"📍 Manzil: <code>{work_order.target_coordinate_string}</code>"
+                )
+            else:
+                message = (
+                    f"⚠️ <b>СРОЧНО!</b>\n\n"
+                    f"До истечения срока наряда #{work_order.order_number} осталось "
+                    f"<b>{time_remaining} мин.</b>!\n\n"
+                    f"📦 Контейнер: <code>{container_number}</code>\n"
+                    f"📍 Позиция: <code>{work_order.target_coordinate_string}</code>"
+                )
+
+            bot = Bot(token=self.bot_token)
+            await bot.send_message(
+                chat_id=telegram_user_id, text=message, parse_mode="HTML"
+            )
+
+            self.logger.info(
+                f"WorkOrder {work_order.id}: Sent urgent reminder to manager"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(
+                f"WorkOrder {work_order.id}: Failed to send urgent reminder: {e}"
+            )
+            return False
+
+        finally:
+            if bot:
+                try:
+                    await bot.session.close()
+                except Exception:
+                    pass

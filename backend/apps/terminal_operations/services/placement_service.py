@@ -11,7 +11,7 @@ from django.db.models import Count
 
 from apps.core.exceptions import BusinessLogicError
 from apps.core.services.base_service import BaseService
-from apps.terminal_operations.models import ContainerEntry, ContainerPosition
+from apps.terminal_operations.models import ContainerEntry, ContainerPosition, WorkOrder
 
 
 class PositionOccupiedError(BusinessLogicError):
@@ -157,7 +157,7 @@ class PlacementService(BaseService):
         Get complete terminal layout data for 3D visualization.
 
         Returns:
-            dict with zones, dimensions, containers, and statistics
+            dict with zones, dimensions, containers (placed + pending), and statistics
         """
         # Get all containers currently on terminal with positions
         entries_with_positions = (
@@ -175,6 +175,7 @@ class PlacementService(BaseService):
                         "container_number": entry.container.container_number,
                         "iso_type": entry.container.iso_type,
                         "status": entry.status,
+                        "placement_status": "placed",  # Physically placed
                         "position": {
                             "zone": entry.position.zone,
                             "row": entry.position.row,
@@ -190,6 +191,51 @@ class PlacementService(BaseService):
                         ),
                     }
                 )
+
+        # Get containers with active work orders (pending placement)
+        # These show at their TARGET position with yellow pulsing effect
+        active_work_order_statuses = ["PENDING", "ASSIGNED", "ACCEPTED", "IN_PROGRESS"]
+        pending_work_orders = WorkOrder.objects.filter(
+            status__in=active_work_order_statuses
+        ).select_related(
+            "container_entry__container",
+            "container_entry__company",
+            "assigned_to_vehicle",
+        )
+
+        for wo in pending_work_orders:
+            entry = wo.container_entry
+            containers.append(
+                {
+                    "id": entry.id,
+                    "container_number": entry.container.container_number,
+                    "iso_type": entry.container.iso_type,
+                    "status": entry.status,
+                    "placement_status": "pending",  # Work order created, awaiting physical placement
+                    "work_order": {
+                        "id": wo.id,
+                        "order_number": wo.order_number,
+                        "status": wo.status,
+                        "priority": wo.priority,
+                        "assigned_to": wo.assigned_to_vehicle.name if wo.assigned_to_vehicle else None,
+                    },
+                    "position": {
+                        "zone": wo.target_zone,
+                        "row": wo.target_row,
+                        "bay": wo.target_bay,
+                        "tier": wo.target_tier,
+                        "sub_slot": wo.target_sub_slot,
+                        "coordinate": format_coordinate(
+                            wo.target_zone, wo.target_row, wo.target_bay, wo.target_tier, wo.target_sub_slot
+                        ),
+                    },
+                    "entry_time": entry.entry_time.isoformat(),
+                    "dwell_time_days": entry.dwell_time_days,
+                    "company_name": (
+                        entry.company.name if entry.company else entry.client_name
+                    ),
+                }
+            )
 
         # Calculate statistics
         stats = self._calculate_stats()
@@ -961,14 +1007,25 @@ class PlacementService(BaseService):
 
     def get_unplaced_containers(self) -> list:
         """
-        Get containers currently on terminal without a position.
+        Get containers currently on terminal without a position AND without active work orders.
+
+        Containers with pending/assigned/in-progress work orders are excluded because
+        they will be shown in the 3D view at their target position with "pending" status.
 
         Returns:
-            List of ContainerEntry dicts without positions
+            List of ContainerEntry dicts without positions and without active work orders
         """
+        # Get IDs of containers with active work orders
+        active_work_order_statuses = ["PENDING", "ASSIGNED", "ACCEPTED", "IN_PROGRESS"]
+        entries_with_active_orders = WorkOrder.objects.filter(
+            status__in=active_work_order_statuses
+        ).values_list("container_entry_id", flat=True)
+
         entries = ContainerEntry.objects.filter(
             exit_date__isnull=True,
             position__isnull=True,
+        ).exclude(
+            id__in=entries_with_active_orders
         ).select_related("container", "company")
 
         return [

@@ -110,6 +110,19 @@
             {{ record.dwell_time_days }} дн.
           </a-tag>
         </template>
+        <template v-if="column.key === 'storage_cost'">
+          <template v-if="record.storageCostLoading">
+            <LoadingOutlined style="color: #1677ff;" />
+          </template>
+          <template v-else-if="record.storageCostUsd !== undefined">
+            <a-tooltip :title="`${record.storageCostUzs ? Number(record.storageCostUzs).toLocaleString('ru-RU') + ' UZS' : ''}`">
+              <span class="storage-cost-value">
+                ${{ record.storageCostUsd }}
+              </span>
+            </a-tooltip>
+          </template>
+          <span v-else class="text-muted">—</span>
+        </template>
         <template v-if="column.key === 'exit'">
           <template v-if="record.exit_date">
             <div>{{ formatDateTime(record.exit_date) }}</div>
@@ -135,11 +148,13 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted } from 'vue';
 import { message } from 'ant-design-vue';
+import { LoadingOutlined } from '@ant-design/icons-vue';
 import type { TableProps } from 'ant-design-vue';
 import { http } from '../../utils/httpClient';
 import { formatDateTime } from '../../utils/dateFormat';
 import type { PaginatedResponse } from '../../types/api';
 import Container3DModal from '../../components/Container3DModal.vue';
+import { useStorageCosts } from '../../composables/useStorageCosts';
 
 interface Company {
   id: number;
@@ -187,6 +202,11 @@ interface ContainerEntry {
   cargo_weight: string | null;
   images: ContainerImage[];
   image_count: number;
+  // Storage cost fields (populated by bulk fetch)
+  storageCostUsd?: string;
+  storageCostUzs?: string;
+  storageBillableDays?: number;
+  storageCostLoading?: boolean;
 }
 
 const props = defineProps<{
@@ -197,6 +217,9 @@ const props = defineProps<{
 const entries = ref<ContainerEntry[]>([]);
 const loading = ref(false);
 const searchText = ref('');
+
+// Initialize storage costs composable
+const { fetchStorageCosts } = useStorageCosts();
 
 // 3D Location Modal state
 const show3DModal = ref(false);
@@ -327,6 +350,11 @@ const columns: TableProps['columns'] = [
     sorter: true, // Server-side sorting
   },
   {
+    title: 'Стоимость',
+    key: 'storage_cost',
+    width: 120,
+  },
+  {
     title: 'Выезд',
     key: 'exit',
     width: 140,
@@ -428,6 +456,9 @@ const fetchEntries = async () => {
 
     entries.value = result.results || [];
     pagination.value.total = result.count;
+
+    // Fetch storage costs for visible containers (non-blocking)
+    fetchStorageCosts(entries.value, entry => entry.id);
   } catch (error) {
     console.error('Error fetching entries:', error);
     message.error(error instanceof Error ? error.message : 'Не удалось загрузить список контейнеров. Попробуйте обновить страницу.');
@@ -512,5 +543,11 @@ watch(() => props.company, (newCompany) => {
 .location-tag-clickable:hover {
   transform: scale(1.05);
   box-shadow: 0 2px 4px rgba(114, 46, 209, 0.3);
+}
+
+/* Storage cost value styles */
+.storage-cost-value {
+  color: #52c41a;
+  font-weight: 600;
 }
 </style>

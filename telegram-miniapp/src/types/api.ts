@@ -194,3 +194,39 @@ export interface TerminalStatistics {
   current: CurrentStats;
   last_30_days: Last30DaysStats;
 }
+
+// ============ Work Orders ============
+
+export type WorkOrderStatus =
+  | 'PENDING'
+  | 'ASSIGNED'
+  | 'ACCEPTED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'VERIFIED'
+  | 'FAILED';
+
+export type WorkOrderPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export interface WorkOrder {
+  id: number;
+  order_number: string;
+  status: WorkOrderStatus;
+  status_display: string;
+  priority: WorkOrderPriority;
+  priority_display: string;
+  container_number: string;
+  container_size: string;
+  target_coordinate: string;
+  assigned_to_name: string | null;
+  sla_deadline: string | null;
+  is_overdue: boolean;
+  created_at: string;
+}
+
+export interface WorkOrdersResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: WorkOrder[];
+}

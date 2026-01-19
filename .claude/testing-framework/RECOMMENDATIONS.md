@@ -5,7 +5,7 @@
 ### What We Have (Strengths)
 | Component | Files | Quality |
 |-----------|-------|---------|
-| Skills | 4 (api-debug, migrate, test, focus) | ★★★★☆ Well-structured with clear triggers |
+| Skills | 3 (api-debug, migrate, test) | ★★★★☆ Well-structured with clear triggers |
 | Commands | 1 (hello) | ★★☆☆☆ Only a test command |
 | Settings | TypeScript LSP + Explanatory style | ★★★☆☆ Basic |
 | CLAUDE.md | 4 files (root + backend + frontend + telegram) | ★★★★★ Comprehensive |

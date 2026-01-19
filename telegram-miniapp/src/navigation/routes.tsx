@@ -6,6 +6,7 @@ import { CameraPage } from '@/pages/CameraPage/CameraPage';
 import { ExitEntryPage } from '@/pages/ExitEntryPage/ExitEntryPage';
 import { ExitByIdPage } from '@/pages/ExitByIdPage/ExitByIdPage';
 import { CheckInPage } from '@/pages/CheckInPage/CheckInPage';
+import { WorkOrdersPage } from '@/pages/WorkOrdersPage/WorkOrdersPage';
 
 interface Route {
   path: string;
@@ -21,4 +22,5 @@ export const routes: Route[] = [
   { path: '/vehicles/exit-entry', Component: ExitEntryPage, title: 'Exit Vehicle' },
   { path: '/vehicles/exit-entry/:id', Component: ExitByIdPage, title: 'Exit Vehicle By ID' },
   { path: '/vehicles/accept-entry/:id', Component: CheckInPage, title: 'Check In Vehicle' },
+  { path: '/work-orders', Component: WorkOrdersPage, title: 'Вазифалар' },
 ];

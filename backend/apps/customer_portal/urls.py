@@ -2,7 +2,10 @@
 URL routing for customer portal API endpoints.
 """
 
+from django.urls import path
 from rest_framework.routers import DefaultRouter
+
+from apps.billing.views import CustomerStorageCostView
 
 from .views import (
     CustomerContainerEntryViewSet,
@@ -25,4 +28,11 @@ router.register(
 # Pre-order endpoints: /api/customer/preorders/
 router.register(r"preorders", CustomerPreOrderViewSet, basename="customer-preorders")
 
-urlpatterns = router.urls
+urlpatterns = router.urls + [
+    # Storage costs endpoint: /api/customer/storage-costs/
+    path(
+        "storage-costs/",
+        CustomerStorageCostView.as_view(),
+        name="customer-storage-costs",
+    ),
+]

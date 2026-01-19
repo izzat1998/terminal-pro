@@ -1,12 +1,18 @@
-import { Outlet } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Card, NavBar, TabBar } from 'antd-mobile';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { usePageContext } from '@/contexts/PageContext';
-import { Car, House } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { initData, useSignal } from '@tma.js/sdk-react';
+import { Car, House, ClipboardList } from 'lucide-react';
 
-export function Layout() {
+import { usePageContext } from '@/contexts/PageContext';
+
+const TABS = [
+  { key: '/', title: 'Бош саҳифа', icon: <House /> },
+  { key: '/work-orders', title: 'Вазифалар', icon: <ClipboardList /> },
+  { key: '/vehicles', title: 'Машина', icon: <Car /> },
+];
+
+export function Layout(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const { title } = usePageContext();
@@ -17,8 +23,7 @@ export function Layout() {
   const [loading, setLoading] = useState(true);
   const [hasAccess, setHasAccess] = useState(false);
 
-  // Reusable access check function
-  const checkAccess = async () => {
+  const checkAccess = useCallback(async () => {
     const userId = initDataRaw?.user?.id;
     if (!userId) return;
 
@@ -28,31 +33,20 @@ export function Layout() {
       const res = await fetch(
         `/api/auth/managers/gate-access/?telegram_id=${userId}`
       );
-
       const data = await res.json();
-
-      if (res.ok && data.success === true) {
-        setHasAccess(true);
-      } else {
-        setHasAccess(false);
-      }
-    } catch (e) {
+      setHasAccess(res.ok && data.success === true);
+    } catch {
       setHasAccess(false);
     } finally {
       setLoading(false);
     }
-  };
+  }, [initDataRaw?.user?.id]);
 
-  // First check on mount
   useEffect(() => {
-    if (initDataRaw?.user?.id) checkAccess();
-  }, [initDataRaw]);
-
-
-  // Retry button handler
-  const retry = () => {
-    checkAccess();
-  };
+    if (initDataRaw?.user?.id) {
+      void checkAccess();
+    }
+  }, [initDataRaw?.user?.id, checkAccess]);
 
 
   // Hide navbar when input focused
@@ -80,12 +74,6 @@ export function Layout() {
     };
   }, []);
 
-  const tabs = [
-    { key: '/', title: 'Бош саҳифа', icon: <House /> },
-    { key: '/vehicles', title: 'Машина', icon: <Car /> },
-    // { key: '/ton-connect', title: 'Мен', icon: <User /> },
-  ];
-
   // Loading
   if (loading) {
     return (
@@ -105,7 +93,7 @@ export function Layout() {
         </p>
 
         <button
-          onClick={retry}
+          onClick={checkAccess}
           className="bg-blue-600 text-white px-6 py-2 rounded-lg text-base shadow hover:bg-blue-700"
         >
           Qayta urinish
@@ -143,7 +131,7 @@ export function Layout() {
           activeKey={location.pathname}
           onChange={value => navigate(value)}
         >
-          {tabs.map(item => (
+          {TABS.map(item => (
             <TabBar.Item
               key={item.key}
               icon={item.icon}

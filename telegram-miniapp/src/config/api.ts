@@ -26,31 +26,59 @@ export const API_ENDPOINTS = {
   auth: {
     gateAccess: `${API_BASE_URL}/auth/managers/gate_access/`,
   },
+
+  // Work order endpoints
+  workOrders: {
+    myOrders: `${API_BASE_URL}/terminal/work-orders/my-orders/`,
+    complete: (id: number) => `${API_BASE_URL}/terminal/work-orders/${id}/complete/`,
+  },
 } as const;
 
-// Status colors for vehicle entries
+// Color mappings
 export const STATUS_COLORS: Record<string, string> = {
   ON_TERMINAL: '#00b578',
   WAITING: '#ff8f1f',
   EXITED: '#999999',
 };
 
-/**
- * Get color for a vehicle status
- */
-export function getStatusColor(status: string): string {
-  return STATUS_COLORS[status] ?? '#999999';
-}
-
-// Vehicle type colors
 export const VEHICLE_TYPE_COLORS: Record<string, string> = {
   LIGHT: '#1677ff',
   CARGO: '#722ed1',
 };
 
+export const PRIORITY_COLORS: Record<string, string> = {
+  LOW: '#00b578',
+  MEDIUM: '#1677ff',
+  HIGH: '#ff8f1f',
+  URGENT: '#ff3141',
+};
+
+const DEFAULT_COLOR = '#999999';
+
+/**
+ * Generic color lookup from a color map
+ */
+function getColorFromMap(colorMap: Record<string, string>, key: string): string {
+  return colorMap[key] ?? DEFAULT_COLOR;
+}
+
+/**
+ * Get color for a vehicle status
+ */
+export function getStatusColor(status: string): string {
+  return getColorFromMap(STATUS_COLORS, status);
+}
+
 /**
  * Get color for a vehicle type
  */
 export function getVehicleTypeColor(type: string): string {
-  return VEHICLE_TYPE_COLORS[type] ?? '#999999';
+  return getColorFromMap(VEHICLE_TYPE_COLORS, type);
+}
+
+/**
+ * Get color for work order priority
+ */
+export function getPriorityColor(priority: string): string {
+  return getColorFromMap(PRIORITY_COLORS, priority);
 }

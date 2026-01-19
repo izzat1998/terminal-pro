@@ -2,19 +2,21 @@
   <div class="container-page">
     <!-- Statistics Dashboard -->
     <a-spin :spinning="statsLoading">
-      <a-row :gutter="[12, 12]" style="margin-bottom: 16px;">
+      <!-- Primary Stats Row (Main KPIs) -->
+      <a-row :gutter="[12, 12]" style="margin-bottom: 12px;">
         <!-- On Terminal -->
-        <a-col :xs="12" :sm="8" :lg="4">
+        <a-col :xs="12" :sm="12" :md="6">
           <a-card
             hoverable
             size="small"
             :class="{ 'stat-card-active': activeStatFilter === 'onTerminal' }"
+            class="stat-card-primary"
             @click="handleStatClick('onTerminal')"
           >
             <a-statistic
               title="На терминале"
               :value="stats.onTerminal"
-              :value-style="{ color: '#1677ff' }"
+              :value-style="{ color: '#1677ff', fontSize: '24px' }"
             >
               <template #prefix><ContainerOutlined /></template>
             </a-statistic>
@@ -22,17 +24,18 @@
         </a-col>
 
         <!-- Laden -->
-        <a-col :xs="12" :sm="8" :lg="4">
+        <a-col :xs="12" :sm="12" :md="6">
           <a-card
             hoverable
             size="small"
             :class="{ 'stat-card-active': activeStatFilter === 'laden' }"
+            class="stat-card-primary"
             @click="handleStatClick('laden')"
           >
             <a-statistic
               title="Гружёные"
               :value="stats.laden"
-              :value-style="{ color: '#52c41a' }"
+              :value-style="{ color: '#52c41a', fontSize: '24px' }"
             >
               <template #prefix><InboxOutlined /></template>
             </a-statistic>
@@ -40,60 +43,95 @@
         </a-col>
 
         <!-- Empty -->
-        <a-col :xs="12" :sm="8" :lg="4">
+        <a-col :xs="12" :sm="12" :md="6">
           <a-card
             hoverable
             size="small"
             :class="{ 'stat-card-active': activeStatFilter === 'empty' }"
+            class="stat-card-primary"
             @click="handleStatClick('empty')"
           >
             <a-statistic
               title="Порожние"
               :value="stats.empty"
-              :value-style="{ color: '#faad14' }"
+              :value-style="{ color: '#faad14', fontSize: '24px' }"
             >
               <template #prefix><BorderOutlined /></template>
             </a-statistic>
           </a-card>
         </a-col>
 
+        <!-- Storage Cost (Primary - Important) -->
+        <a-col :xs="12" :sm="12" :md="6">
+          <a-tooltip placement="bottom">
+            <template #title>
+              <div style="text-align: center;">
+                <div style="font-weight: 600;">Общая стоимость хранения</div>
+                <div style="margin-top: 4px; color: rgba(255,255,255,0.85);">
+                  {{ Number(stats.totalStorageCostUzs || 0).toLocaleString('ru-RU') }} UZS
+                </div>
+              </div>
+            </template>
+            <a-card
+              hoverable
+              size="small"
+              class="stat-card-primary stat-card-cost"
+            >
+              <a-statistic
+                title="Стоимость хранения"
+                :value="stats.totalStorageCostUsd || '0.00'"
+                prefix="$"
+                :value-style="{ color: '#52c41a', fontWeight: 600, fontSize: '24px' }"
+              >
+                <template #prefix><DollarOutlined /></template>
+              </a-statistic>
+            </a-card>
+          </a-tooltip>
+        </a-col>
+      </a-row>
+
+      <!-- Secondary Stats Row (Activity & Total) -->
+      <a-row :gutter="[12, 12]" style="margin-bottom: 16px;">
         <!-- Exited Today -->
-        <a-col :xs="12" :sm="8" :lg="4">
+        <a-col :xs="8" :sm="8" :md="8">
           <a-card
             hoverable
             size="small"
             :class="{ 'stat-card-active': activeStatFilter === 'exitedToday' }"
+            class="stat-card-secondary"
             @click="handleStatClick('exitedToday')"
           >
-            <a-statistic title="Выехало сегодня" :value="stats.exitedToday">
+            <a-statistic title="Выехало сегодня" :value="stats.exitedToday" :value-style="{ fontSize: '18px' }">
               <template #prefix><ExportOutlined /></template>
             </a-statistic>
           </a-card>
         </a-col>
 
         <!-- Entered Today -->
-        <a-col :xs="12" :sm="8" :lg="4">
+        <a-col :xs="8" :sm="8" :md="8">
           <a-card
             hoverable
             size="small"
             :class="{ 'stat-card-active': activeStatFilter === 'enteredToday' }"
+            class="stat-card-secondary"
             @click="handleStatClick('enteredToday')"
           >
-            <a-statistic title="Завезено сегодня" :value="stats.enteredToday">
+            <a-statistic title="Завезено сегодня" :value="stats.enteredToday" :value-style="{ fontSize: '18px' }">
               <template #prefix><ImportOutlined /></template>
             </a-statistic>
           </a-card>
         </a-col>
 
         <!-- Total -->
-        <a-col :xs="12" :sm="8" :lg="4">
+        <a-col :xs="8" :sm="8" :md="8">
           <a-card
             hoverable
             size="small"
             :class="{ 'stat-card-active': activeStatFilter === 'total' }"
+            class="stat-card-secondary"
             @click="handleStatClick('total')"
           >
-            <a-statistic title="Всего записей" :value="stats.total">
+            <a-statistic title="Всего записей" :value="stats.total" :value-style="{ fontSize: '18px' }">
               <template #prefix><DatabaseOutlined /></template>
             </a-statistic>
           </a-card>
@@ -394,6 +432,11 @@
         <template v-if="column.key === 'number'">
           {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
         </template>
+        <template v-else-if="column.key === 'containerStatus'">
+          <a-tag :color="getContainerStatusColor(record.containerStatus)">
+            {{ record.containerStatus }}
+          </a-tag>
+        </template>
         <template v-else-if="column.key === 'companyName'">
           <a-tooltip v-if="record.companySlug" :title="record.companyName">
             <a
@@ -409,6 +452,30 @@
           <a-tag :color="getDwellTimeColor(record.dwellTimeDays)">
             {{ record.dwellTimeDays ?? '—' }} дн.
           </a-tag>
+        </template>
+        <template v-else-if="column.key === 'storageCostUsd'">
+          <template v-if="record.storageCostLoading">
+            <LoadingOutlined style="color: #1677ff;" />
+          </template>
+          <template v-else-if="record.storageCostUsd !== undefined">
+            <a-tooltip :title="`${record.storageCostUzs ? Number(record.storageCostUzs).toLocaleString('ru-RU') + ' UZS' : ''}`">
+              <span class="storage-cost-value" @click="showStorageCost(record)">
+                ${{ record.storageCostUsd }}
+              </span>
+            </a-tooltip>
+          </template>
+          <span v-else class="text-muted">—</span>
+        </template>
+        <template v-else-if="column.key === 'storageBillableDays'">
+          <template v-if="record.storageCostLoading">
+            <LoadingOutlined style="color: #1677ff;" />
+          </template>
+          <template v-else-if="record.storageBillableDays !== undefined">
+            <a-tag :color="record.storageBillableDays > 0 ? 'orange' : 'green'">
+              {{ record.storageBillableDays }} дн.
+            </a-tag>
+          </template>
+          <span v-else class="text-muted">—</span>
         </template>
         <template v-else-if="column.key === 'location'">
           <a-tooltip v-if="record.location" title="Показать на 3D схеме" placement="top">
@@ -432,6 +499,13 @@
         </template>
         <template v-else-if="column.key === 'actions'">
           <a-space>
+            <a-tooltip title="Стоимость хранения">
+              <a-button type="link" size="small" @click="showStorageCost(record)">
+                <template #icon>
+                  <DollarOutlined style="color: #52c41a;" />
+                </template>
+              </a-button>
+            </a-tooltip>
             <a-button type="link" size="small" @click="showEditModal(record)">
               <template #icon>
                 <EditOutlined />
@@ -482,6 +556,13 @@
     v-model:open="show3DModal"
     :container="selected3DContainer"
   />
+
+  <!-- Storage Cost Modal -->
+  <StorageCostModal
+    v-model:open="storageCostModalVisible"
+    :entry-id="storageCostContainerId"
+    :container-number="storageCostContainerNumber"
+  />
   </div>
 </template>
 
@@ -505,18 +586,23 @@ import {
   ExportOutlined,
   ImportOutlined,
   DatabaseOutlined,
+  DollarOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons-vue';
 import { http } from '../utils/httpClient';
 import { debounce } from 'lodash-es';
 import { useContainerTransform, type ContainerRecord } from '../composables/useContainerTransform';
+import { useStorageCosts } from '../composables/useStorageCosts';
 import FilesDialog from './FilesDialog.vue';
 import UpsertContainerModal from './UpsertContainerModal.vue';
 import ExcelUploadModal from './ExcelUploadModal.vue';
 import ExcelExportModal from './ExcelExportModal.vue';
 import Container3DModal from './Container3DModal.vue';
+import StorageCostModal from './StorageCostModal.vue';
 
-// Initialize composable for data transformation
+// Initialize composables
 const { transformEntries } = useContainerTransform();
+const { fetchStorageCosts } = useStorageCosts();
 
 // Column categories for organization
 type ColumnCategory = 'core' | 'entry' | 'exit' | 'cargo' | 'other';
@@ -576,10 +662,12 @@ const allColumnsConfig: ColumnConfig[] = [
   { title: 'Доп. крановая операция', key: 'additionalCraneOperationDate', dataIndex: 'additionalCraneOperationDate', category: 'other', defaultVisible: false, width: 160, align: 'center', customFilterDropdown: true },
   { title: 'Примечание', key: 'note', dataIndex: 'note', category: 'other', defaultVisible: false, width: 150, align: 'center', ellipsis: true, customFilterDropdown: true },
   { title: 'Хранение (дней)', key: 'dwellTimeDays', dataIndex: 'dwellTimeDays', category: 'cargo', defaultVisible: true, width: 130, align: 'center', customFilterDropdown: true, sorter: true },
+  { title: 'Стоимость (USD)', key: 'storageCostUsd', dataIndex: 'storageCostUsd', category: 'cargo', defaultVisible: true, width: 130, align: 'center', sorter: true },
+  { title: 'Оплач. дней', key: 'storageBillableDays', dataIndex: 'storageBillableDays', category: 'cargo', defaultVisible: false, width: 110, align: 'center', sorter: true },
   { title: 'Груз', key: 'cargoName', dataIndex: 'cargoName', category: 'cargo', defaultVisible: false, width: 140, align: 'center', ellipsis: true, customFilterDropdown: true },
   { title: 'Тоннаж', key: 'cargoWeight', dataIndex: 'cargoWeight', category: 'cargo', defaultVisible: false, width: 100, align: 'center', customFilterDropdown: true, sorter: true },
   { title: 'Файлы', key: 'files', dataIndex: 'files', category: 'other', defaultVisible: true, width: 80, align: 'center' },
-  { title: 'Действия', key: 'actions', category: 'other', defaultVisible: true, width: 100, align: 'center', fixed: 'right' },
+  { title: 'Действия', key: 'actions', category: 'other', defaultVisible: true, width: 120, align: 'center', fixed: 'right' },
 ];
 
 // Preset configurations
@@ -689,6 +777,14 @@ const getDwellTimeColor = (days?: number): string => {
   return 'red';
 };
 
+const getContainerStatusColor = (status: string): string => {
+  const colors: Record<string, string> = {
+    'Гружёный': 'green',
+    'Порожний': 'orange',
+  };
+  return colors[status] || 'default';
+};
+
 const router = useRouter();
 
 // Statistics
@@ -699,6 +795,8 @@ interface ContainerStats {
   exitedToday: number;
   enteredToday: number;
   total: number;
+  totalStorageCostUsd: string;
+  totalStorageCostUzs: string;
 }
 
 interface CompanyStat {
@@ -717,6 +815,8 @@ const stats = ref<ContainerStats>({
   exitedToday: 0,
   enteredToday: 0,
   total: 0,
+  totalStorageCostUsd: '0.00',
+  totalStorageCostUzs: '0',
 });
 const companyStats = ref<CompanyStat[]>([]);
 const statsLoading = ref(true);
@@ -729,6 +829,8 @@ interface StatsResponse {
   empty: number;
   entered_today: number;
   exited_today: number;
+  total_storage_cost_usd: string;
+  total_storage_cost_uzs: string;
   companies: Array<{
     company__id: number;
     company__name: string;
@@ -754,6 +856,8 @@ const fetchStats = async () => {
       empty: data.empty || 0,
       enteredToday: data.entered_today || 0,
       exitedToday: data.exited_today || 0,
+      totalStorageCostUsd: data.total_storage_cost_usd || '0.00',
+      totalStorageCostUzs: data.total_storage_cost_uzs || '0',
     };
 
     // Map company stats from backend response
@@ -989,6 +1093,9 @@ const handleGlobalSearch = async () => {
 
     pagination.value.total = total;
     pagination.value.current = 1;
+
+    // Fetch storage costs for search results (non-blocking)
+    fetchStorageCosts(dataSource.value, record => record.containerId);
   } catch (error) {
     message.error(error instanceof Error ? error.message : 'Ошибка поиска');
   } finally {
@@ -1051,6 +1158,9 @@ const createModalVisible = ref(false);
 const editModalVisible = ref(false);
 const excelUploadModalVisible = ref(false);
 const excelExportModalVisible = ref(false);
+const storageCostModalVisible = ref(false);
+const storageCostContainerId = ref<number | null>(null);
+const storageCostContainerNumber = ref('');
 
 // 3D Location Modal state
 const show3DModal = ref(false);
@@ -1073,6 +1183,13 @@ function openLocation3D(record: ContainerRecord) {
     status: record.status === 'Гружёный' ? 'LADEN' : 'EMPTY',
   };
   show3DModal.value = true;
+}
+
+// Open storage cost modal for a container
+function showStorageCost(record: ContainerRecord) {
+  storageCostContainerId.value = record.containerId;
+  storageCostContainerNumber.value = record.container;
+  storageCostModalVisible.value = true;
 }
 
 const fetchContainers = async (filters?: Record<string, any>, page?: number, pageSize?: number) => {
@@ -1180,6 +1297,9 @@ const fetchContainers = async (filters?: Record<string, any>, page?: number, pag
     pagination.value.total = total;
     pagination.value.current = currentPage;
     pagination.value.pageSize = currentPageSize;
+
+    // Fetch storage costs for visible containers (non-blocking)
+    fetchStorageCosts(dataSource.value, record => record.containerId);
   } catch (error) {
     message.error(error instanceof Error ? error.message : 'Ошибка загрузки данных');
   } finally {
@@ -1388,10 +1508,48 @@ onMounted(() => {
   width: 100%;
 }
 
+/* Primary stat cards (larger, more prominent) */
+.stat-card-primary {
+  min-height: 90px;
+}
+
+.stat-card-primary :deep(.ant-statistic-title) {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Secondary stat cards (smaller, less prominent) */
+.stat-card-secondary {
+  min-height: 70px;
+  background: #fafafa;
+}
+
+.stat-card-secondary :deep(.ant-statistic-title) {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.stat-card-secondary :deep(.ant-statistic-content-value) {
+  color: #595959;
+}
+
 /* Active state for clickable stat cards */
 .stat-card-active {
   border-color: #1677ff !important;
   background: #f0f7ff !important;
+}
+
+.stat-card-active.stat-card-secondary {
+  background: #f0f7ff !important;
+}
+
+.stat-card-cost {
+  border-color: #b7eb8f !important;
+  background: linear-gradient(135deg, #f6ffed 0%, #fff 100%) !important;
+}
+
+.stat-card-cost:hover {
+  border-color: #52c41a !important;
 }
 
 /* Main Table Card */
@@ -1434,5 +1592,18 @@ onMounted(() => {
 .location-tag-clickable:hover {
   transform: scale(1.05);
   box-shadow: 0 2px 4px rgba(114, 46, 209, 0.3);
+}
+
+/* Storage cost value styles */
+.storage-cost-value {
+  color: #52c41a;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.storage-cost-value:hover {
+  color: #73d13d;
+  text-decoration: underline;
 }
 </style>

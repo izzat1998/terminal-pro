@@ -40,8 +40,18 @@ const hoveredContainerId = ref<number | null>(null);
 const currentSuggestion = ref<SuggestionResponse | null>(null);
 const placingContainerId = ref<number | null>(null);
 
+// Selected alternative position (-1 = primary/recommended, 0+ = alternative index)
+const selectedAlternativeIndex = ref<number>(-1);
+
 // Company filtering state
 const selectedCompanyName = ref<string | null>(null);
+
+// Interactive 3D placement mode state
+const isPlacementMode = ref(false);
+const placementModeLoading = ref(false);
+
+// All available (empty valid) positions for hybrid placement mode
+const availablePositions = ref<Position[]>([]);
 
 export function usePlacementState() {
   // Computed: containers currently on terminal with positions
@@ -93,6 +103,34 @@ export function usePlacementState() {
       c => (c.company_name || NO_COMPANY_LABEL) === selectedCompanyName.value
     );
   });
+
+  // Computed: effective position for work order (selected alternative or primary)
+  const effectivePosition = computed((): Position | null => {
+    const suggestion = currentSuggestion.value;
+    if (!suggestion) return null;
+
+    if (selectedAlternativeIndex.value === -1) {
+      // Primary/recommended position
+      return suggestion.suggested_position;
+    }
+
+    // Alternative position
+    const alternatives = suggestion.alternatives;
+    if (selectedAlternativeIndex.value >= 0 && selectedAlternativeIndex.value < alternatives.length) {
+      const selected = alternatives[selectedAlternativeIndex.value];
+      return selected ?? suggestion.suggested_position;
+    }
+
+    // Fallback to primary
+    return suggestion.suggested_position;
+  });
+
+  /**
+   * Select an alternative position (-1 for primary, 0+ for alternatives)
+   */
+  function selectAlternative(index: number): void {
+    selectedAlternativeIndex.value = index;
+  }
 
   /**
    * Select company for filtering
@@ -200,8 +238,57 @@ export function usePlacementState() {
    * Cancel current placement workflow
    */
   function cancelPlacement(): void {
+    exitPlacementMode();
+  }
+
+  /**
+   * Enter interactive 3D placement mode for a container
+   * Fetches recommendation and all available positions in parallel
+   */
+  async function enterPlacementMode(containerEntryId: number, zonePreference?: ZoneCode): Promise<SuggestionResponse | null> {
+    placementModeLoading.value = true;
+    placingContainerId.value = containerEntryId;
+
+    try {
+      // Fetch suggestion and all available positions in parallel
+      const [suggestion, allAvailable] = await Promise.all([
+        placementService.suggestPosition(containerEntryId, zonePreference),
+        placementService.getAvailablePositions(zonePreference, undefined, 200), // Higher limit for all empty slots
+      ]);
+
+      currentSuggestion.value = suggestion;
+
+      // Filter out positions already in suggestions to avoid duplicate markers
+      const suggestedCoords = new Set([
+        suggestion.suggested_position.coordinate,
+        ...suggestion.alternatives.map(alt => alt.coordinate),
+      ].filter(Boolean));
+
+      availablePositions.value = allAvailable.filter(
+        pos => !pos.coordinate || !suggestedCoords.has(pos.coordinate)
+      );
+
+      isPlacementMode.value = true;
+      return suggestion;
+    } catch (e) {
+      message.error(getErrorMessage(e, 'Не удалось получить рекомендацию'));
+      placingContainerId.value = null;
+      return null;
+    } finally {
+      placementModeLoading.value = false;
+    }
+  }
+
+  /**
+   * Exit interactive 3D placement mode
+   */
+  function exitPlacementMode(): void {
+    isPlacementMode.value = false;
+    placementModeLoading.value = false;
     currentSuggestion.value = null;
     placingContainerId.value = null;
+    selectedAlternativeIndex.value = -1;
+    availablePositions.value = [];
   }
 
   /**
@@ -252,6 +339,11 @@ export function usePlacementState() {
     currentSuggestion,
     placingContainerId,
     selectedCompanyName,
+    selectedAlternativeIndex,
+    // Interactive 3D placement mode
+    isPlacementMode,
+    placementModeLoading,
+    availablePositions,
 
     // Computed
     positionedContainers,
@@ -260,6 +352,7 @@ export function usePlacementState() {
     companyStats,
     filteredPositionedContainers,
     filteredUnplacedContainers,
+    effectivePosition,
 
     // Actions
     fetchLayout,
@@ -268,10 +361,14 @@ export function usePlacementState() {
     selectContainer,
     setHoveredContainer,
     selectCompany,
+    selectAlternative,
     startPlacement,
     confirmPlacement,
     cancelPlacement,
     moveContainer,
     removeFromPosition,
+    // Interactive 3D placement mode
+    enterPlacementMode,
+    exitPlacementMode,
   };
 }

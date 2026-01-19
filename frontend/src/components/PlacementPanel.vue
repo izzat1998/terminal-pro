@@ -1,33 +1,58 @@
 <script setup lang="ts">
 /**
- * Placement Panel - Controls for placement workflow
+ * PlacementPanel - Orchestrator for placement workflow
+ *
+ * Step-based workflow for container placement:
+ * Step 0: Container selection (shows ContainerInfoCard)
+ * Step 1: Position selection (recommendation + alternatives)
+ * Step 2: Work order creation (options + submit)
  */
 
-import { ref } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
+import { message } from 'ant-design-vue';
+import { CheckCircleOutlined } from '@ant-design/icons-vue';
 import { usePlacementState } from '../composables/usePlacementState';
-import type { Position, ZoneCode, UnplacedContainer } from '../types/placement';
+import { workOrderService, type TerminalVehicle } from '../services/workOrderService';
+import type { Position, UnplacedContainer, WorkOrderPriority } from '../types/placement';
+
+// Sub-components
+import PlacementSteps from './placement/PlacementSteps.vue';
+import ContainerInfoCard from './placement/ContainerInfoCard.vue';
+import PositionSuggestionCard from './placement/PositionSuggestionCard.vue';
+import PositionAlternativeGrid from './placement/PositionAlternativeGrid.vue';
+import ManualPositionForm from './placement/ManualPositionForm.vue';
+import WorkOrderOptions from './placement/WorkOrderOptions.vue';
+import PlacementActions from './placement/PlacementActions.vue';
 
 const props = defineProps<{
   selectedContainer?: UnplacedContainer | null;
+  /** When true, recommendation was already fetched - skip step 0 */
+  autoLoaded?: boolean;
 }>();
 
 const emit = defineEmits<{
   close: [];
   placed: [];
+  focusPosition: [position: Position, isoType: string];
 }>();
 
+// Placement state composable
 const {
   currentSuggestion,
   startPlacement,
-  confirmPlacement,
   cancelPlacement,
+  refreshAll,
+  selectedAlternativeIndex,
+  selectAlternative,
+  effectivePosition,
 } = usePlacementState();
 
-// Separate loading states for different actions
+// Loading states
 const loadingSuggest = ref(false);
 const loadingConfirm = ref(false);
+const showSuccess = ref(false);
 
-// Manual position form
+// Manual position form state
 const manualPosition = ref<Position>({
   zone: 'A',
   row: 1,
@@ -35,10 +60,62 @@ const manualPosition = ref<Position>({
   tier: 1,
   sub_slot: 'A',
 });
-
 const useManualPosition = ref(false);
 
-// Request suggestion when container selected
+// Work order options state
+const selectedPriority = ref<WorkOrderPriority>('MEDIUM');
+const vehicles = ref<TerminalVehicle[]>([]);
+const selectedVehicleId = ref<number | undefined>(undefined);
+const loadingVehicles = ref(false);
+
+// Computed: Current workflow step
+// 0 = Container selected, waiting for recommendation
+// 1 = Suggestion received, selecting position
+// 2 = Position selected, creating work order
+const currentStep = computed((): number => {
+  if (!props.selectedContainer) return -1;
+  if (!currentSuggestion.value && !useManualPosition.value) return 0;
+  if (currentSuggestion.value || useManualPosition.value) {
+    // If we have a suggestion or manual mode, we're at least at step 1
+    // Move to step 2 when ready to create order (position is selected)
+    if (effectivePosition.value || useManualPosition.value) return 2;
+    return 1;
+  }
+  return 0;
+});
+
+// Computed: Position for work order
+const finalPosition = computed((): Position | null => {
+  if (useManualPosition.value) return manualPosition.value;
+  return effectivePosition.value;
+});
+
+
+// Fetch terminal vehicles on mount
+async function fetchVehicles(): Promise<void> {
+  loadingVehicles.value = true;
+  try {
+    vehicles.value = await workOrderService.getTerminalVehicles();
+  } catch {
+    message.warning('Не удалось загрузить список техники');
+  } finally {
+    loadingVehicles.value = false;
+  }
+}
+
+onMounted(() => {
+  fetchVehicles();
+});
+
+// Watch for container changes to reset state
+watch(() => props.selectedContainer, () => {
+  // Reset state when container changes
+  useManualPosition.value = false;
+  selectedAlternativeIndex.value = -1;
+  showSuccess.value = false;
+});
+
+// Request suggestion
 async function handleSuggest(): Promise<void> {
   if (!props.selectedContainer || loadingSuggest.value) return;
 
@@ -50,165 +127,269 @@ async function handleSuggest(): Promise<void> {
   }
 }
 
-// Confirm placement
-async function handleConfirm(): Promise<void> {
-  if (!props.selectedContainer || loadingConfirm.value) return;
-
-  const position = useManualPosition.value
-    ? manualPosition.value
-    : currentSuggestion.value?.suggested_position;
-
-  if (!position) return;
+// Create work order
+async function handleCreateWorkOrder(): Promise<void> {
+  if (!props.selectedContainer || loadingConfirm.value || !finalPosition.value) return;
 
   loadingConfirm.value = true;
   try {
-    await confirmPlacement(props.selectedContainer.id, position);
-    emit('placed');
+    const workOrder = await workOrderService.createWorkOrderFromPosition(
+      props.selectedContainer.id,
+      finalPosition.value,
+      selectedPriority.value,
+      selectedVehicleId.value,
+    );
+
+    // Show success animation
+    showSuccess.value = true;
+
+    // Show success message
+    const vehicleName = selectedVehicleId.value
+      ? vehicles.value.find(v => v.id === selectedVehicleId.value)?.name
+      : null;
+    const assignedText = vehicleName ? ` Назначено: ${vehicleName}` : ' Не назначено';
+    message.success(`Задача ${workOrder.order_number} создана.${assignedText}`);
+
+    // Cleanup after animation
+    setTimeout(() => {
+      cancelPlacement();
+      selectedVehicleId.value = undefined;
+      showSuccess.value = false;
+      refreshAll();
+      emit('placed');
+    }, 1500);
+
+  } catch (e) {
+    const errorMsg = e instanceof Error ? e.message : 'Не удалось создать задачу';
+    message.error(errorMsg);
   } finally {
     loadingConfirm.value = false;
   }
 }
 
-// Cancel
+// Handle cancel
 function handleCancel(): void {
   cancelPlacement();
   emit('close');
 }
 
-// Select alternative
-function selectAlternative(pos: Position): void {
-  manualPosition.value = { ...pos };
-  useManualPosition.value = true;
+// Handle position selection from primary card
+function handleSelectPrimary(): void {
+  selectAlternative(-1);
+  useManualPosition.value = false;
 }
 
-// Currently only Zone A for simplified version
-const zones: ZoneCode[] = ['A'];
+// Handle alternative selection
+function handleSelectAlternative(index: number): void {
+  selectAlternative(index);
+  useManualPosition.value = false;
+}
+
+// Handle "Show in 3D" button click
+function handleShowIn3D(position: Position): void {
+  if (props.selectedContainer) {
+    emit('focusPosition', position, props.selectedContainer.iso_type);
+  }
+}
+
+// Handle manual position toggle
+function handleManualToggle(enabled: boolean): void {
+  useManualPosition.value = enabled;
+  if (enabled) {
+    selectAlternative(-1); // Deselect alternatives when manual is enabled
+  }
+}
 </script>
 
 <template>
-  <a-card class="placement-panel" title="Размещение контейнера" size="small">
-    <template v-if="selectedContainer">
-      <!-- Container info -->
-      <a-descriptions :column="1" size="small" bordered class="mb-3">
-        <a-descriptions-item label="Номер">
-          <strong>{{ selectedContainer.container_number }}</strong>
-        </a-descriptions-item>
-        <a-descriptions-item label="Тип">
-          {{ selectedContainer.iso_type }}
-        </a-descriptions-item>
-        <a-descriptions-item label="Статус">
-          <a-tag :color="selectedContainer.status === 'LADEN' ? 'green' : 'blue'">
-            {{ selectedContainer.status === 'LADEN' ? 'Гружёный' : 'Порожний' }}
-          </a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item label="На терминале">
-          {{ selectedContainer.dwell_time_days }} дней
-        </a-descriptions-item>
-      </a-descriptions>
+  <!-- Wrapper: Card when standalone, div when in drawer (autoLoaded) -->
+  <component :is="autoLoaded ? 'div' : 'a-card'" :class="['placement-panel', { 'in-drawer': autoLoaded }]" size="small">
+    <template v-if="!autoLoaded" #title>
+      <div class="panel-title">
+        <span>Размещение контейнера</span>
+      </div>
+    </template>
 
-      <!-- Suggest button -->
+    <!-- Success Animation Overlay -->
+    <div v-if="showSuccess" class="success-overlay">
+      <div class="success-content">
+        <CheckCircleOutlined class="success-icon" />
+        <span class="success-text">Задача создана!</span>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <template v-if="selectedContainer && !showSuccess">
+      <!-- Step Indicator -->
+      <PlacementSteps :current-step="Math.max(0, currentStep)" />
+
+      <!-- Container Info -->
+      <ContainerInfoCard :container="selectedContainer" />
+
+      <!-- Loading state when auto-loading recommendation -->
+      <div v-if="autoLoaded && !currentSuggestion" class="loading-recommendation">
+        <a-spin tip="Получение рекомендации..." />
+      </div>
+
+      <!-- Step 0: Get Recommendation Button (only when NOT auto-loaded) -->
       <a-button
+        v-else-if="currentStep === 0 && !autoLoaded"
         type="primary"
         block
         :loading="loadingSuggest"
+        class="suggest-btn"
         @click="handleSuggest"
-        class="mb-3"
       >
         Получить рекомендацию
       </a-button>
 
-      <!-- Suggestion result -->
+      <!-- Position Selection (when suggestion is available) -->
       <template v-if="currentSuggestion">
-        <a-alert
-          type="info"
-          class="mb-3"
-          :message="`Рекомендуемая позиция: ${currentSuggestion.suggested_position.coordinate}`"
-          :description="currentSuggestion.reason"
+        <!-- Primary Recommendation Card -->
+        <PositionSuggestionCard
+          :position="currentSuggestion.suggested_position"
+          :reason="currentSuggestion.reason"
+          :selected="selectedAlternativeIndex === -1 && !useManualPosition"
+          @select="handleSelectPrimary"
+          @preview="handleShowIn3D"
         />
 
-        <!-- Alternatives -->
-        <div v-if="currentSuggestion.alternatives.length > 0" class="mb-3">
-          <div class="text-secondary mb-1">Альтернативы:</div>
-          <a-space wrap>
-            <a-tag
-              v-for="alt in currentSuggestion.alternatives"
-              :key="alt.coordinate"
-              class="alternative-tag"
-              @click="selectAlternative(alt)"
-            >
-              {{ alt.coordinate }}
-            </a-tag>
-          </a-space>
-        </div>
-      </template>
+        <!-- Alternative Positions -->
+        <PositionAlternativeGrid
+          v-if="currentSuggestion.alternatives.length > 0"
+          :alternatives="currentSuggestion.alternatives"
+          :selected-index="useManualPosition ? -1 : selectedAlternativeIndex"
+          @select="handleSelectAlternative"
+          @preview="handleShowIn3D"
+        />
 
-      <!-- Manual position toggle -->
-      <a-checkbox v-model:checked="useManualPosition" class="mb-2">
-        Указать позицию вручную
-      </a-checkbox>
+        <!-- Manual Position Override -->
+        <ManualPositionForm
+          :enabled="useManualPosition"
+          :position="manualPosition"
+          @update:enabled="handleManualToggle"
+          @update:position="(p) => manualPosition = p"
+        />
 
-      <!-- Manual position form -->
-      <a-form v-if="useManualPosition" layout="inline" class="manual-form mb-3">
-        <a-form-item label="Зона">
-          <a-select v-model:value="manualPosition.zone" style="width: 70px">
-            <a-select-option v-for="z in zones" :key="z" :value="z">{{ z }}</a-select-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="Ряд">
-          <a-input-number v-model:value="manualPosition.row" :min="1" :max="10" style="width: 60px" />
-        </a-form-item>
-        <a-form-item label="Отсек">
-          <a-input-number v-model:value="manualPosition.bay" :min="1" :max="10" style="width: 60px" />
-        </a-form-item>
-        <a-form-item label="Ярус">
-          <a-input-number v-model:value="manualPosition.tier" :min="1" :max="4" style="width: 60px" />
-        </a-form-item>
-      </a-form>
+        <!-- Work Order Options -->
+        <WorkOrderOptions
+          :vehicles="vehicles"
+          :loading-vehicles="loadingVehicles"
+          :selected-vehicle-id="selectedVehicleId"
+          @update:selected-vehicle-id="(id) => selectedVehicleId = id"
+        />
 
-      <!-- Actions -->
-      <a-space>
-        <a-button @click="handleCancel">Отмена</a-button>
-        <a-button
-          type="primary"
+        <!-- Actions -->
+        <PlacementActions
           :loading="loadingConfirm"
-          :disabled="!currentSuggestion && !useManualPosition"
-          @click="handleConfirm"
-        >
-          Разместить
-        </a-button>
-      </a-space>
+          :disabled="!finalPosition"
+          primary-text="Создать задачу"
+          :show-back="false"
+          @cancel="handleCancel"
+          @primary="handleCreateWorkOrder"
+        />
+      </template>
     </template>
 
-    <template v-else>
+    <!-- Empty State -->
+    <template v-else-if="!showSuccess">
       <a-empty description="Выберите контейнер для размещения" />
     </template>
-  </a-card>
+  </component>
 </template>
 
 <style scoped>
 .placement-panel {
-  min-width: 320px;
+  width: var(--panel-width, 380px);
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  position: relative;
+
+  /* CSS Custom Properties from design system */
+  --placement-primary: #52c41a;
+  --placement-alternative: #1677ff;
+  --placement-selected: #722ed1;
 }
 
-.mb-1 { margin-bottom: 4px; }
-.mb-2 { margin-bottom: 8px; }
-.mb-3 { margin-bottom: 12px; }
-
-.text-secondary {
-  color: rgba(0, 0, 0, 0.45);
-  font-size: 12px;
+/* When in drawer, expand to full width */
+.placement-panel.in-drawer {
+  width: 100%;
+  max-height: none;
+  padding: 16px;
 }
 
-.alternative-tag {
-  cursor: pointer;
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.alternative-tag:hover {
-  border-color: #1677ff;
-  color: #1677ff;
+.suggest-btn {
+  margin-bottom: 12px;
 }
 
-.manual-form :deep(.ant-form-item) {
-  margin-bottom: 8px;
+/* Loading recommendation state */
+.loading-recommendation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+/* Success Overlay Animation */
+.success-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  animation: fadeIn 0.3s ease;
+}
+
+.success-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  animation: scaleIn 0.4s ease;
+}
+
+.success-icon {
+  font-size: 48px;
+  color: #52c41a;
+}
+
+.success-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: #262626;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Loading skeleton styles */
+.placement-panel :deep(.ant-skeleton) {
+  margin-bottom: 12px;
 }
 </style>

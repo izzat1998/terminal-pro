@@ -324,8 +324,14 @@ class ContainerEntryService(BaseService):
             - entered_today: Containers entered today
             - exited_today: Containers exited today
             - companies: List of companies with container counts and laden/empty breakdown
+            - total_storage_cost_usd: Total storage cost for containers on terminal (USD)
+            - total_storage_cost_uzs: Total storage cost for containers on terminal (UZS)
         """
+        from decimal import Decimal
+
         from django.db.models import Count, Q
+
+        from apps.billing.services import StorageCostService
 
         today = timezone.now().date()
 
@@ -356,9 +362,28 @@ class ContainerEntryService(BaseService):
             .order_by("-count")
         )
 
+        # Calculate total storage cost for containers on terminal
+        total_usd = Decimal("0.00")
+        total_uzs = Decimal("0.00")
+        try:
+            on_terminal_entries = ContainerEntry.objects.filter(
+                exit_date__isnull=True
+            ).select_related("container", "company")
+
+            if on_terminal_entries.exists():
+                storage_service = StorageCostService()
+                cost_results = storage_service.calculate_bulk_costs(on_terminal_entries)
+                for result in cost_results:
+                    total_usd += result.total_usd
+                    total_uzs += result.total_uzs
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate storage costs for stats: {e}")
+
         self.logger.info(f"Retrieved container stats: {stats}")
 
         return {
             **stats,
             "companies": list(company_stats),
+            "total_storage_cost_usd": str(total_usd),
+            "total_storage_cost_uzs": str(total_uzs),
         }

@@ -1,0 +1,210 @@
+from decimal import Decimal
+
+from django.core.validators import MinValueValidator
+from django.db import models
+
+from apps.core.models import TimestampedModel
+
+
+class ContainerSize(models.TextChoices):
+    """Container size options based on ISO type first digit."""
+
+    TWENTY_FT = "20ft", "20 футов"
+    FORTY_FT = "40ft", "40 футов"
+
+
+class ContainerBillingStatus(models.TextChoices):
+    """Container status for billing purposes."""
+
+    LADEN = "laden", "Груженый"
+    EMPTY = "empty", "Порожний"
+
+
+class Tariff(TimestampedModel):
+    """
+    A tariff version representing pricing rules for a time period.
+
+    - company=NULL means this is a general (default) tariff
+    - company=X means this is a special tariff for that company
+    - Only one tariff can be active per company at any given date
+
+    Business rules:
+    - When a container enters, the system finds the applicable tariff
+    - If company has a special tariff valid on that date, use it
+    - Otherwise, fall back to general tariff (company=NULL)
+    - Tariff changes mid-stay are handled by period splitting
+    """
+
+    company = models.ForeignKey(
+        "accounts.Company",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="tariffs",
+        verbose_name="Компания",
+        help_text="NULL = общий тариф, указана компания = специальный тариф",
+    )
+
+    effective_from = models.DateField(
+        verbose_name="Действует с",
+        help_text="Дата начала действия тарифа",
+    )
+
+    effective_to = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Действует до",
+        help_text="Дата окончания действия (NULL = действует сейчас)",
+    )
+
+    created_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.PROTECT,
+        related_name="created_tariffs",
+        verbose_name="Создан пользователем",
+    )
+
+    notes = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Примечания",
+        help_text="Причина создания/изменения тарифа",
+    )
+
+    class Meta:
+        verbose_name = "Тариф"
+        verbose_name_plural = "Тарифы"
+        ordering = ["-effective_from"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "effective_from"],
+                name="unique_tariff_per_company_date",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gte=models.F("effective_from")),
+                name="tariff_effective_to_after_from",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["company", "effective_from", "effective_to"],
+                name="tariff_company_dates_idx",
+            ),
+            models.Index(fields=["effective_from"], name="tariff_eff_from_idx"),
+            models.Index(fields=["effective_to"], name="tariff_eff_to_idx"),
+        ]
+
+    def __str__(self):
+        tariff_type = self.company.name if self.company else "Общий"
+        status = "активен" if self.is_active else f"до {self.effective_to}"
+        return f"{tariff_type} ({self.effective_from} - {status})"
+
+    @property
+    def is_active(self) -> bool:
+        """Check if this tariff is currently active."""
+        from datetime import date
+
+        today = date.today()
+        # Active if: started AND (no end date OR end date is today or in the future)
+        if self.effective_from > today:
+            return False  # Not started yet
+        if self.effective_to is None:
+            return True  # No end date = ongoing
+        return self.effective_to >= today  # End date hasn't passed
+
+    @property
+    def is_general(self) -> bool:
+        """Check if this is a general (default) tariff."""
+        return self.company is None
+
+    def get_rate(
+        self, container_size: str, container_status: str
+    ) -> "TariffRate | None":
+        """
+        Get the rate for a specific container size and status.
+
+        Args:
+            container_size: '20ft' or '40ft'
+            container_status: 'laden' or 'empty'
+
+        Returns:
+            TariffRate instance or None if not found
+        """
+        return self.rates.filter(
+            container_size=container_size,
+            container_status=container_status,
+        ).first()
+
+
+class TariffRate(TimestampedModel):
+    """
+    Pricing details for a specific container size/status combination.
+
+    Each Tariff should have exactly 4 TariffRate records:
+    - 20ft laden
+    - 20ft empty
+    - 40ft laden
+    - 40ft empty
+
+    Both USD and UZS rates are stored independently (not converted).
+    """
+
+    tariff = models.ForeignKey(
+        Tariff,
+        on_delete=models.CASCADE,
+        related_name="rates",
+        verbose_name="Тариф",
+    )
+
+    container_size = models.CharField(
+        max_length=10,
+        choices=ContainerSize.choices,
+        verbose_name="Размер контейнера",
+    )
+
+    container_status = models.CharField(
+        max_length=10,
+        choices=ContainerBillingStatus.choices,
+        verbose_name="Статус контейнера",
+    )
+
+    daily_rate_usd = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        verbose_name="Ставка USD/день",
+        help_text="Дневная ставка хранения в долларах США",
+    )
+
+    daily_rate_uzs = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        verbose_name="Ставка UZS/день",
+        help_text="Дневная ставка хранения в сумах",
+    )
+
+    free_days = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Бесплатные дни",
+        help_text="Количество бесплатных дней хранения",
+    )
+
+    class Meta:
+        verbose_name = "Ставка тарифа"
+        verbose_name_plural = "Ставки тарифов"
+        ordering = ["tariff", "container_size", "container_status"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tariff", "container_size", "container_status"],
+                name="unique_rate_per_tariff_size_status",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.get_container_size_display()} "
+            f"{self.get_container_status_display()}: "
+            f"${self.daily_rate_usd}/день"
+        )
