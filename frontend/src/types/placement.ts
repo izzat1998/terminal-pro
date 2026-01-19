@@ -30,7 +30,7 @@ export type PlacementStatus = 'placed' | 'pending';
 export interface PendingWorkOrderInfo {
   id: number;
   order_number: string;
-  status: 'PENDING' | 'ASSIGNED' | 'ACCEPTED' | 'IN_PROGRESS' | 'COMPLETED' | 'VERIFIED' | 'FAILED';
+  status: 'PENDING' | 'COMPLETED';
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   assigned_to: string | null;
 }
@@ -310,13 +310,8 @@ export interface PositionMarkerData {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type WorkOrderStatus =
-  | 'PENDING'      // Created, waiting for assignment
-  | 'ASSIGNED'     // Assigned to manager
-  | 'ACCEPTED'     // Manager accepted
-  | 'IN_PROGRESS'  // Manager is navigating
-  | 'COMPLETED'    // Manager confirmed placement
-  | 'VERIFIED'     // Control room verified
-  | 'FAILED';      // Placement failed
+  | 'PENDING'      // Created, waiting for placement
+  | 'COMPLETED';   // Container physically placed
 
 export type WorkOrderPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
@@ -355,7 +350,7 @@ export interface WorkOrder {
   target_sub_slot: SubSlot;
   target_coordinate: string;
   assigned_to_vehicle: WorkOrderVehicle | null;
-  sla_deadline: string;
   created_at: string;
+  completed_at?: string;
   company_name: string;
 }
