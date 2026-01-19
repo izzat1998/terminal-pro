@@ -24,17 +24,16 @@ const REFRESH_INTERVAL_MS = 30_000; // 30 seconds
 
 export function useWorkOrderTasks() {
   /**
-   * Fetch pending/active work orders (PENDING, ASSIGNED, IN_PROGRESS).
+   * Fetch pending work orders (PENDING status only).
    */
   async function fetchTasks(): Promise<void> {
     loading.value = true;
     error.value = null;
 
     try {
-      // Fetch work orders with active statuses (must match placement_service.py)
-      // PENDING, ASSIGNED, ACCEPTED, IN_PROGRESS all show as orange in 3D view
+      // Fetch work orders with PENDING status (shown as orange in 3D view)
       const orders = await workOrderService.getWorkOrders({
-        status: 'PENDING,ASSIGNED,ACCEPTED,IN_PROGRESS',
+        status: 'PENDING',
       });
       pendingTasks.value = orders;
     } catch (e) {
