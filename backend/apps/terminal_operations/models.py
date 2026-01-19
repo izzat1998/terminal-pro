@@ -544,19 +544,12 @@ class TerminalVehicle(TimestampedModel):
 class WorkOrder(TimestampedModel):
     """
     Work order for container operations (placement or retrieval).
-    Tracks the assignment of container handling tasks to terminal vehicles.
 
-    Workflow:
-    PENDING → ASSIGNED → ACCEPTED → IN_PROGRESS → COMPLETED → VERIFIED
-                                                           ↘ FAILED
+    Simplified workflow:
+    PENDING → COMPLETED
 
-    - PENDING: Created by control room, not yet assigned
-    - ASSIGNED: Assigned to a specific vehicle
-    - ACCEPTED: Operator accepted the work order
-    - IN_PROGRESS: Operator is navigating to location / placing or retrieving container
-    - COMPLETED: Operator confirmed placement/retrieval with photo
-    - VERIFIED: System verified correct placement (optional auto-verification)
-    - FAILED: Operation was incorrect or could not be completed
+    - PENDING: Created, container waiting for placement
+    - COMPLETED: Container physically placed at target position
     """
 
     from django.core.validators import MaxValueValidator, MinValueValidator
@@ -567,15 +560,10 @@ class WorkOrder(TimestampedModel):
         ("RETRIEVAL", "Извлечение"),
     ]
 
-    # Status workflow
+    # Status workflow (simplified)
     STATUS_CHOICES = [
         ("PENDING", "Ожидает"),
-        ("ASSIGNED", "Назначен"),
-        ("ACCEPTED", "Принят"),
-        ("IN_PROGRESS", "Выполняется"),
         ("COMPLETED", "Завершён"),
-        ("VERIFIED", "Подтверждён"),
-        ("FAILED", "Ошибка"),
     ]
 
     # Priority levels
@@ -693,66 +681,11 @@ class WorkOrder(TimestampedModel):
         help_text="Оператор, создавший наряд",
     )
 
-    # SLA deadline
-    sla_deadline = models.DateTimeField(
-        help_text="Крайний срок выполнения",
-    )
-
-    # Timestamps for status transitions
-    assigned_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Время назначения менеджеру",
-    )
-
-    accepted_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Время принятия менеджером",
-    )
-
-    started_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Время начала выполнения",
-    )
-
+    # Timestamp for completion
     completed_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="Время завершения (фото подтверждение)",
-    )
-
-    verified_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Время системной верификации",
-    )
-
-    # Placement verification
-    placement_photo = models.ImageField(
-        upload_to="work_orders/placement_photos/%Y/%m/",
-        null=True,
-        blank=True,
-        help_text="Фото подтверждения размещения",
-    )
-
-    verification_status = models.CharField(
-        max_length=20,
-        choices=[
-            ("PENDING", "Ожидает проверки"),
-            ("CORRECT", "Верно"),
-            ("INCORRECT", "Неверно"),
-        ],
-        null=True,
-        blank=True,
-        help_text="Результат верификации",
-    )
-
-    verification_notes = models.TextField(
-        blank=True,
-        default="",
-        help_text="Примечания к верификации",
+        help_text="Время завершения",
     )
 
     # Optional notes
@@ -777,7 +710,6 @@ class WorkOrder(TimestampedModel):
             models.Index(
                 fields=["priority", "-created_at"], name="wo_priority_created_idx"
             ),
-            models.Index(fields=["-sla_deadline"], name="wo_sla_deadline_idx"),
             models.Index(fields=["order_number"], name="wo_order_number_idx"),
         ]
 
@@ -788,19 +720,6 @@ class WorkOrder(TimestampedModel):
             f"{self.target_zone}-R{self.target_row:02d}-B{self.target_bay:02d}-"
             f"T{self.target_tier}-{self.target_sub_slot}"
         )
-
-    @property
-    def is_overdue(self) -> bool:
-        """Check if work order has passed SLA deadline"""
-        return timezone.now() > self.sla_deadline
-
-    @property
-    def time_remaining_minutes(self) -> int | None:
-        """Minutes remaining until SLA deadline (negative if overdue)"""
-        if not self.sla_deadline:
-            return None
-        delta = self.sla_deadline - timezone.now()
-        return int(delta.total_seconds() / 60)
 
     def save(self, *args, **kwargs):
         """Auto-generate order number if not set"""
