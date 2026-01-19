@@ -169,9 +169,6 @@ class WorkOrderSerializer(serializers.ModelSerializer):
     assigned_to_vehicle = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
     priority_display = serializers.SerializerMethodField()
-    is_overdue = serializers.BooleanField(read_only=True)
-    time_remaining_minutes = serializers.IntegerField(read_only=True)
-    placement_photo_url = serializers.SerializerMethodField()
 
     class Meta:
         from ..models import WorkOrder
@@ -187,29 +184,15 @@ class WorkOrderSerializer(serializers.ModelSerializer):
             "container",
             "target_location",
             "assigned_to_vehicle",
-            "sla_deadline",
-            "is_overdue",
-            "time_remaining_minutes",
             "created_at",
-            "assigned_at",
-            "accepted_at",
-            "started_at",
             "completed_at",
-            "verified_at",
-            "placement_photo_url",
-            "verification_status",
-            "verification_notes",
             "notes",
         ]
         read_only_fields = [
             "id",
             "order_number",
             "created_at",
-            "assigned_at",
-            "accepted_at",
-            "started_at",
             "completed_at",
-            "verified_at",
         ]
 
     @extend_schema_field({"type": "object"})
@@ -246,15 +229,6 @@ class WorkOrderSerializer(serializers.ModelSerializer):
     def get_priority_display(self, obj):
         return obj.get_priority_display()
 
-    @extend_schema_field({"type": "string", "nullable": True, "format": "uri"})
-    def get_placement_photo_url(self, obj):
-        if obj.placement_photo:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.placement_photo.url)
-            return obj.placement_photo.url
-        return None
-
 
 class WorkOrderListSerializer(serializers.ModelSerializer):
     """
@@ -276,7 +250,6 @@ class WorkOrderListSerializer(serializers.ModelSerializer):
     assigned_to_vehicle = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
     priority_display = serializers.SerializerMethodField()
-    is_overdue = serializers.BooleanField(read_only=True)
 
     class Meta:
         from ..models import WorkOrder
@@ -294,8 +267,6 @@ class WorkOrderListSerializer(serializers.ModelSerializer):
             "target_coordinate",
             "assigned_vehicle_name",
             "assigned_to_vehicle",
-            "sla_deadline",
-            "is_overdue",
             "created_at",
         ]
 
@@ -404,54 +375,16 @@ class WorkOrderAssignSerializer(serializers.Serializer):
     )
 
 
-class WorkOrderCompleteSerializer(serializers.Serializer):
-    """
-    Serializer for completing work order with photo.
-    """
-
-    placement_photo = serializers.ImageField(
-        required=False,
-        allow_null=True,
-        help_text="Photo confirming placement",
-    )
-
-
-class WorkOrderVerifySerializer(serializers.Serializer):
-    """
-    Serializer for verifying completed placement.
-    """
-
-    is_correct = serializers.BooleanField(
-        help_text="Whether placement is correct",
-    )
-    notes = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        default="",
-        help_text="Verification notes",
-    )
-
-
-class WorkOrderFailSerializer(serializers.Serializer):
-    """
-    Serializer for marking work order as failed.
-    """
-
-    reason = serializers.CharField(
-        help_text="Reason for failure",
-    )
-
-
 class TerminalVehicleStatusSerializer(serializers.Serializer):
     """
     Serializer for terminal vehicles with work status.
 
     Used for sidebar display showing vehicles with operators and current work.
-    Computes status from: is_active + operator + active work orders.
+    Computes status from: is_active + operator + pending work orders.
 
     Statuses:
-    - available: Active, has operator, no active work
-    - working: Has active work order (ASSIGNED/ACCEPTED/IN_PROGRESS)
+    - available: Active, has operator, no pending work
+    - working: Has pending work order
     - offline: Inactive or no operator assigned
     """
 
@@ -477,18 +410,12 @@ class TerminalVehicleStatusSerializer(serializers.Serializer):
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_status(self, obj):
-        """
-        Compute vehicle status:
-        - offline: not active or no operator
-        - working: has active work order
-        - available: active with operator but no active work
-        """
+        """Compute vehicle status."""
         if not obj.is_active or not obj.operator:
             return "offline"
 
-        # Check for active work orders
-        active_statuses = ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"]
-        has_active_work = obj.work_orders.filter(status__in=active_statuses).exists()
+        # Check for assigned pending work orders
+        has_active_work = obj.work_orders.filter(status="PENDING").exists()
 
         if has_active_work:
             return "working"
@@ -497,13 +424,9 @@ class TerminalVehicleStatusSerializer(serializers.Serializer):
 
     @extend_schema_field({"type": "object", "nullable": True})
     def get_current_task(self, obj):
-        """
-        Return current task info if vehicle is working.
-        Returns: {container_number, target_coordinate} or None
-        """
-        active_statuses = ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"]
+        """Return current task info if vehicle has assigned work."""
         active_order = (
-            obj.work_orders.filter(status__in=active_statuses)
+            obj.work_orders.filter(status="PENDING")
             .select_related("container_entry__container")
             .order_by("-priority", "-created_at")
             .first()

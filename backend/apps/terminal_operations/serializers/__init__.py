@@ -62,15 +62,12 @@ from .work_orders import (
     TerminalVehicleStatusSerializer,
     TerminalVehicleWriteSerializer,
     WorkOrderAssignSerializer,
-    WorkOrderCompleteSerializer,
     WorkOrderContainerSerializer,
     WorkOrderCreateSerializer,
-    WorkOrderFailSerializer,
     WorkOrderListSerializer,
     WorkOrderSerializer,
     WorkOrderTargetLocationSerializer,
     WorkOrderVehicleSerializer,
-    WorkOrderVerifySerializer,
     get_container_size_from_iso,
 )
 
@@ -122,7 +119,4 @@ __all__ = [
     "WorkOrderListSerializer",
     "WorkOrderCreateSerializer",
     "WorkOrderAssignSerializer",
-    "WorkOrderCompleteSerializer",
-    "WorkOrderVerifySerializer",
-    "WorkOrderFailSerializer",
 ]
