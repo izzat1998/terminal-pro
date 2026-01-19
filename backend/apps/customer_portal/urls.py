@@ -5,7 +5,12 @@ URL routing for customer portal API endpoints.
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from apps.billing.views import CustomerStorageCostView
+from apps.billing.views import (
+    CustomerAvailablePeriodsView,
+    CustomerStatementListView,
+    CustomerStatementView,
+    CustomerStorageCostView,
+)
 
 from .views import (
     CustomerContainerEntryViewSet,
@@ -34,5 +39,21 @@ urlpatterns = router.urls + [
         "storage-costs/",
         CustomerStorageCostView.as_view(),
         name="customer-storage-costs",
+    ),
+    # Monthly billing statements
+    path(
+        "billing/statements/",
+        CustomerStatementListView.as_view(),
+        name="customer-statement-list",
+    ),
+    path(
+        "billing/statements/<int:year>/<int:month>/",
+        CustomerStatementView.as_view(),
+        name="customer-statement-detail",
+    ),
+    path(
+        "billing/available-periods/",
+        CustomerAvailablePeriodsView.as_view(),
+        name="customer-available-periods",
     ),
 ]

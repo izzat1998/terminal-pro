@@ -9,7 +9,7 @@ from rest_framework import serializers
 
 from apps.accounts.models import Company
 
-from .models import ContainerBillingStatus, ContainerSize, Tariff, TariffRate
+from .models import ContainerBillingStatus, ContainerSize, MonthlyStatement, StatementLineItem, Tariff, TariffRate
 
 
 class TariffRateSerializer(serializers.ModelSerializer):
@@ -287,3 +287,74 @@ class BulkStorageCostResponseSerializer(serializers.Serializer):
 
     results = StorageCostResultSerializer(many=True)
     summary = BulkStorageCostSummarySerializer()
+
+
+# Monthly Statement Serializers
+
+
+class StatementLineItemSerializer(serializers.ModelSerializer):
+    """Serializer for statement line items."""
+
+    container_size_display = serializers.CharField(read_only=True)
+    container_status_display = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = StatementLineItem
+        fields = [
+            "id",
+            "container_number",
+            "container_size",
+            "container_size_display",
+            "container_status",
+            "container_status_display",
+            "period_start",
+            "period_end",
+            "is_still_on_terminal",
+            "total_days",
+            "free_days",
+            "billable_days",
+            "daily_rate_usd",
+            "daily_rate_uzs",
+            "amount_usd",
+            "amount_uzs",
+        ]
+
+
+class MonthlyStatementSerializer(serializers.ModelSerializer):
+    """Serializer for monthly statements."""
+
+    month_name = serializers.CharField(read_only=True)
+    billing_method_display = serializers.CharField(read_only=True)
+    line_items = StatementLineItemSerializer(many=True, read_only=True)
+    summary = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MonthlyStatement
+        fields = [
+            "id",
+            "year",
+            "month",
+            "month_name",
+            "billing_method",
+            "billing_method_display",
+            "summary",
+            "line_items",
+            "generated_at",
+        ]
+
+    def get_summary(self, obj: MonthlyStatement) -> dict:
+        return {
+            "total_containers": obj.total_containers,
+            "total_billable_days": obj.total_billable_days,
+            "total_usd": str(obj.total_usd),
+            "total_uzs": str(obj.total_uzs),
+        }
+
+
+class AvailablePeriodSerializer(serializers.Serializer):
+    """Serializer for available billing periods."""
+
+    year = serializers.IntegerField()
+    month = serializers.IntegerField()
+    label = serializers.CharField()
+    has_statement = serializers.BooleanField()

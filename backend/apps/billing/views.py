@@ -13,15 +13,20 @@ from rest_framework.views import APIView
 from apps.terminal_operations.models import ContainerEntry
 
 from .models import Tariff
+from apps.customer_portal.permissions import IsCustomer
+
 from .serializers import (
+    AvailablePeriodSerializer,
     BulkStorageCostRequestSerializer,
     BulkStorageCostResponseSerializer,
+    MonthlyStatementSerializer,
     StorageCostResultSerializer,
     TariffCreateSerializer,
     TariffSerializer,
     TariffUpdateSerializer,
 )
 from .services import StorageCostService
+from .services.statement_service import MonthlyStatementService
 
 
 class TariffViewSet(viewsets.ModelViewSet):
@@ -346,3 +351,99 @@ class CustomerStorageCostView(APIView):
                 },
             }
         )
+
+
+class CustomerStatementView(APIView):
+    """
+    Get or generate a monthly statement for the authenticated customer's company.
+
+    GET /api/customer/billing/statements/{year}/{month}/
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request, year: int, month: int):
+        # Get customer's company
+        profile = request.user.get_profile()
+        if not profile or not profile.company:
+            return Response(
+                {"success": False, "error": {"code": "NO_COMPANY", "message": "Компания не найдена"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        company = profile.company
+
+        # Validate month
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check for regenerate flag
+        regenerate = request.query_params.get("regenerate", "").lower() == "true"
+
+        # Get or generate statement
+        service = MonthlyStatementService()
+        statement = service.get_or_generate_statement(
+            company=company,
+            year=year,
+            month=month,
+            user=request.user,
+            regenerate=regenerate,
+        )
+
+        serializer = MonthlyStatementSerializer(statement)
+        return Response({"success": True, "data": serializer.data})
+
+
+class CustomerStatementListView(APIView):
+    """
+    List all statements for the authenticated customer's company.
+
+    GET /api/customer/billing/statements/
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request):
+        profile = request.user.get_profile()
+        if not profile or not profile.company:
+            return Response(
+                {"success": False, "error": {"code": "NO_COMPANY", "message": "Компания не найдена"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        year = request.query_params.get("year")
+        service = MonthlyStatementService()
+        statements = service.list_statements(
+            company=profile.company,
+            year=int(year) if year else None,
+        )
+
+        serializer = MonthlyStatementSerializer(statements, many=True)
+        return Response({"success": True, "data": serializer.data})
+
+
+class CustomerAvailablePeriodsView(APIView):
+    """
+    Get available billing periods for dropdown.
+
+    GET /api/customer/billing/available-periods/
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request):
+        profile = request.user.get_profile()
+        if not profile or not profile.company:
+            return Response(
+                {"success": False, "error": {"code": "NO_COMPANY", "message": "Компания не найдена"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        service = MonthlyStatementService()
+        periods = service.get_available_periods(profile.company)
+
+        serializer = AvailablePeriodSerializer(periods, many=True)
+        return Response({"success": True, "data": serializer.data})
