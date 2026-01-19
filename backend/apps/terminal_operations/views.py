@@ -1342,10 +1342,9 @@ class WorkOrderViewSet(
 
     Provides endpoints for:
     - Creating work orders (control room)
-    - Assigning work orders to managers
-    - Manager actions: accept, start, complete
-    - Verification of completed placements
-    - Listing active, pending, and overdue orders
+    - Assigning work orders to vehicles
+    - Completing work orders
+    - Listing pending and completed orders
     """
 
     permission_classes = [IsAuthenticated]
@@ -1402,20 +1401,14 @@ class WorkOrderViewSet(
         """Return appropriate serializer based on action."""
         from .serializers import (
             WorkOrderAssignSerializer,
-            WorkOrderCompleteSerializer,
             WorkOrderCreateSerializer,
-            WorkOrderFailSerializer,
             WorkOrderListSerializer,
             WorkOrderSerializer,
-            WorkOrderVerifySerializer,
         )
 
         action_serializers = {
             "create": WorkOrderCreateSerializer,
             "assign": WorkOrderAssignSerializer,
-            "complete": WorkOrderCompleteSerializer,
-            "verify": WorkOrderVerifySerializer,
-            "fail": WorkOrderFailSerializer,
         }
         if self.action in action_serializers:
             return action_serializers[self.action]
@@ -1425,13 +1418,13 @@ class WorkOrderViewSet(
 
     @extend_schema(
         summary="List work orders",
-        description="List all active work orders. Filter by status, priority, or assigned manager.",
+        description="List all work orders. Filter by status (PENDING or COMPLETED).",
         parameters=[
             OpenApiParameter(
                 name="status",
                 type=str,
                 required=False,
-                description="Filter by status (comma-separated: PENDING,ASSIGNED,ACCEPTED,IN_PROGRESS,COMPLETED,VERIFIED,FAILED)",
+                description="Filter by status (PENDING, COMPLETED)",
             ),
             OpenApiParameter(
                 name="assigned_to",
@@ -1561,160 +1554,26 @@ class WorkOrderViewSet(
         )
 
     @extend_schema(
-        summary="Accept work order",
-        description="Accept an assigned work order for a vehicle.",
-        tags=["Work Orders"],
-        parameters=[
-            OpenApiParameter(
-                name="vehicle_id",
-                type=int,
-                location=OpenApiParameter.QUERY,
-                description="Terminal vehicle ID accepting the order",
-                required=True,
-            ),
-        ],
-    )
-    @action(detail=True, methods=["post"])
-    def accept(self, request, pk=None):
-        """Accept the work order for a vehicle."""
-        vehicle_id = request.query_params.get("vehicle_id")
-        if not vehicle_id:
-            raise BusinessLogicError(
-                message="Не указан ID техники",
-                error_code="VEHICLE_ID_REQUIRED",
-            )
-
-        service = self.get_work_order_service()
-        work_order = service.accept_order(
-            work_order_id=int(pk),
-            vehicle_id=int(vehicle_id),
-            operator=request.user if request.user.is_authenticated else None,
-        )
-
-        return self._work_order_response(work_order, request, "Наряд принят")
-
-    @extend_schema(
-        summary="Start work order",
-        description="Start working on the work order (navigating to location).",
-        tags=["Work Orders"],
-        parameters=[
-            OpenApiParameter(
-                name="vehicle_id",
-                type=int,
-                location=OpenApiParameter.QUERY,
-                description="Terminal vehicle ID starting the order",
-                required=True,
-            ),
-        ],
-    )
-    @action(detail=True, methods=["post"])
-    def start(self, request, pk=None):
-        """Start working on the order."""
-        vehicle_id = request.query_params.get("vehicle_id")
-        if not vehicle_id:
-            raise BusinessLogicError(
-                message="Не указан ID техники",
-                error_code="VEHICLE_ID_REQUIRED",
-            )
-
-        service = self.get_work_order_service()
-        work_order = service.start_order(
-            work_order_id=int(pk),
-            vehicle_id=int(vehicle_id),
-            operator=request.user if request.user.is_authenticated else None,
-        )
-
-        return self._work_order_response(work_order, request, "Выполнение начато")
-
-    @extend_schema(
         summary="Complete work order",
-        description="Complete the work order with placement photo confirmation.",
+        description="Mark work order as completed. Creates the container position.",
         tags=["Work Orders"],
-        parameters=[
-            OpenApiParameter(
-                name="vehicle_id",
-                type=int,
-                location=OpenApiParameter.QUERY,
-                description="Terminal vehicle ID completing the order",
-                required=True,
-            ),
-        ],
     )
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
-        """Complete the work order with photo."""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        """Complete a work order - container is physically placed."""
+        work_order_service = self.get_work_order_service()
 
-        vehicle_id = request.query_params.get("vehicle_id")
-        if not vehicle_id:
-            raise BusinessLogicError(
-                message="Не указан ID техники",
-                error_code="VEHICLE_ID_REQUIRED",
-            )
-
-        service = self.get_work_order_service()
-        work_order = service.complete_order(
-            work_order_id=int(pk),
-            vehicle_id=int(vehicle_id),
-            operator=request.user if request.user.is_authenticated else None,
-            placement_photo=serializer.validated_data.get("placement_photo"),
-        )
-
-        return self._work_order_response(work_order, request, "Размещение завершено")
-
-    @extend_schema(
-        summary="Verify placement",
-        description="Control room verifies a completed placement (correct or incorrect).",
-        tags=["Work Orders"],
-    )
-    @action(detail=True, methods=["post"])
-    def verify(self, request, pk=None):
-        """Verify completed placement."""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        service = self.get_work_order_service()
-        work_order = service.verify_placement(
-            work_order_id=int(pk),
-            is_correct=serializer.validated_data["is_correct"],
-            notes=serializer.validated_data.get("notes", ""),
-            verified_by=request.user,
-        )
-
-        return self._work_order_response(work_order, request, "Размещение проверено")
-
-    @extend_schema(
-        summary="Fail work order",
-        description="Mark work order as failed with reason.",
-        tags=["Work Orders"],
-        parameters=[
-            OpenApiParameter(
-                name="vehicle_id",
-                type=int,
-                location=OpenApiParameter.QUERY,
-                description="Terminal vehicle ID reporting the failure (optional)",
-                required=False,
-            ),
-        ],
-    )
-    @action(detail=True, methods=["post"])
-    def fail(self, request, pk=None):
-        """Mark work order as failed."""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
+        # Get optional vehicle_id from request
         vehicle_id = request.query_params.get("vehicle_id")
 
-        service = self.get_work_order_service()
-        work_order = service.fail_order(
+        work_order = work_order_service.complete_order(
             work_order_id=int(pk),
-            reason=serializer.validated_data["reason"],
             vehicle_id=int(vehicle_id) if vehicle_id else None,
+            operator=request.user if request.user.is_authenticated else None,
         )
 
         return self._work_order_response(
-            work_order, request, "Наряд отмечен как ошибочный"
+            work_order, request, "Наряд завершён"
         )
 
     @extend_schema(
@@ -1818,7 +1677,7 @@ class WorkOrderViewSet(
         )
         queryset = queryset.filter(
             assigned_to_vehicle_id__in=list(vehicles),
-            status__in=["ASSIGNED", "ACCEPTED", "IN_PROGRESS"],
+            status="PENDING",
         ).order_by("-priority", "-created_at")
 
         # Return paginated response
@@ -1856,32 +1715,8 @@ class WorkOrderViewSet(
         return self._paginated_list_response(queryset, request)
 
     @extend_schema(
-        summary="Get overdue work orders",
-        description="Get work orders that have passed their SLA deadline.",
-        tags=["Work Orders"],
-    )
-    @action(detail=False, methods=["get"])
-    def overdue(self, request):
-        """Get overdue work orders."""
-        from .serializers import WorkOrderListSerializer
-
-        service = self.get_work_order_service()
-        queryset = service.get_overdue_orders()
-
-        serializer = WorkOrderListSerializer(
-            queryset, many=True, context={"request": request}
-        )
-        return Response(
-            {
-                "success": True,
-                "data": serializer.data,
-                "count": queryset.count(),
-            }
-        )
-
-    @extend_schema(
         summary="Get work order statistics",
-        description="Get aggregated statistics about work orders.",
+        description="Get counts of work orders by status.",
         tags=["Work Orders"],
     )
     @action(detail=False, methods=["get"])
@@ -1892,21 +1727,9 @@ class WorkOrderViewSet(
         from .models import WorkOrder
 
         stats = WorkOrder.objects.aggregate(
-            total=Count("id"),
             pending=Count("id", filter=Q(status="PENDING")),
-            assigned=Count("id", filter=Q(status="ASSIGNED")),
-            accepted=Count("id", filter=Q(status="ACCEPTED")),
-            in_progress=Count("id", filter=Q(status="IN_PROGRESS")),
             completed=Count("id", filter=Q(status="COMPLETED")),
-            verified=Count("id", filter=Q(status="VERIFIED")),
-            failed=Count("id", filter=Q(status="FAILED")),
-            overdue=Count(
-                "id",
-                filter=Q(
-                    status__in=["PENDING", "ASSIGNED", "ACCEPTED", "IN_PROGRESS"],
-                    sla_deadline__lt=timezone.now(),
-                ),
-            ),
+            total=Count("id"),
         )
 
         return Response({"success": True, "data": stats})
