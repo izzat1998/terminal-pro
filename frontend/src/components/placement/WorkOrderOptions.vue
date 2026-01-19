@@ -14,7 +14,7 @@ interface TerminalVehicle {
   license_plate: string;
 }
 
-const props = defineProps<{
+defineProps<{
   vehicles: TerminalVehicle[];
   loadingVehicles: boolean;
   selectedVehicleId?: number;

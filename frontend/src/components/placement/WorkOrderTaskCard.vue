@@ -40,26 +40,20 @@ const priorityConfig = computed((): { color: string; label: string } => {
   return config[props.task.priority] ?? defaultConfig;
 });
 
-// Time remaining until SLA deadline
-const timeRemaining = computed(() => {
-  if (!props.task.sla_deadline) return null;
-
-  const deadline = new Date(props.task.sla_deadline);
+// Time since creation (for display)
+const timeElapsed = computed(() => {
+  const created = new Date(props.task.created_at);
   const now = new Date();
-  const diffMs = deadline.getTime() - now.getTime();
-
-  if (diffMs <= 0) {
-    return { text: 'Просрочено', isOverdue: true };
-  }
+  const diffMs = now.getTime() - created.getTime();
 
   const diffMins = Math.floor(diffMs / 60000);
   if (diffMins < 60) {
-    return { text: `${diffMins} мин`, isOverdue: false };
+    return { text: `${diffMins} мин назад`, isOld: diffMins > 30 };
   }
 
   const hours = Math.floor(diffMins / 60);
   const mins = diffMins % 60;
-  return { text: `${hours}ч ${mins}м`, isOverdue: false };
+  return { text: `${hours}ч ${mins}м назад`, isOld: hours > 2 };
 });
 
 // Vehicle type icon
@@ -99,9 +93,9 @@ async function handleAssign(vehicleId: number): Promise<void> {
         <span class="priority-label">{{ priorityConfig.label }}</span>
         <span class="order-number">#{{ task.order_number }}</span>
       </div>
-      <div v-if="timeRemaining" class="time-remaining" :class="{ 'is-overdue': timeRemaining.isOverdue }">
+      <div class="time-elapsed" :class="{ 'is-old': timeElapsed.isOld }">
         <ClockCircleOutlined class="time-icon" />
-        <span>{{ timeRemaining.text }}</span>
+        <span>{{ timeElapsed.text }}</span>
       </div>
     </div>
 
@@ -192,8 +186,8 @@ async function handleAssign(vehicleId: number): Promise<void> {
   font-family: monospace;
 }
 
-/* Time remaining */
-.time-remaining {
+/* Time elapsed */
+.time-elapsed {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -201,8 +195,8 @@ async function handleAssign(vehicleId: number): Promise<void> {
   color: #595959;
 }
 
-.time-remaining.is-overdue {
-  color: #f5222d;
+.time-elapsed.is-old {
+  color: #fa8c16;
   font-weight: 600;
 }
 

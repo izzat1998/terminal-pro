@@ -12,9 +12,9 @@
  * - # (order_number)
  * - Контейнер (container_number)
  * - Позиция (target_coordinate)
- * - Статус (status with badge)
+ * - Статус (status with badge) - PENDING or COMPLETED
  * - Техника (assigned_to_vehicle)
- * - SLA (sla_deadline countdown)
+ * - Завершено (completed_at)
  */
 
 import { computed } from 'vue';
@@ -43,65 +43,25 @@ const {
   resetFilters,
 } = useWorkOrdersPage();
 
-// Status options for filter
+// Status options for filter (simplified 2-status workflow)
 const statusOptions: { value: WorkOrderStatus | ''; label: string }[] = [
   { value: '', label: 'Все статусы' },
   { value: 'PENDING', label: 'Ожидает' },
-  { value: 'ASSIGNED', label: 'Назначено' },
-  { value: 'ACCEPTED', label: 'Принято' },
-  { value: 'IN_PROGRESS', label: 'В работе' },
   { value: 'COMPLETED', label: 'Завершено' },
-  { value: 'VERIFIED', label: 'Проверено' },
-  { value: 'FAILED', label: 'Ошибка' },
 ];
 
 // Status badge colors
 const statusColors: Record<WorkOrderStatus, string> = {
-  PENDING: 'default',
-  ASSIGNED: 'processing',
-  ACCEPTED: 'cyan',
-  IN_PROGRESS: 'blue',
+  PENDING: 'processing',
   COMPLETED: 'success',
-  VERIFIED: 'green',
-  FAILED: 'error',
 };
 
 // Status display text
 const statusText: Record<WorkOrderStatus, string> = {
   PENDING: 'Ожидает',
-  ASSIGNED: 'Назначено',
-  ACCEPTED: 'Принято',
-  IN_PROGRESS: 'В работе',
   COMPLETED: 'Завершено',
-  VERIFIED: 'Проверено',
-  FAILED: 'Ошибка',
 };
 
-// Calculate SLA countdown (time remaining or overdue)
-function getSlaCountdown(deadline: string): { text: string; isOverdue: boolean } {
-  const now = new Date();
-  const sla = new Date(deadline);
-  const diffMs = sla.getTime() - now.getTime();
-
-  if (diffMs <= 0) {
-    // Overdue
-    const overdueMs = Math.abs(diffMs);
-    const hours = Math.floor(overdueMs / (1000 * 60 * 60));
-    const minutes = Math.floor((overdueMs % (1000 * 60 * 60)) / (1000 * 60));
-    return {
-      text: hours > 0 ? `Просрочено на ${hours}ч ${minutes}м` : `Просрочено на ${minutes}м`,
-      isOverdue: true,
-    };
-  }
-
-  // Time remaining
-  const hours = Math.floor(diffMs / (1000 * 60 * 60));
-  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-  return {
-    text: hours > 0 ? `${hours}ч ${minutes}м` : `${minutes}м`,
-    isOverdue: false,
-  };
-}
 
 // Table columns definition
 const columns = computed<ColumnsType<WorkOrder>>(() => [
@@ -136,9 +96,9 @@ const columns = computed<ColumnsType<WorkOrder>>(() => [
     width: 160,
   },
   {
-    title: 'SLA',
-    dataIndex: 'sla_deadline',
-    key: 'sla',
+    title: 'Завершено',
+    dataIndex: 'completed_at',
+    key: 'completed_at',
     width: 140,
   },
   {
@@ -301,13 +261,12 @@ const hasActiveFilters = computed(() =>
             <span v-else class="cell-secondary">—</span>
           </template>
 
-          <!-- SLA countdown -->
-          <template v-else-if="column.key === 'sla'">
-            <span
-              :class="['sla-countdown', { overdue: getSlaCountdown(record.sla_deadline).isOverdue }]"
-            >
-              {{ getSlaCountdown(record.sla_deadline).text }}
-            </span>
+          <!-- Completed at -->
+          <template v-else-if="column.key === 'completed_at'">
+            <template v-if="record.completed_at">
+              {{ formatRelativeTime(record.completed_at) }}
+            </template>
+            <span v-else class="cell-secondary">—</span>
           </template>
 
           <!-- Created at -->
@@ -375,15 +334,6 @@ const hasActiveFilters = computed(() =>
 .cell-secondary {
   font-size: 12px;
   color: #8c8c8c;
-}
-
-.sla-countdown {
-  font-weight: 500;
-  color: #52c41a;
-}
-
-.sla-countdown.overdue {
-  color: #f5222d;
 }
 
 /* Clickable row styling */
