@@ -327,7 +327,11 @@
       :scroll="{ x: scrollX }"
       :loading="loading"
       :row-selection="rowSelection"
-      :expandable="{ expandedRowRender: () => null }"
+      row-key="containerId"
+      :expandable="{
+        expandedRowKeys: expandedRowKeys,
+      }"
+      @expand="handleRowExpand"
       @change="handleTableChange"
       class="mb-0"
       bordered
@@ -335,41 +339,105 @@
       <!-- Expandable row for secondary details -->
       <template #expandedRowRender="{ record }">
         <div style="padding: 0 16px;">
-          <a-descriptions size="small" :column="{ xs: 1, sm: 2, md: 3, lg: 4 }" bordered>
-            <a-descriptions-item label="Собственник контейнера">
-              {{ record.containerOwner || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="Поезд при завозе">
-              {{ record.entryTrainNumber || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="№ машины/вагона (завоз)">
-              {{ record.transportNumber || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="Транспорт при вывозе">
-              {{ record.exitTransportType || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="Поезд при вывозе">
-              {{ record.exitTrainNumber || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="№ транспорта (вывоз)">
-              {{ record.exitTransportNumber || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="Станция назначения">
-              {{ record.destinationStation || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="Груз">
-              {{ record.cargoName || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="Тоннаж">
-              {{ record.cargoWeight ? `${record.cargoWeight} т` : '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="Доп. крановая операция">
-              {{ record.additionalCraneOperationDate || '—' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="Примечание" :span="2">
-              {{ record.note || '—' }}
-            </a-descriptions-item>
-          </a-descriptions>
+          <a-row :gutter="16">
+            <!-- Left side: Container details -->
+            <a-col :span="16">
+              <a-descriptions size="small" :column="{ xs: 1, sm: 2, md: 3 }" bordered>
+                <a-descriptions-item label="Собственник контейнера">
+                  {{ record.containerOwner || '—' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="Поезд при завозе">
+                  {{ record.entryTrainNumber || '—' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="№ машины/вагона (завоз)">
+                  {{ record.transportNumber || '—' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="Транспорт при вывозе">
+                  {{ record.exitTransportType || '—' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="Поезд при вывозе">
+                  {{ record.exitTrainNumber || '—' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="№ транспорта (вывоз)">
+                  {{ record.exitTransportNumber || '—' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="Станция назначения">
+                  {{ record.destinationStation || '—' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="Груз">
+                  {{ record.cargoName || '—' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="Тоннаж">
+                  {{ record.cargoWeight ? `${record.cargoWeight} т` : '—' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="Доп. крановая операция">
+                  {{ record.additionalCraneOperationDate || '—' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="Примечание" :span="2">
+                  {{ record.note || '—' }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </a-col>
+
+            <!-- Right side: Additional Expenses -->
+            <a-col :span="8">
+              <a-card
+                size="small"
+                title="Дополнительные расходы"
+                class="expenses-card"
+              >
+                <template #extra>
+                  <a-button
+                    type="link"
+                    size="small"
+                    @click="handleContainerDoubleClick(record)"
+                  >
+                    <template #icon><PlusOutlined /></template>
+                    Добавить
+                  </a-button>
+                </template>
+
+                <a-spin :spinning="isLoadingExpenses(record.containerId)">
+                  <div v-if="getContainerExpenses(record.containerId).length > 0" class="expenses-list">
+                    <div
+                      v-for="expense in getContainerExpenses(record.containerId)"
+                      :key="expense.id"
+                      class="expense-item"
+                    >
+                      <div class="expense-info">
+                        <span class="expense-name">{{ expense.description }}</span>
+                        <span class="expense-date">{{ new Date(expense.charge_date).toLocaleDateString('ru-RU') }}</span>
+                      </div>
+                      <div class="expense-amount">
+                        <span class="expense-usd">${{ parseFloat(expense.amount_usd).toFixed(2) }}</span>
+                      </div>
+                    </div>
+                    <a-divider style="margin: 8px 0;" />
+                    <div class="expenses-total">
+                      <span>Итого:</span>
+                      <div class="total-amounts">
+                        <span class="total-amount usd">
+                          ${{ getContainerExpenses(record.containerId).reduce((sum, e) => sum + parseFloat(e.amount_usd), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+                        </span>
+                        <span class="total-amount uzs">
+                          {{ getContainerExpenses(record.containerId).reduce((sum, e) => sum + parseFloat(e.amount_uzs), 0).toLocaleString('ru-RU') }} сум
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <a-empty
+                    v-else
+                    :image="false"
+                    style="margin: 12px 0;"
+                  >
+                    <template #description>
+                      <span style="color: #999; font-size: 12px;">Нет дополнительных расходов</span>
+                    </template>
+                  </a-empty>
+                </a-spin>
+              </a-card>
+            </a-col>
+          </a-row>
         </div>
       </template>
 
@@ -432,6 +500,13 @@
         <template v-if="column.key === 'number'">
           {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
         </template>
+        <template v-else-if="column.key === 'container'">
+          <a-tooltip title="Двойной клик — добавить расход">
+            <span class="container-number-cell" @dblclick="handleContainerDoubleClick(record)">
+              {{ record.container }}
+            </span>
+          </a-tooltip>
+        </template>
         <template v-else-if="column.key === 'containerStatus'">
           <a-tag :color="getContainerStatusColor(record.containerStatus)">
             {{ record.containerStatus }}
@@ -461,6 +536,32 @@
             <a-tooltip :title="`${record.storageCostUzs ? Number(record.storageCostUzs).toLocaleString('ru-RU') + ' UZS' : ''}`">
               <span class="storage-cost-value" @click="showStorageCost(record)">
                 ${{ record.storageCostUsd }}
+              </span>
+            </a-tooltip>
+          </template>
+          <span v-else class="text-muted">—</span>
+        </template>
+        <template v-else-if="column.key === 'additionalChargesUsd'">
+          <template v-if="record.additionalChargesLoading">
+            <LoadingOutlined style="color: #1677ff;" />
+          </template>
+          <template v-else-if="record.additionalChargesUsd !== undefined">
+            <a-tooltip :title="`${record.additionalChargesUzs ? Number(record.additionalChargesUzs).toLocaleString('ru-RU') + ' UZS' : ''}`">
+              <span :class="['additional-charges-value', { 'has-charges': Number(record.additionalChargesUsd) > 0 }]">
+                ${{ record.additionalChargesUsd }}
+              </span>
+            </a-tooltip>
+          </template>
+          <span v-else class="text-muted">—</span>
+        </template>
+        <template v-else-if="column.key === 'totalCostUsd'">
+          <template v-if="record.storageCostLoading || record.additionalChargesLoading">
+            <LoadingOutlined style="color: #1677ff;" />
+          </template>
+          <template v-else-if="record.storageCostUsd !== undefined && record.additionalChargesUsd !== undefined">
+            <a-tooltip :title="`Хранение: $${record.storageCostUsd} + Доп. расходы: $${record.additionalChargesUsd}`">
+              <span class="total-cost-value">
+                ${{ (Number(record.storageCostUsd) + Number(record.additionalChargesUsd)).toFixed(2) }}
               </span>
             </a-tooltip>
           </template>
@@ -563,12 +664,21 @@
     :entry-id="storageCostContainerId"
     :container-number="storageCostContainerNumber"
   />
+
+  <!-- Additional Charges (hidden, used for expense type selection modal) -->
+  <AdditionalCharges
+    ref="additionalChargesRef"
+    :is-admin="true"
+    :show-all-companies="true"
+    style="display: none;"
+    @charges-added="handleChargesAdded"
+  />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import type { Dayjs } from 'dayjs';
 import { terminalService, type FileAttachment, type CraneOperation } from '../services/terminalService';
 import { message, Modal } from 'ant-design-vue';
@@ -593,16 +703,20 @@ import { http } from '../utils/httpClient';
 import { debounce } from 'lodash-es';
 import { useContainerTransform, type ContainerRecord } from '../composables/useContainerTransform';
 import { useStorageCosts } from '../composables/useStorageCosts';
+import { useAdditionalChargesCosts } from '../composables/useAdditionalChargesCosts';
 import FilesDialog from './FilesDialog.vue';
 import UpsertContainerModal from './UpsertContainerModal.vue';
 import ExcelUploadModal from './ExcelUploadModal.vue';
 import ExcelExportModal from './ExcelExportModal.vue';
 import Container3DModal from './Container3DModal.vue';
 import StorageCostModal from './StorageCostModal.vue';
+import AdditionalCharges from './billing/AdditionalCharges.vue';
+import { additionalChargesService, type AdditionalCharge } from '../services/additionalChargesService';
 
 // Initialize composables
 const { transformEntries } = useContainerTransform();
 const { fetchStorageCosts } = useStorageCosts();
+const { fetchAdditionalChargesCosts } = useAdditionalChargesCosts();
 
 // Column categories for organization
 type ColumnCategory = 'core' | 'entry' | 'exit' | 'cargo' | 'other';
@@ -662,7 +776,9 @@ const allColumnsConfig: ColumnConfig[] = [
   { title: 'Доп. крановая операция', key: 'additionalCraneOperationDate', dataIndex: 'additionalCraneOperationDate', category: 'other', defaultVisible: false, width: 160, align: 'center', customFilterDropdown: true },
   { title: 'Примечание', key: 'note', dataIndex: 'note', category: 'other', defaultVisible: false, width: 150, align: 'center', ellipsis: true, customFilterDropdown: true },
   { title: 'Хранение (дней)', key: 'dwellTimeDays', dataIndex: 'dwellTimeDays', category: 'cargo', defaultVisible: true, width: 130, align: 'center', customFilterDropdown: true, sorter: true },
-  { title: 'Стоимость (USD)', key: 'storageCostUsd', dataIndex: 'storageCostUsd', category: 'cargo', defaultVisible: true, width: 130, align: 'center', sorter: true },
+  { title: 'Хранение (USD)', key: 'storageCostUsd', dataIndex: 'storageCostUsd', category: 'cargo', defaultVisible: true, width: 130, align: 'center', sorter: true },
+  { title: 'Доп. расходы (USD)', key: 'additionalChargesUsd', dataIndex: 'additionalChargesUsd', category: 'cargo', defaultVisible: true, width: 140, align: 'center', sorter: true },
+  { title: 'Итого (USD)', key: 'totalCostUsd', dataIndex: 'totalCostUsd', category: 'cargo', defaultVisible: true, width: 120, align: 'center', sorter: true },
   { title: 'Оплач. дней', key: 'storageBillableDays', dataIndex: 'storageBillableDays', category: 'cargo', defaultVisible: false, width: 110, align: 'center', sorter: true },
   { title: 'Груз', key: 'cargoName', dataIndex: 'cargoName', category: 'cargo', defaultVisible: false, width: 140, align: 'center', ellipsis: true, customFilterDropdown: true },
   { title: 'Тоннаж', key: 'cargoWeight', dataIndex: 'cargoWeight', category: 'cargo', defaultVisible: false, width: 100, align: 'center', customFilterDropdown: true, sorter: true },
@@ -786,6 +902,7 @@ const getContainerStatusColor = (status: string): string => {
 };
 
 const router = useRouter();
+const route = useRoute();
 
 // Statistics
 interface ContainerStats {
@@ -1094,8 +1211,9 @@ const handleGlobalSearch = async () => {
     pagination.value.total = total;
     pagination.value.current = 1;
 
-    // Fetch storage costs for search results (non-blocking)
+    // Fetch storage costs and additional charges for search results (non-blocking)
     fetchStorageCosts(dataSource.value, record => record.containerId);
+    fetchAdditionalChargesCosts(dataSource.value, record => record.containerId);
   } catch (error) {
     message.error(error instanceof Error ? error.message : 'Ошибка поиска');
   } finally {
@@ -1161,6 +1279,69 @@ const excelExportModalVisible = ref(false);
 const storageCostModalVisible = ref(false);
 const storageCostContainerId = ref<number | null>(null);
 const storageCostContainerNumber = ref('');
+
+// Additional charges component ref
+const additionalChargesRef = ref<InstanceType<typeof AdditionalCharges> | null>(null);
+
+// Handle double-click on container to add expense
+const handleContainerDoubleClick = (record: ContainerRecord) => {
+  additionalChargesRef.value?.openAddModalForContainer(record.containerId, record.container);
+};
+
+// Expanded row expenses state
+const expandedRowExpenses = ref<Record<number, AdditionalCharge[]>>({});
+const loadingRowExpenses = ref<Record<number, boolean>>({});
+const expandedRowKeys = ref<number[]>([]);
+
+// Handle row expand to fetch expenses
+const handleRowExpand = async (expanded: boolean, record: ContainerRecord) => {
+  if (expanded) {
+    expandedRowKeys.value = [...expandedRowKeys.value, record.containerId];
+    // Always fetch expenses when expanding (ensures fresh data)
+    loadingRowExpenses.value[record.containerId] = true;
+    try {
+      const response = await additionalChargesService.getByContainerId(record.containerId);
+      expandedRowExpenses.value[record.containerId] = response;
+    } catch (error) {
+      console.error('Error fetching expenses:', error);
+      expandedRowExpenses.value[record.containerId] = [];
+    } finally {
+      loadingRowExpenses.value[record.containerId] = false;
+    }
+  } else {
+    expandedRowKeys.value = expandedRowKeys.value.filter(k => k !== record.containerId);
+  }
+};
+
+// Get expenses for a container
+const getContainerExpenses = (containerId: number): AdditionalCharge[] => {
+  return expandedRowExpenses.value[containerId] || [];
+};
+
+// Check if loading expenses for a container
+const isLoadingExpenses = (containerId: number): boolean => {
+  return loadingRowExpenses.value[containerId] || false;
+};
+
+// Handle when charges are added - refresh the cached expenses for that container
+const handleChargesAdded = async (containerId: number) => {
+  // Clear the cache for this container so it will be re-fetched
+  delete expandedRowExpenses.value[containerId];
+
+  // If the row is currently expanded, re-fetch the expenses
+  if (expandedRowKeys.value.includes(containerId)) {
+    loadingRowExpenses.value[containerId] = true;
+    try {
+      const response = await additionalChargesService.getByContainerId(containerId);
+      expandedRowExpenses.value[containerId] = response;
+    } catch (error) {
+      console.error('Error refreshing expenses:', error);
+      expandedRowExpenses.value[containerId] = [];
+    } finally {
+      loadingRowExpenses.value[containerId] = false;
+    }
+  }
+};
 
 // 3D Location Modal state
 const show3DModal = ref(false);
@@ -1298,8 +1479,9 @@ const fetchContainers = async (filters?: Record<string, any>, page?: number, pag
     pagination.value.current = currentPage;
     pagination.value.pageSize = currentPageSize;
 
-    // Fetch storage costs for visible containers (non-blocking)
+    // Fetch storage costs and additional charges for visible containers (non-blocking)
     fetchStorageCosts(dataSource.value, record => record.containerId);
+    fetchAdditionalChargesCosts(dataSource.value, record => record.containerId);
   } catch (error) {
     message.error(error instanceof Error ? error.message : 'Ошибка загрузки данных');
   } finally {
@@ -1497,8 +1679,16 @@ const showExportModal = () => {
 
 onMounted(() => {
   fetchStats();
-  fetchContainers();
   fetchCompanies();
+
+  // Check for search query parameter from URL (e.g., from 3D view double-click)
+  const searchQuery = route.query.search;
+  if (searchQuery && typeof searchQuery === 'string') {
+    globalSearch.value = searchQuery;
+    handleGlobalSearch();
+  } else {
+    fetchContainers();
+  }
 });
 </script>
 
@@ -1605,5 +1795,130 @@ onMounted(() => {
 .storage-cost-value:hover {
   color: #73d13d;
   text-decoration: underline;
+}
+
+/* Container number cell for double-click */
+.container-number-cell {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.container-number-cell:hover {
+  background-color: #f0f7ff;
+  color: #1677ff;
+}
+
+/* Expenses card in expanded row */
+.expenses-card {
+  height: 100%;
+  background: #fafafa;
+}
+
+.expenses-card :deep(.ant-card-head) {
+  min-height: 36px;
+  padding: 0 12px;
+  background: #f0f7ff;
+}
+
+.expenses-card :deep(.ant-card-head-title) {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 0;
+}
+
+.expenses-card :deep(.ant-card-body) {
+  padding: 12px;
+}
+
+.expenses-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.expense-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px dashed #f0f0f0;
+}
+
+.expense-item:last-of-type {
+  border-bottom: none;
+}
+
+.expense-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.expense-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #262626;
+}
+
+.expense-date {
+  font-size: 11px;
+  color: #8c8c8c;
+}
+
+.expense-amount {
+  text-align: right;
+}
+
+.expense-usd {
+  font-size: 13px;
+  font-weight: 600;
+  color: #52c41a;
+}
+
+.expenses-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+
+.total-amounts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.total-amount {
+  font-size: 14px;
+}
+
+.total-amount.usd {
+  color: #52c41a;
+  font-weight: 600;
+}
+
+.total-amount.uzs {
+  color: #8c8c8c;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Additional charges column */
+.additional-charges-value {
+  cursor: default;
+  color: #8c8c8c;
+}
+
+.additional-charges-value.has-charges {
+  color: #fa8c16;
+  font-weight: 600;
+}
+
+/* Total cost column */
+.total-cost-value {
+  font-weight: 600;
+  color: #1677ff;
 }
 </style>

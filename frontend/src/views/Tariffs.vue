@@ -8,7 +8,10 @@ import {
   DeleteOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  DollarOutlined,
+  SettingOutlined,
 } from '@ant-design/icons-vue';
+import ExpenseTypes from '../components/billing/ExpenseTypes.vue';
 import {
   tariffsService,
   type Tariff,
@@ -35,6 +38,7 @@ interface TariffRecord extends Tariff {
 
 const loading = ref(false);
 const tariffs = ref<TariffRecord[]>([]);
+const activeTab = ref('tariffs');
 const pagination = ref({
   current: 1,
   pageSize: 25,
@@ -366,15 +370,22 @@ onMounted(() => {
 </script>
 
 <template>
-  <a-card title="Тарифы хранения" :bordered="false">
-    <template #extra>
-      <a-button type="primary" @click="openCreateModal">
-        <template #icon><PlusOutlined /></template>
-        Создать тариф
-      </a-button>
-    </template>
+  <a-card :bordered="false">
+    <a-tabs v-model:activeKey="activeTab">
+      <!-- Tariffs Tab -->
+      <a-tab-pane key="tariffs">
+        <template #tab>
+          <span><SettingOutlined /> Тарифы хранения</span>
+        </template>
 
-    <a-table
+        <div class="tab-header">
+          <a-button type="primary" @click="openCreateModal">
+            <template #icon><PlusOutlined /></template>
+            Создать тариф
+          </a-button>
+        </div>
+
+        <a-table
       :columns="columns"
       :data-source="tariffs"
       :loading="loading"
@@ -635,10 +646,28 @@ onMounted(() => {
       </p>
       <p class="text-gray">Это действие нельзя отменить.</p>
     </a-modal>
+
+      </a-tab-pane>
+
+      <!-- Expense Types Tab -->
+      <a-tab-pane key="expense-types">
+        <template #tab>
+          <span><DollarOutlined /> Типы расходов</span>
+        </template>
+
+        <ExpenseTypes />
+      </a-tab-pane>
+    </a-tabs>
   </a-card>
 </template>
 
 <style scoped>
+.tab-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
 .rates-summary {
   display: flex;
   flex-wrap: wrap;

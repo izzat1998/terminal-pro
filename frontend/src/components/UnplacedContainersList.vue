@@ -5,11 +5,16 @@
  * Overlays the 3D view and provides quick access to place containers.
  * When "Разместить" is clicked, it enters placement mode directly
  * showing recommendation markers in 3D for the user to click.
+ *
+ * Position: Adjusts based on fullscreen mode:
+ * - Normal mode: Positioned to the right of YardControls (left: 72px)
+ * - Fullscreen mode: Top-left corner (left: 12px) since controls are hidden
  */
 
 import { computed } from 'vue';
 import { EnvironmentOutlined, InboxOutlined } from '@ant-design/icons-vue';
 import { usePlacementState } from '../composables/usePlacementState';
+import { useFullscreen } from '../composables/useFullscreen';
 import type { UnplacedContainer } from '../types/placement';
 
 const {
@@ -22,6 +27,9 @@ const {
   enterPlacementMode,
   exitPlacementMode,
 } = usePlacementState();
+
+// Fullscreen state - used to adjust positioning relative to YardControls
+const { isFullscreen } = useFullscreen();
 
 // Filtered by selected company (if any)
 const displayedContainers = computed(() => {
@@ -67,7 +75,7 @@ async function handlePlaceClick(container: UnplacedContainer): Promise<void> {
 </script>
 
 <template>
-  <div class="unplaced-list-container">
+  <div :class="['unplaced-list-container', { 'is-fullscreen': isFullscreen }]">
     <!-- Header with badge -->
     <div class="list-header">
       <div class="header-title">
@@ -132,7 +140,8 @@ async function handlePlaceClick(container: UnplacedContainer): Promise<void> {
 .unplaced-list-container {
   position: absolute;
   top: 12px;
-  left: 12px;
+  /* Position to the right of YardControls (12px + 52px control width + 8px gap) */
+  left: 72px;
   width: 320px;
   max-height: calc(100% - 80px);
   background: rgba(255, 255, 255, 0.95);
@@ -143,6 +152,12 @@ async function handlePlaceClick(container: UnplacedContainer): Promise<void> {
   flex-direction: column;
   z-index: 10;
   backdrop-filter: blur(8px);
+  transition: left 0.2s ease;
+}
+
+/* In fullscreen mode, YardControls is hidden, so position at top-left */
+.unplaced-list-container.is-fullscreen {
+  left: 12px;
 }
 
 /* Header */

@@ -56,6 +56,11 @@ export interface ContainerRecord {
   storageCostUzs?: string
   storageBillableDays?: number
   storageCostLoading?: boolean
+  // Additional charges fields (populated by bulk fetch)
+  additionalChargesUsd?: string
+  additionalChargesUzs?: string
+  additionalChargesCount?: number
+  additionalChargesLoading?: boolean
 }
 
 export function useContainerTransform() {

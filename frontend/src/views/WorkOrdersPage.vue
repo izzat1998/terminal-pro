@@ -5,7 +5,7 @@
  * Features:
  * - Table with all work orders
  * - Filters: Status, Vehicle, Search
- * - Click row to navigate to 3D view with camera focus
+ * - Click row to open position viewer modal (2D/3D)
  * - Auto-refresh every 30 seconds
  *
  * Table columns:
@@ -17,8 +17,7 @@
  * - Создано (created_at)
  */
 
-import { computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, ref } from 'vue';
 import {
   ReloadOutlined,
   FilterOutlined,
@@ -29,8 +28,11 @@ import type { ColumnsType } from 'ant-design-vue/es/table';
 import { useWorkOrdersPage } from '../composables/useWorkOrdersPage';
 import type { WorkOrder, WorkOrderStatus } from '../types/placement';
 import { formatRelativeTime } from '../utils/dateFormat';
+import PositionViewerModal from '../components/PositionViewerModal.vue';
 
-const router = useRouter();
+// Position viewer modal state
+const showPositionModal = ref(false);
+const selectedWorkOrder = ref<WorkOrder | null>(null);
 
 const {
   workOrders,
@@ -109,12 +111,10 @@ const columns = computed<ColumnsType<WorkOrder>>(() => [
   },
 ]);
 
-// Navigate to 3D view with focus on the target position
-function navigateToPlacement(record: WorkOrder): void {
-  router.push({
-    path: '/placement',
-    query: { focus: record.target_coordinate },
-  });
+// Open position viewer modal
+function openPositionModal(record: WorkOrder): void {
+  selectedWorkOrder.value = record;
+  showPositionModal.value = true;
 }
 
 // Vehicle select options - use 0 as "all" since Ant Design doesn't handle null well
@@ -217,7 +217,7 @@ const hasActiveFilters = computed(() =>
         size="middle"
         :custom-row="(record: WorkOrder) => ({
           class: 'clickable-row',
-          onClick: () => navigateToPlacement(record),
+          onClick: () => openPositionModal(record),
         })"
       >
         <!-- Container number with ISO type -->
@@ -266,7 +266,7 @@ const hasActiveFilters = computed(() =>
               <a-button
                 type="text"
                 size="small"
-                @click.stop="navigateToPlacement(record)"
+                @click.stop="openPositionModal(record)"
               >
                 <template #icon><EnvironmentOutlined /></template>
               </a-button>
@@ -284,6 +284,15 @@ const hasActiveFilters = computed(() =>
         </template>
       </a-table>
     </a-card>
+
+    <!-- Position Viewer Modal -->
+    <PositionViewerModal
+      v-model:open="showPositionModal"
+      :coordinate="selectedWorkOrder?.target_coordinate ?? ''"
+      :container-number="selectedWorkOrder?.container_number"
+      :iso-type="selectedWorkOrder?.iso_type"
+      default-mode="3d"
+    />
   </div>
 </template>
 

@@ -43,6 +43,7 @@
         <a-tab-pane key="users" tab="Пользователи" />
         <a-tab-pane key="orders" tab="Заказы" />
         <a-tab-pane key="containers" tab="Контейнеры" />
+        <a-tab-pane key="billing" tab="Биллинг" />
         <a-tab-pane key="settings" tab="Настройки" />
       </a-tabs>
     </Card>
@@ -84,6 +85,7 @@ const activeTab = computed(() => {
   if (routeName?.includes('Users')) return 'users';
   if (routeName?.includes('Orders')) return 'orders';
   if (routeName?.includes('Containers')) return 'containers';
+  if (routeName?.includes('Billing')) return 'billing';
   if (routeName?.includes('Settings')) return 'settings';
   return 'info';
 });
@@ -95,6 +97,7 @@ const handleTabChange = (key: string) => {
     users: `/accounts/companies/${slug}/users`,
     orders: `/accounts/companies/${slug}/orders`,
     containers: `/accounts/companies/${slug}/containers`,
+    billing: `/accounts/companies/${slug}/billing`,
     settings: `/accounts/companies/${slug}/settings`,
   };
   const targetRoute = tabRoutes[key];

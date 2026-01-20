@@ -6,6 +6,7 @@
  */
 
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 import * as THREE from 'three';
 import {
   ReloadOutlined,
@@ -74,6 +75,9 @@ const threeError = ref<string | null>(null);
 
 // Composables
 const { scene, camera, currentPreset, initScene, handleResize, resetCamera, setCameraPreset, fitToContainers, focusOnPosition } = use3DScene(canvasRef);
+
+// Router for navigation
+const router = useRouter();
 
 // Navigation help popover visibility
 const showNavHelp = ref(false);
@@ -380,6 +384,26 @@ function handleClick(event: MouseEvent): void {
   }
 }
 
+// Handle double-click to navigate to container list with filter
+function handleDoubleClick(event: MouseEvent): void {
+  if (!canvasRef.value || !camera.value) return;
+
+  const container = getContainerAtPoint(
+    event.clientX,
+    event.clientY,
+    canvasRef.value,
+    camera.value
+  );
+
+  if (container) {
+    // Navigate to containers page with search filter for this container
+    router.push({
+      path: '/containers',
+      query: { search: container.container_number }
+    });
+  }
+}
+
 // Handle mouse move for hover tooltip (throttled for performance)
 function handleMouseMove(event: MouseEvent): void {
   if (!canvasRef.value || !camera.value) return;
@@ -554,6 +578,7 @@ defineExpose({
       ref="canvasRef"
       class="terminal-canvas"
       @click="handleClick"
+      @dblclick="handleDoubleClick"
       @mousemove="handleMouseMove"
       @mouseleave="handleMouseLeave"
     />

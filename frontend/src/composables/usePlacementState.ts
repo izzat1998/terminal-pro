@@ -25,6 +25,18 @@ function getErrorMessage(e: unknown, fallback: string): string {
   return e instanceof Error ? e.message : fallback;
 }
 
+/**
+ * Convert ISO type code to container size for placement filtering.
+ * ISO type first character: 2 = 20ft, 4 = 40ft, L/9 = 45ft
+ */
+function isoTypeToSize(isoType: string | undefined): '20ft' | '40ft' | '45ft' {
+  if (!isoType) return '20ft';
+  const firstChar = isoType.charAt(0);
+  if (firstChar === '4') return '40ft';
+  if (firstChar === 'L' || firstChar === '9') return '45ft';
+  return '20ft';
+}
+
 // Shared state (singleton pattern)
 const layout = ref<PlacementLayout | null>(null);
 const unplacedContainers = ref<UnplacedContainer[]>([]);
@@ -250,11 +262,24 @@ export function usePlacementState() {
     placingContainerId.value = containerEntryId;
 
     try {
-      // Fetch suggestion and all available positions in parallel
+      // Find the container's ISO type to determine size-appropriate positions
+      const container = unplacedContainers.value.find(c => c.id === containerEntryId);
+      const containerSize = isoTypeToSize(container?.iso_type);
+
+      console.log('[Placement] Entering placement mode for container:', containerEntryId);
+      console.log('[Placement] Container ISO type:', container?.iso_type, '→ Size:', containerSize);
+
+      // Fetch suggestion and size-filtered available positions in parallel
       const [suggestion, allAvailable] = await Promise.all([
         placementService.suggestPosition(containerEntryId, zonePreference),
-        placementService.getAvailablePositions(zonePreference, undefined, 200), // Higher limit for all empty slots
+        placementService.getAvailablePositions(zonePreference, undefined, 200, containerSize),
       ]);
+
+      console.log('[Placement] Suggestion:', suggestion.suggested_position?.coordinate);
+      console.log('[Placement] Alternatives:', suggestion.alternatives?.map(a => a.coordinate));
+      console.log('[Placement] Alternatives rows:', suggestion.alternatives?.map(a => a.row));
+      console.log('[Placement] Available positions count:', allAvailable.length);
+      console.log('[Placement] Available positions rows:', [...new Set(allAvailable.map(p => p.row))].sort());
 
       currentSuggestion.value = suggestion;
 
@@ -267,6 +292,10 @@ export function usePlacementState() {
       availablePositions.value = allAvailable.filter(
         pos => !pos.coordinate || !suggestedCoords.has(pos.coordinate)
       );
+
+      console.log('[Placement] Suggested coords to filter:', [...suggestedCoords]);
+      console.log('[Placement] After filtering, remaining available:', availablePositions.value.length);
+      console.log('[Placement] Remaining positions:', availablePositions.value.map(p => p.coordinate));
 
       isPlacementMode.value = true;
       return suggestion;

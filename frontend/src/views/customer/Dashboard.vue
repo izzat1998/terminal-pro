@@ -114,7 +114,7 @@
                 +{{ stats.dwell.overstayers.length - 3 }} ещё
               </div>
             </template>
-            <a-empty v-else :image="null" description="Всё в норме">
+            <a-empty v-else :image="false" description="Всё в норме">
               <template #image>
                 <CheckCircleOutlined style="font-size: 32px; color: #52c41a;" />
               </template>

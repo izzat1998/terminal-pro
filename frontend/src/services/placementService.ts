@@ -139,16 +139,19 @@ export async function removePosition(positionId: number): Promise<void> {
  * @param zone - Filter by zone (optional)
  * @param tier - Filter by tier (optional)
  * @param limit - Max positions to return (default 50)
+ * @param containerSize - Filter by container size ("20ft", "40ft", "45ft")
  */
 export async function getAvailablePositions(
   zone?: ZoneCode,
   tier?: number,
-  limit: number = 50
+  limit: number = 50,
+  containerSize?: '20ft' | '40ft' | '45ft'
 ): Promise<Position[]> {
   const params = new URLSearchParams();
   if (zone) params.append('zone', zone);
   if (tier) params.append('tier', tier.toString());
   params.append('limit', limit.toString());
+  if (containerSize) params.append('container_size', containerSize);
 
   const response = await http.get<ApiListResponse<Position>>(
     `${BASE_URL}/available/?${params.toString()}`

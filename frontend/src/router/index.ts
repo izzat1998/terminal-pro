@@ -19,6 +19,7 @@ import CustomerUsers from '../views/customer/Users.vue';
 import CustomerDashboard from '../views/customer/Dashboard.vue';
 import CustomerBilling from '../views/customer/Billing.vue';
 import CompanyContainers from '../views/company/CompanyContainers.vue';
+import CompanyBilling from '../views/company/CompanyBilling.vue';
 import { useAuth } from '../composables/useAuth';
 import AppLayout from '../components/AppLayout.vue'
 
@@ -207,6 +208,12 @@ const routes = [
             name: 'CompanyContainers',
             component: CompanyContainers,
             meta: { title: 'Контейнеры компании - МТТ', roles: ['admin', 'customer'] as UserRole[] },
+          },
+          {
+            path: 'billing',
+            name: 'CompanyBilling',
+            component: CompanyBilling,
+            meta: { title: 'Биллинг компании - МТТ', roles: ['admin'] as UserRole[] },
           },
         ],
       },
