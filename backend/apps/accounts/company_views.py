@@ -497,3 +497,349 @@ class CompanyViewSet(viewsets.ModelViewSet):
         # Fallback without pagination
         serializer = ContainerEntryWithImagesSerializer(queryset, many=True, context={"request": request})
         return Response({"success": True, "results": serializer.data})
+
+    # =========================================================================
+    # Billing endpoints (mirror of customer billing)
+    # =========================================================================
+
+    @extend_schema(
+        summary="Get company storage costs",
+        parameters=[
+            OpenApiParameter(
+                name="status",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Filter by status: 'active' (on terminal), 'exited', or 'all'",
+            ),
+            OpenApiParameter(
+                name="search",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Search by container number",
+            ),
+            OpenApiParameter(
+                name="entry_date_from",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Filter by entry date from (YYYY-MM-DD)",
+            ),
+            OpenApiParameter(
+                name="entry_date_to",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Filter by entry date to (YYYY-MM-DD)",
+            ),
+            OpenApiParameter(
+                name="page",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Page number",
+            ),
+            OpenApiParameter(
+                name="page_size",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Items per page (default: 20)",
+            ),
+        ],
+        responses={200: OpenApiResponse(description="Storage costs with summary")},
+        description="Get storage costs for all company containers with pagination and filtering",
+    )
+    @action(detail=True, methods=["get"], url_path="storage-costs")
+    def storage_costs(self, request, slug=None):
+        """
+        Get storage costs for company containers (mirrors customer storage-costs endpoint).
+        """
+        from apps.billing.services.storage_cost_service import StorageCostService
+        from apps.terminal_operations.models import ContainerEntry
+
+        company = self.get_object()
+
+        # Build base queryset
+        entries = ContainerEntry.objects.filter(
+            company=company,
+        ).select_related("container", "company")
+
+        # Apply filters
+        status_filter = request.query_params.get("status")
+        if status_filter == "active":
+            entries = entries.filter(exit_date__isnull=True)
+        elif status_filter == "exited":
+            entries = entries.filter(exit_date__isnull=False)
+
+        search = request.query_params.get("search", "").strip()
+        if search:
+            entries = entries.filter(container__container_number__icontains=search)
+
+        entry_date_from = request.query_params.get("entry_date_from")
+        if entry_date_from:
+            entries = entries.filter(entry_time__date__gte=entry_date_from)
+
+        entry_date_to = request.query_params.get("entry_date_to")
+        if entry_date_to:
+            entries = entries.filter(entry_time__date__lte=entry_date_to)
+
+        # Order by entry time descending
+        entries = entries.order_by("-entry_time")
+
+        # Get total count before pagination
+        total_count = entries.count()
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 20))
+        offset = (page - 1) * page_size
+        paginated_entries = entries[offset : offset + page_size]
+
+        # Calculate costs for paginated entries
+        cost_service = StorageCostService()
+        cost_results = cost_service.calculate_bulk_costs(paginated_entries)
+
+        # Build response items
+        results = []
+        for result in cost_results:
+            results.append(
+                {
+                    "container_entry_id": result.container_entry_id,
+                    "container_number": result.container_number,
+                    "company_name": result.company_name,
+                    "container_size": result.container_size,
+                    "container_status": result.container_status,
+                    "entry_date": result.entry_date.isoformat(),
+                    "end_date": result.end_date.isoformat(),
+                    "is_active": result.is_active,
+                    "total_days": result.total_days,
+                    "free_days_applied": result.free_days_applied,
+                    "billable_days": result.billable_days,
+                    "total_usd": str(result.total_usd),
+                    "total_uzs": str(result.total_uzs),
+                    "calculated_at": result.calculated_at.isoformat(),
+                }
+            )
+
+        # Calculate summary for ALL matching entries (not just paginated)
+        all_cost_results = cost_service.calculate_bulk_costs(entries) if total_count <= 500 else cost_results
+
+        total_usd = sum(r.total_usd for r in all_cost_results)
+        total_uzs = sum(r.total_uzs for r in all_cost_results)
+        total_billable_days = sum(r.billable_days for r in all_cost_results)
+
+        return Response(
+            {
+                "results": results,
+                "count": total_count,
+                "summary": {
+                    "total_containers": len(all_cost_results) if total_count <= 500 else total_count,
+                    "total_billable_days": total_billable_days,
+                    "total_usd": str(total_usd),
+                    "total_uzs": str(total_uzs),
+                },
+            }
+        )
+
+    @extend_schema(
+        summary="List company billing statements",
+        parameters=[
+            OpenApiParameter(
+                name="year",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Filter by year",
+            ),
+        ],
+        responses={200: OpenApiResponse(description="List of monthly statements")},
+        description="List all monthly billing statements for the company",
+    )
+    @action(detail=True, methods=["get"], url_path="billing/statements")
+    def billing_statements(self, request, slug=None):
+        """
+        List all monthly statements for the company.
+        """
+        from apps.billing.serializers import MonthlyStatementSerializer
+        from apps.billing.services.statement_service import MonthlyStatementService
+
+        company = self.get_object()
+
+        year = request.query_params.get("year")
+        statement_service = MonthlyStatementService()
+        statements = statement_service.list_statements(
+            company=company,
+            year=int(year) if year else None,
+        )
+
+        serializer = MonthlyStatementSerializer(statements, many=True)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Get or generate company statement for a month",
+        parameters=[
+            OpenApiParameter(
+                name="regenerate",
+                type=bool,
+                location=OpenApiParameter.QUERY,
+                description="Force regenerate the statement",
+            ),
+        ],
+        responses={200: OpenApiResponse(description="Monthly statement with line items")},
+        description="Get or generate a monthly billing statement for the company",
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"billing/statements/(?P<year>[0-9]+)/(?P<month>[0-9]+)",
+    )
+    def billing_statement_detail(self, request, slug=None, year=None, month=None):
+        """
+        Get or generate a monthly statement for the company.
+        """
+        from apps.billing.serializers import MonthlyStatementSerializer
+        from apps.billing.services.statement_service import MonthlyStatementService
+
+        company = self.get_object()
+        year = int(year)
+        month = int(month)
+
+        # Validate month
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check for regenerate flag
+        regenerate = request.query_params.get("regenerate", "").lower() == "true"
+
+        # Get or generate statement
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company,
+            year=year,
+            month=month,
+            user=request.user,
+            regenerate=regenerate,
+        )
+
+        serializer = MonthlyStatementSerializer(statement)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Get available billing periods",
+        responses={200: OpenApiResponse(description="List of available periods")},
+        description="Get available billing periods for the company based on container entries",
+    )
+    @action(detail=True, methods=["get"], url_path="billing/available-periods")
+    def billing_available_periods(self, request, slug=None):
+        """
+        Get available billing periods for the company.
+        """
+        from apps.terminal_operations.models import ContainerEntry
+
+        company = self.get_object()
+
+        # Get distinct year-month combinations from entries
+        entries = ContainerEntry.objects.filter(company=company).order_by("-entry_time")
+
+        periods = set()
+        for entry in entries:
+            periods.add((entry.entry_time.year, entry.entry_time.month))
+
+        # Sort periods descending (newest first)
+        sorted_periods = sorted(periods, reverse=True)
+
+        # Format for dropdown
+        result = []
+        for year, month in sorted_periods:
+            month_names = [
+                "",
+                "Январь",
+                "Февраль",
+                "Март",
+                "Апрель",
+                "Май",
+                "Июнь",
+                "Июль",
+                "Август",
+                "Сентябрь",
+                "Октябрь",
+                "Ноябрь",
+                "Декабрь",
+            ]
+            result.append(
+                {
+                    "year": year,
+                    "month": month,
+                    "label": f"{month_names[month]} {year}",
+                }
+            )
+
+        return Response({"success": True, "data": result})
+
+    @extend_schema(
+        summary="Get company additional charges",
+        parameters=[
+            OpenApiParameter(
+                name="date_from",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Filter by charge date from (YYYY-MM-DD)",
+            ),
+            OpenApiParameter(
+                name="date_to",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Filter by charge date to (YYYY-MM-DD)",
+            ),
+            OpenApiParameter(
+                name="search",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                description="Search by container number",
+            ),
+        ],
+        responses={200: OpenApiResponse(description="Additional charges with summary")},
+        description="Get additional charges for company containers",
+    )
+    @action(detail=True, methods=["get"], url_path="additional-charges")
+    def additional_charges(self, request, slug=None):
+        """
+        Get additional charges for company containers.
+        """
+        from django.db.models import Sum
+
+        from apps.billing.models import AdditionalCharge
+        from apps.billing.serializers import AdditionalChargeSerializer
+
+        company = self.get_object()
+
+        queryset = AdditionalCharge.objects.filter(
+            container_entry__company=company
+        ).select_related(
+            "container_entry__container",
+            "container_entry__company",
+            "created_by",
+        ).order_by("-charge_date", "-created_at")
+
+        date_from = request.query_params.get("date_from")
+        if date_from:
+            queryset = queryset.filter(charge_date__gte=date_from)
+
+        date_to = request.query_params.get("date_to")
+        if date_to:
+            queryset = queryset.filter(charge_date__lte=date_to)
+
+        search = request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(container_entry__container__container_number__icontains=search)
+
+        totals = queryset.aggregate(total_usd=Sum("amount_usd"), total_uzs=Sum("amount_uzs"))
+        serializer = AdditionalChargeSerializer(queryset, many=True)
+
+        return Response({
+            "success": True,
+            "data": serializer.data,
+            "summary": {
+                "total_charges": queryset.count(),
+                "total_usd": str(totals["total_usd"] or 0),
+                "total_uzs": str(totals["total_uzs"] or 0),
+            },
+        })
