@@ -60,7 +60,7 @@ def get_plate_confirmation_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     """
     Keyboard for confirming recognized plate number.
     """
-    builder = (())
+    builder = InlineKeyboardBuilder()
 
     builder.button(text=get_text("btn_confirm", lang), callback_data="plate_confirm")
     builder.button(text=get_text("btn_edit", lang), callback_data="plate_edit")

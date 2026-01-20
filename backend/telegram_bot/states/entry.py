@@ -35,6 +35,9 @@ class ExitForm(StatesGroup):
     container_number = State()
     exit_date = State()
     exit_transport_type = State()
+    exit_transport_plate_photo = (
+        State()
+    )  # Plate confirmation for TRUCK type (after photo recognition)
     exit_transport_number = State()
     exit_train_number = State()
     destination_station = State()

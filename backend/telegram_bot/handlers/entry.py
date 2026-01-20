@@ -33,6 +33,7 @@ from telegram_bot.translations import (
     get_text,
     get_transport_display,
 )
+from telegram_bot.utils import format_container_number
 
 
 # Configure logger
@@ -40,22 +41,10 @@ logger = logging.getLogger(__name__)
 
 # Valid callback data values for security validation
 VALID_ISO_TYPES = {
-    "22G1",
-    "22R1",
-    "22U1",
-    "22P1",
-    "22T1",
-    "42G1",
-    "42R1",
-    "42U1",
-    "42P1",
-    "42T1",
-    "45G1",
-    "45R1",
-    "45U1",
-    "45P1",
-    "L5G1",
-    "L5R1",
+    "22G1",  # 20ft standard
+    "25G1",  # 20ft high cube
+    "42G1",  # 40ft standard
+    "45G1",  # 40ft high cube
 }
 VALID_STATUSES = {"LADEN", "EMPTY"}
 VALID_TRANSPORT_TYPES = {"TRUCK", "WAGON"}
@@ -125,8 +114,10 @@ async def build_summary(data: dict, lang: str) -> str:
 
     if "container_number" in data:
         # Container numbers are standardized format, but escape for safety
+        # Format as PREFIX | POSTFIX for better readability
+        formatted_number = format_container_number(data['container_number'])
         summary_parts.append(
-            f"✅ {get_text('summary_container', lang)}: {escape(data['container_number'])}"
+            f"✅ {get_text('summary_container', lang)}: {escape(formatted_number)}"
         )
 
     if "container_iso_type" in data:
@@ -148,15 +139,17 @@ async def build_summary(data: dict, lang: str) -> str:
         )
 
     if "status" in data:
+        # Status display comes from translations - no need to escape
         status_display = get_status_display(data["status"], lang)
         summary_parts.append(
-            f"✅ {get_text('summary_status', lang)}: {escape(status_display)}"
+            f"✅ {get_text('summary_status', lang)}: {status_display}"
         )
 
     if "transport_type" in data:
+        # Transport display comes from translations - no need to escape
         transport_display = get_transport_display(data["transport_type"], lang)
         summary_parts.append(
-            f"✅ {get_text('summary_transport', lang)}: {escape(transport_display)}"
+            f"✅ {get_text('summary_transport', lang)}: {transport_display}"
         )
 
     if "transport_number" in data:
@@ -194,15 +187,18 @@ async def process_container_number(message: Message, state: FSMContext, user=Non
         )
         return
 
-    container_number = message.text.strip().upper()
+    raw_input = message.text.strip()
 
-    # Validate format
-    if not entry_service.validate_container_number(container_number):
+    # Validate format (accepts with or without spaces)
+    if not entry_service.validate_container_number(raw_input):
         await message.answer(
             get_text("invalid_container_format", lang),
             reply_markup=get_cancel_keyboard(lang),
         )
         return
+
+    # Normalize: remove spaces and uppercase (e.g., "MSKU 1234567" -> "MSKU1234567")
+    container_number = entry_service.normalize_container_number(raw_input)
 
     # Check if container is already active on terminal (no exit date)
     active_entry = await sync_to_async(entry_service.check_active_entry)(
@@ -235,7 +231,7 @@ async def process_container_number(message: Message, state: FSMContext, user=Non
 
     await message.answer(
         f"{summary}\n\n{get_text('ask_iso_type', lang)}",
-        reply_markup=get_iso_type_keyboard(),
+        reply_markup=get_iso_type_keyboard(lang),
     )
 
 
@@ -343,16 +339,30 @@ async def process_status(callback: CallbackQuery, state: FSMContext, user=None):
         return
 
     await state.update_data(status=status)
-    await state.set_state(EntryForm.transport_type)
 
-    # Build summary and show transport type selection
-    data = await state.get_data()
-    summary = await build_summary(data, lang)
+    # If EMPTY status: auto-select TRUCK and go to combined photos step
+    if status == "EMPTY":
+        await state.update_data(transport_type="TRUCK")
+        await state.set_state(EntryForm.photos)
 
-    await callback.message.edit_text(
-        f"{summary}\n\n{get_text('ask_transport_type', lang)}",
-        reply_markup=get_transport_type_keyboard(lang),
-    )
+        data = await state.get_data()
+        summary = await build_summary(data, lang)
+
+        await callback.message.edit_text(
+            f"{summary}\n\n{get_text('ask_all_photos_truck', lang)}",
+            reply_markup=get_photo_skip_keyboard(lang, has_photos=False),
+        )
+    else:
+        # LADEN status: ask for transport type
+        await state.set_state(EntryForm.transport_type)
+
+        data = await state.get_data()
+        summary = await build_summary(data, lang)
+
+        await callback.message.edit_text(
+            f"{summary}\n\n{get_text('ask_transport_type', lang)}",
+            reply_markup=get_transport_type_keyboard(lang),
+        )
     await callback.answer()
 
 
@@ -375,14 +385,15 @@ async def process_transport_type(callback: CallbackQuery, state: FSMContext, use
     data = await state.get_data()
     summary = await build_summary(data, lang)
 
-    # If TRUCK and plate recognizer configured, ask for plate photo
-    if transport_type == "TRUCK" and plate_recognizer_service.api_key:
-        await state.set_state(EntryForm.transport_plate_photo)
+    # If TRUCK: go to combined photos step (will try plate recognition on each photo)
+    if transport_type == "TRUCK":
+        await state.set_state(EntryForm.photos)
         await callback.message.edit_text(
-            f"{summary}\n\n{get_text('ask_truck_plate_photo', lang)}"
+            f"{summary}\n\n{get_text('ask_all_photos_truck', lang)}",
+            reply_markup=get_photo_skip_keyboard(lang, has_photos=False),
         )
     else:
-        # WAGON/TRAIN or plate recognizer not configured: ask for manual input
+        # WAGON: ask for manual input
         await state.set_state(EntryForm.transport_number)
         await callback.message.edit_text(
             f"{summary}\n\n{get_text('ask_transport_number', lang)}"
@@ -395,9 +406,23 @@ async def process_transport_type(callback: CallbackQuery, state: FSMContext, use
 async def process_truck_plate_photo(
     message: Message, state: FSMContext, bot: Bot, user=None
 ):
-    """Process truck plate photo and recognize plate number"""
+    """Process truck plate photo: save photo and recognize plate number"""
     lang = await get_user_language(state)
     photo = message.photo[-1]  # Get highest resolution
+
+    # Save truck photo file_id to state (will be included in entry photos)
+    await state.update_data(truck_photo_file_id=photo.file_id)
+
+    # Check if plate recognizer API is configured
+    if not plate_recognizer_service.api_key:
+        # No API: save photo and ask for manual plate entry
+        await state.set_state(EntryForm.transport_number)
+        data = await state.get_data()
+        summary = await build_summary(data, lang)
+        await message.answer(
+            f"{summary}\n\n{get_text('plate_recognition_failed', lang)}"
+        )
+        return
 
     # Show processing message
     processing_msg = await message.answer(get_text("plate_recognizing", lang))
@@ -439,7 +464,7 @@ async def process_truck_plate_photo(
                 parse_mode="HTML",
             )
         else:
-            # Failed: Fall back to manual entry
+            # Failed: Fall back to manual entry (photo already saved)
             await state.set_state(EntryForm.transport_number)
 
             data = await state.get_data()
@@ -458,7 +483,7 @@ async def process_truck_plate_photo(
         except Exception as e:
             logger.debug(f"Could not delete processing message: {e}")
 
-        # Fallback to manual entry on any error
+        # Fallback to manual entry on any error (photo already saved)
         await state.set_state(EntryForm.transport_number)
 
         data = await state.get_data()
@@ -482,7 +507,7 @@ async def process_truck_plate_photo_invalid(
 @router.callback_query(F.data == "confirm_plate", EntryForm.transport_plate_photo)
 @require_manager_access
 async def confirm_detected_plate(callback: CallbackQuery, state: FSMContext, user=None):
-    """User confirmed detected plate number"""
+    """User confirmed detected plate number - go to confirmation (photos already collected)"""
     lang = await get_user_language(state)
     data = await state.get_data()
 
@@ -494,16 +519,8 @@ async def confirm_detected_plate(callback: CallbackQuery, state: FSMContext, use
     # Check for pre-order match
     await check_preorder_match(detected_plate, state, callback.message, lang)
 
-    await state.set_state(EntryForm.photos)
-
-    # Build summary and ask for photos (refresh data after potential preorder update)
-    data = await state.get_data()
-    summary = await build_summary(data, lang)
-
-    await callback.message.edit_text(
-        f"{summary}\n\n{get_text('ask_photos', lang)}",
-        reply_markup=get_photo_skip_keyboard(lang, has_photos=False),
-    )
+    # Photos already collected - go directly to confirmation
+    await show_confirmation(callback.message, state)
     await callback.answer()
 
 
@@ -547,34 +564,70 @@ async def process_transport_number(message: Message, state: FSMContext, user=Non
     data = await state.get_data()
     if data.get("transport_type") == "TRUCK":
         await check_preorder_match(transport_number, state, message, lang)
+        # For TRUCK: photos already collected, go to confirmation
+        await show_confirmation(message, state)
+    else:
+        # For WAGON: ask for photos
+        await state.set_state(EntryForm.photos)
 
-    await state.set_state(EntryForm.photos)
+        # Build summary and ask for photos (refresh data after potential preorder update)
+        data = await state.get_data()
+        summary = await build_summary(data, lang)
 
-    # Build summary and ask for photos (refresh data after potential preorder update)
-    data = await state.get_data()
-    summary = await build_summary(data, lang)
-
-    # No photos yet, show both Skip and Done buttons
-    await message.answer(
-        f"{summary}\n\n{get_text('ask_photos', lang)}",
-        reply_markup=get_photo_skip_keyboard(lang, has_photos=False),
-    )
+        # No photos yet, show both Skip and Done buttons
+        await message.answer(
+            f"{summary}\n\n{get_text('ask_photos', lang)}",
+            reply_markup=get_photo_skip_keyboard(lang, has_photos=False),
+        )
 
 
 @router.message(EntryForm.photos, F.photo)
 @require_manager_access
-async def process_photo(message: Message, state: FSMContext, user=None):
-    """Process photo upload - delegates to shared photo handling module"""
+async def process_photo(message: Message, state: FSMContext, bot: Bot, user=None):
+    """Process photo upload with plate recognition for TRUCK transport type"""
+    lang = await get_user_language(state)
+    data = await state.get_data()
+    transport_type = data.get("transport_type")
+
+    # For TRUCK: try plate recognition if no plate detected yet
+    if transport_type == "TRUCK" and not data.get("detected_plate_number"):
+        photo = message.photo[-1]
+
+        # Try plate recognition only if API is configured
+        if plate_recognizer_service.api_key:
+            try:
+                file = await bot.get_file(photo.file_id)
+                photo_io = await bot.download_file(file.file_path)
+                photo_bytes = photo_io.read()
+
+                result = await plate_recognizer_service.recognize_plate(photo_bytes)
+
+                if result.success and result.confidence >= 0.50:
+                    formatted_plate = plate_recognizer_service.format_plate_number(
+                        result.plate_number
+                    )
+                    await state.update_data(
+                        detected_plate_number=formatted_plate,
+                        plate_confidence=result.confidence,
+                    )
+                    logger.info(f"Plate recognized from photo: {formatted_plate} ({result.confidence*100:.0f}%)")
+            except Exception as e:
+                logger.error(f"Error during plate recognition: {e}")
+                # Continue without plate - will ask for manual entry later
+
+    # Delegate to shared photo handling (collects photos, shows loading, etc.)
     await handle_photo_upload(message, state, summary_builder=build_summary)
 
 
 @router.callback_query(F.data == "skip_photos", EntryForm.photos)
 @require_manager_access
 async def skip_photos(callback: CallbackQuery, state: FSMContext, user=None):
-    """Skip photo upload"""
+    """Skip photo upload - handle plate entry for TRUCK"""
     user_id = callback.from_user.id
+    lang = await get_user_language(state)
     data = await state.get_data()
     loading_msg_id = data.get("photo_loading_msg_id")
+    transport_type = data.get("transport_type")
 
     # Cancel any pending photo confirmation task
     cancel_photo_confirmation_task(user_id)
@@ -583,18 +636,41 @@ async def skip_photos(callback: CallbackQuery, state: FSMContext, user=None):
         photos=[], last_photo_timestamp=None, photo_loading_msg_id=None
     )
 
-    # Edit the photo loading message with confirmation (or send new if no loading msg)
-    await show_confirmation(callback.message, state, edit_message_id=loading_msg_id)
+    # For TRUCK: need to ask for manual plate entry (no photos = no plate recognized)
+    if transport_type == "TRUCK":
+        await state.set_state(EntryForm.transport_number)
+        summary = await build_summary(data, lang)
+
+        msg_text = f"{summary}\n\n{get_text('ask_transport_number', lang)}"
+
+        if loading_msg_id:
+            try:
+                await callback.message.bot.edit_message_text(
+                    chat_id=callback.message.chat.id,
+                    message_id=loading_msg_id,
+                    text=msg_text,
+                )
+            except Exception as e:
+                logger.error(f"Failed to edit message: {e}")
+                await callback.message.answer(msg_text)
+        else:
+            await callback.message.answer(msg_text)
+    else:
+        # WAGON or other: go directly to confirmation
+        await show_confirmation(callback.message, state, edit_message_id=loading_msg_id)
+
     await callback.answer()
 
 
 @router.callback_query(F.data == "done_photos", EntryForm.photos)
 @require_manager_access
 async def done_photos(callback: CallbackQuery, state: FSMContext, user=None):
-    """Finish photo upload"""
+    """Finish photo upload - handle plate confirmation for TRUCK"""
     user_id = callback.from_user.id
+    lang = await get_user_language(state)
     data = await state.get_data()
     loading_msg_id = data.get("photo_loading_msg_id")
+    transport_type = data.get("transport_type")
 
     # Cancel any pending photo confirmation task
     cancel_photo_confirmation_task(user_id)
@@ -605,8 +681,65 @@ async def done_photos(callback: CallbackQuery, state: FSMContext, user=None):
     # Clear timestamp and loading message to prevent pending confirmation
     await state.update_data(last_photo_timestamp=None, photo_loading_msg_id=None)
 
-    # Edit the photo loading message with confirmation (or send new if no loading msg)
-    await show_confirmation(callback.message, state, edit_message_id=loading_msg_id)
+    # For TRUCK: need to handle plate number
+    if transport_type == "TRUCK":
+        detected_plate = data.get("detected_plate_number")
+
+        if detected_plate:
+            # Plate was detected - show confirmation
+            await state.set_state(EntryForm.transport_plate_photo)
+            confidence = data.get("plate_confidence", 0)
+            confidence_percent = max(0, min(100, int(confidence * 100)))
+
+            summary = await build_summary(data, lang)
+
+            msg_text = f"{summary}\n\n{get_text('plate_recognized', lang, plate=detected_plate, confidence=confidence_percent)}"
+
+            if loading_msg_id:
+                try:
+                    await callback.message.bot.edit_message_text(
+                        chat_id=callback.message.chat.id,
+                        message_id=loading_msg_id,
+                        text=msg_text,
+                        reply_markup=get_plate_confirmation_keyboard(lang),
+                        parse_mode="HTML",
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to edit message: {e}")
+                    await callback.message.answer(
+                        msg_text,
+                        reply_markup=get_plate_confirmation_keyboard(lang),
+                        parse_mode="HTML",
+                    )
+            else:
+                await callback.message.answer(
+                    msg_text,
+                    reply_markup=get_plate_confirmation_keyboard(lang),
+                    parse_mode="HTML",
+                )
+        else:
+            # No plate detected - ask for manual entry
+            await state.set_state(EntryForm.transport_number)
+            summary = await build_summary(data, lang)
+
+            msg_text = f"{summary}\n\n{get_text('plate_recognition_failed', lang)}"
+
+            if loading_msg_id:
+                try:
+                    await callback.message.bot.edit_message_text(
+                        chat_id=callback.message.chat.id,
+                        message_id=loading_msg_id,
+                        text=msg_text,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to edit message: {e}")
+                    await callback.message.answer(msg_text)
+            else:
+                await callback.message.answer(msg_text)
+    else:
+        # WAGON or other: go directly to confirmation
+        await show_confirmation(callback.message, state, edit_message_id=loading_msg_id)
+
     await callback.answer()
 
 
@@ -620,6 +753,8 @@ async def show_confirmation(
 
     # Build summary with checkmarks
     summary = await build_summary(data, lang)
+
+    # Count all photos
     photo_count = len(data.get("photos", []))
 
     # Show better text when no photos
@@ -697,8 +832,11 @@ async def confirm_entry(
             return
 
     try:
-        # Download photos from Telegram using shared utility
-        photos = await download_photos_from_telegram(bot, data.get("photos", []))
+        # Get all photo file_ids
+        all_photo_file_ids = data.get("photos", [])
+
+        # Download all photos from Telegram using shared utility
+        photos = await download_photos_from_telegram(bot, all_photo_file_ids)
 
         # Create entry via service (wrap Django ORM in sync_to_async)
         # Get container owner ID if selected (None if skipped)
@@ -747,7 +885,7 @@ async def confirm_entry(
                 "entry_created",
                 lang,
                 id=entry.id,
-                container=entry.container,
+                container=format_container_number(str(entry.container)),
                 time=entry.entry_time.strftime("%d.%m.%Y %H:%M"),
             )
         )
@@ -808,4 +946,184 @@ async def cancel_entry(callback: CallbackQuery, state: FSMContext, user=None):
     await callback.message.answer(
         get_text("choose_action", lang), reply_markup=get_main_keyboard(lang)
     )
+    await callback.answer()
+
+
+# ============== BACK NAVIGATION HANDLERS ==============
+
+
+@router.callback_query(F.data == "back_to_container_number", EntryForm.container_iso_type)
+@require_manager_access
+async def back_to_container_number(callback: CallbackQuery, state: FSMContext, user=None):
+    """Go back to container number input"""
+    lang = await get_user_language(state)
+
+    # Clear container data - get current data and remove keys
+    data = await state.get_data()
+    data.pop("container_number", None)
+    data.pop("container_iso_type", None)
+    await state.set_data(data)
+    await state.set_state(EntryForm.container_number)
+
+    await callback.message.edit_text(get_text("start_entry", lang))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_iso_type", EntryForm.container_owner)
+@require_manager_access
+async def back_to_iso_type(callback: CallbackQuery, state: FSMContext, user=None):
+    """Go back to ISO type selection"""
+    lang = await get_user_language(state)
+
+    # Clear owner and iso data - get current data and remove keys
+    data = await state.get_data()
+    data.pop("container_iso_type", None)
+    data.pop("container_owner_id", None)
+    data.pop("container_owner_name", None)
+    data.pop("container_owner_skipped", None)
+    await state.set_data(data)
+    await state.set_state(EntryForm.container_iso_type)
+
+    # Build summary and show ISO type selection
+    summary = await build_summary(data, lang)
+
+    await callback.message.edit_text(
+        f"{summary}\n\n{get_text('ask_iso_type', lang)}",
+        reply_markup=get_iso_type_keyboard(lang),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_owner", EntryForm.status)
+@require_manager_access
+async def back_to_owner(callback: CallbackQuery, state: FSMContext, user=None):
+    """Go back to owner selection"""
+    lang = await get_user_language(state)
+
+    # Clear status and owner data - get current data and remove keys
+    data = await state.get_data()
+    data.pop("status", None)
+    data.pop("container_owner_id", None)
+    data.pop("container_owner_name", None)
+    data.pop("container_owner_skipped", None)
+    await state.set_data(data)
+    await state.set_state(EntryForm.container_owner)
+
+    # Build summary and show owner selection
+    summary = await build_summary(data, lang)
+
+    keyboard, has_owners = await get_container_owner_keyboard(lang)
+    if has_owners:
+        message_text = f"{summary}\n\n{get_text('ask_owner', lang)}"
+    else:
+        message_text = f"{summary}\n\n{get_text('no_owners_available', lang)}"
+
+    await callback.message.edit_text(message_text, reply_markup=keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_status", EntryForm.transport_type)
+@require_manager_access
+async def back_to_status(callback: CallbackQuery, state: FSMContext, user=None):
+    """Go back to status selection"""
+    lang = await get_user_language(state)
+
+    # Clear transport and status data - get current data and remove keys
+    data = await state.get_data()
+    data.pop("status", None)
+    data.pop("transport_type", None)
+    await state.set_data(data)
+    await state.set_state(EntryForm.status)
+
+    # Build summary and show status selection
+    summary = await build_summary(data, lang)
+
+    await callback.message.edit_text(
+        f"{summary}\n\n{get_text('ask_status', lang)}",
+        reply_markup=get_status_keyboard(lang),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_transport_type", EntryForm.transport_plate_photo)
+@require_manager_access
+async def back_to_transport_type_from_plate(
+    callback: CallbackQuery, state: FSMContext, user=None
+):
+    """Go back from plate confirmation - to photos step to re-take photos"""
+    lang = await get_user_language(state)
+
+    # Get current data
+    data = await state.get_data()
+
+    # Clear plate data but keep photos (user may want to add more or retake)
+    data.pop("detected_plate_number", None)
+    data.pop("plate_confidence", None)
+    data.pop("transport_number", None)
+    await state.set_data(data)
+    await state.set_state(EntryForm.photos)
+
+    summary = await build_summary(data, lang)
+    photos = data.get("photos", [])
+
+    await callback.message.edit_text(
+        f"{summary}\n\n{get_text('ask_all_photos_truck', lang)}",
+        reply_markup=get_photo_skip_keyboard(lang, has_photos=len(photos) > 0),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_transport_number", EntryForm.photos)
+@require_manager_access
+async def back_to_transport_number(callback: CallbackQuery, state: FSMContext, user=None):
+    """Go back from photos - to status/transport_type (TRUCK) or transport_number (WAGON)"""
+    lang = await get_user_language(state)
+
+    # Clear photos and related data
+    data = await state.get_data()
+    transport_type = data.get("transport_type")
+    status = data.get("status")
+    data.pop("photos", None)
+    data.pop("matched_preorder_id", None)
+    data.pop("detected_plate_number", None)
+    data.pop("plate_confidence", None)
+    data.pop("last_photo_timestamp", None)
+    data.pop("photo_loading_msg_id", None)
+
+    # For TRUCK: photos come right after status/transport_type selection
+    if transport_type == "TRUCK":
+        # Clear transport data
+        data.pop("transport_type", None)
+
+        if status == "EMPTY":
+            # EMPTY auto-selected TRUCK - go back to status
+            data.pop("status", None)
+            await state.set_data(data)
+            await state.set_state(EntryForm.status)
+
+            summary = await build_summary(data, lang)
+            await callback.message.edit_text(
+                f"{summary}\n\n{get_text('ask_status', lang)}",
+                reply_markup=get_status_keyboard(lang),
+            )
+        else:
+            # LADEN - go back to transport type
+            await state.set_data(data)
+            await state.set_state(EntryForm.transport_type)
+
+            summary = await build_summary(data, lang)
+            await callback.message.edit_text(
+                f"{summary}\n\n{get_text('ask_transport_type', lang)}",
+                reply_markup=get_transport_type_keyboard(lang),
+            )
+    else:
+        # For WAGON: go back to transport number input
+        data.pop("transport_number", None)
+        await state.set_data(data)
+        await state.set_state(EntryForm.transport_number)
+
+        summary = await build_summary(data, lang)
+        await callback.message.edit_text(
+            f"{summary}\n\n{get_text('ask_transport_number', lang)}"
+        )
     await callback.answer()

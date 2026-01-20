@@ -25,7 +25,6 @@ from aiogram.fsm.storage.redis import RedisStorage
 from telegram_bot.handlers import (
     common,
     container_cabinet,
-    crane_operation,
     customer,
     entry,
     exit,
@@ -102,7 +101,6 @@ async def main():
     dp.include_router(common.router)
     dp.include_router(entry.router)
     dp.include_router(exit.exit_router)
-    dp.include_router(crane_operation.crane_operation_router)
 
     logger.info("Bot started successfully!")
 

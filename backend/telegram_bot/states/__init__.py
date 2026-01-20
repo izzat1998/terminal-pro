@@ -1,7 +1,6 @@
 # States package
 from .customer import CustomerOrderManagement, CustomerPreOrderForm
 from .entry import (
-    CraneOperationForm,
     EntryForm,
     ExitForm,
     LanguageSelection,
@@ -10,7 +9,6 @@ from .entry import (
 
 
 __all__ = [
-    "CraneOperationForm",
     "CustomerOrderManagement",
     "CustomerPreOrderForm",
     "EntryForm",

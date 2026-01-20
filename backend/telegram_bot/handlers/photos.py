@@ -82,10 +82,14 @@ async def get_user_language(state: FSMContext) -> str:
 # Type alias for the summary builder callback
 SummaryBuilder = Callable[[dict, str], Awaitable[str]]
 
+# Type alias for keyboard builder callback
+KeyboardBuilder = Callable[[str, bool], "InlineKeyboardMarkup"]
+
 
 async def _process_media_group(
     media_group_id: str,
     summary_builder: SummaryBuilder | None = None,
+    keyboard_func: KeyboardBuilder | None = None,
 ) -> None:
     """
     Process collected media group after debounce delay.
@@ -93,6 +97,7 @@ async def _process_media_group(
     Args:
         media_group_id: The Telegram media group ID
         summary_builder: Optional async function to build summary text
+        keyboard_func: Optional function to build keyboard (default: get_photo_skip_keyboard)
     """
     await asyncio.sleep(MEDIA_GROUP_COLLECTION_DELAY)
 
@@ -145,7 +150,9 @@ async def _process_media_group(
 
     # Start debounced confirmation and track it
     task = asyncio.create_task(
-        _send_photo_confirmation(message, state, photo_timestamp, summary_builder)
+        _send_photo_confirmation(
+            message, state, photo_timestamp, summary_builder, keyboard_func
+        )
     )
     photo_confirmation_tasks[user_id] = task
 
@@ -155,6 +162,7 @@ async def _send_photo_confirmation(
     state: FSMContext,
     photo_timestamp: float,
     summary_builder: SummaryBuilder | None = None,
+    keyboard_func: KeyboardBuilder | None = None,
 ) -> None:
     """
     Send photo confirmation after debounce delay.
@@ -164,8 +172,12 @@ async def _send_photo_confirmation(
         state: FSM context
         photo_timestamp: Timestamp when photos were added
         summary_builder: Optional async function to build summary text
+        keyboard_func: Optional function to build keyboard (default: get_photo_skip_keyboard)
     """
     user_id = message.from_user.id
+    # Use default keyboard if not specified
+    get_keyboard = keyboard_func or get_photo_skip_keyboard
+
     try:
         await asyncio.sleep(PHOTO_DEBOUNCE_DELAY)
 
@@ -194,14 +206,14 @@ async def _send_photo_confirmation(
                     chat_id=message.chat.id,
                     message_id=loading_msg_id,
                     text=final_text,
-                    reply_markup=get_photo_skip_keyboard(lang, has_photos=has_photos),
+                    reply_markup=get_keyboard(lang, has_photos=has_photos),
                 )
             except Exception as e:
                 logger.error(f"Failed to edit photo confirmation message: {e}")
                 # If edit fails, send new message
                 await message.answer(
                     final_text,
-                    reply_markup=get_photo_skip_keyboard(lang, has_photos=has_photos),
+                    reply_markup=get_keyboard(lang, has_photos=has_photos),
                 )
     except asyncio.CancelledError:
         logger.debug("Photo confirmation task was cancelled")
@@ -215,6 +227,7 @@ async def handle_photo_upload(
     message: Message,
     state: FSMContext,
     summary_builder: SummaryBuilder | None = None,
+    keyboard_func: KeyboardBuilder | None = None,
 ) -> None:
     """
     Handle photo upload - supports both single photos and media groups (albums).
@@ -229,6 +242,7 @@ async def handle_photo_upload(
         message: The Telegram message containing the photo
         state: FSM context for the current conversation
         summary_builder: Optional async function(data, lang) -> str to build summary
+        keyboard_func: Optional function to build keyboard (default: get_photo_skip_keyboard)
     """
     lang = await get_user_language(state)
     photo = message.photo[-1]  # Get highest resolution
@@ -249,7 +263,9 @@ async def handle_photo_upload(
                 "timestamp": time.time(),
             }
             # Start collection task
-            asyncio.create_task(_process_media_group(media_group_id, summary_builder))
+            asyncio.create_task(
+                _process_media_group(media_group_id, summary_builder, keyboard_func)
+            )
         else:
             # Additional photo in same group - append
             media_groups[media_group_id]["photos"].append(photo.file_id)
@@ -294,7 +310,9 @@ async def handle_photo_upload(
 
     # Start debounced confirmation task and track it
     task = asyncio.create_task(
-        _send_photo_confirmation(message, state, photo_timestamp, summary_builder)
+        _send_photo_confirmation(
+            message, state, photo_timestamp, summary_builder, keyboard_func
+        )
     )
     photo_confirmation_tasks[user_id] = task
 

@@ -7,20 +7,19 @@ from telegram_bot.translations import get_text
 def get_main_keyboard(lang: str = "ru") -> ReplyKeyboardMarkup:
     """
     Main keyboard shown when no active operation.
-    Shows: Create Entry, Exit Container, Crane Operation, Help, Language
+    Shows: Create Entry, Exit Container, Help, Language
     """
     builder = ReplyKeyboardBuilder()
 
-    # Row 1: Create Entry, Exit Container, Crane Operation
+    # Row 1: Create Entry, Exit Container
     builder.button(text=get_text("btn_create_entry", lang))
     builder.button(text=get_text("btn_exit_container", lang))
-    builder.button(text=get_text("btn_crane_operation", lang))
 
     # Row 2: Help, Language
     builder.button(text=get_text("btn_help", lang))
     builder.button(text=get_text("btn_change_language", lang))
 
-    builder.adjust(3, 2)  # 3 buttons in first row, 2 in second
+    builder.adjust(2, 2)  # 2 buttons in each row
 
     return builder.as_markup(resize_keyboard=True)
 

@@ -4,9 +4,8 @@ Handlers for container exit flow via Telegram bot
 
 import html
 import logging
-from datetime import datetime
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
@@ -29,12 +28,14 @@ from telegram_bot.handlers.photos import (
 from telegram_bot.keyboards import inline, reply
 from telegram_bot.middleware import require_manager_access
 from telegram_bot.services.entry_service import BotEntryService
+from telegram_bot.services.plate_recognizer_service import PlateRecognizerService
 from telegram_bot.states.entry import ExitForm
 from telegram_bot.translations import (
     get_status_display,
     get_text,
     get_transport_display,
 )
+from telegram_bot.utils import format_container_number
 
 
 logger = logging.getLogger(__name__)
@@ -45,48 +46,10 @@ exit_router = Router()
 # Service instances
 entry_service = BotEntryService()
 activity_log_service = ActivityLogService()
+plate_recognizer_service = PlateRecognizerService()
 
 # Valid callback data values for validation
 VALID_TRANSPORT_TYPES = {"TRUCK", "WAGON"}
-
-
-def parse_exit_date(text: str) -> datetime | None:
-    """
-    Parse user-input date string in multiple formats for crane operations.
-
-    Supported formats:
-    - 2025-10-28 14:30 (ISO datetime)
-    - 28.10.2025 14:30 (Russian date datetime)
-    - 2025-10-28 (ISO date only)
-    - 28.10.2025 (Russian date only)
-
-    Args:
-        text: User input string
-
-    Returns:
-        datetime object or None if parsing fails
-    """
-    formats = [
-        "%Y-%m-%d %H:%M",  # 2025-10-28 14:30
-        "%d.%m.%Y %H:%M",  # 28.10.2025 14:30
-        "%Y-%m-%d",  # 2025-10-28
-        "%d.%m.%Y",  # 28.10.2025
-    ]
-
-    text = text.strip()
-
-    for fmt in formats:
-        try:
-            parsed_date = datetime.strptime(text, fmt)
-            logger.debug(
-                f"Parsed crane operation date: {parsed_date} from input: '{text}' (format: {fmt})"
-            )
-            return parsed_date
-        except ValueError:
-            continue
-
-    logger.debug(f"Failed to parse crane operation date from input: '{text}'")
-    return None
 
 
 def extract_entry_info(active_entry) -> dict:
@@ -141,9 +104,11 @@ async def build_exit_summary(entry_data: dict, lang: str) -> str:
     # Entry information section
     if entry_data.get("entry_info"):
         entry_info = entry_data["entry_info"]
+        # Format container number as PREFIX | POSTFIX for better readability
+        formatted_container = format_container_number(str(entry_info.get('container_number', '')))
         lines.append(f"<b>📦 {get_text('summary_container', lang)}:</b>")
         lines.append(
-            f"<code>{html.escape(str(entry_info.get('container_number')))}</code> ({html.escape(str(entry_info.get('iso_type')))})"
+            f"<code>{html.escape(formatted_container)}</code> ({html.escape(str(entry_info.get('iso_type')))})"
         )
         lines.append("")
 
@@ -253,13 +218,6 @@ async def build_exit_summary(entry_data: dict, lang: str) -> str:
                 f"<b>🎯 {get_text('summary_destination', lang)}:</b> {html.escape(entry_data['destination_station'])} ✅"
             )
 
-        # Crane operations (optional)
-        if entry_data.get("crane_operations"):
-            ops_count = len(entry_data["crane_operations"])
-            lines.append(
-                f"<b>🏗️ {get_text('summary_crane_ops', lang)}:</b> {ops_count} ✅"
-            )
-
         # Photos - only show if 'show_photos' flag is True (when user has reached photo step)
         if entry_data.get("show_photos"):
             if entry_data.get("photos"):
@@ -304,17 +262,18 @@ async def process_exit_container_number(message: Message, state: FSMContext, use
         )
         return
 
-    container_number = message.text.upper().strip()
+    raw_input = message.text.strip()
 
-    # Validate format
-    if not await sync_to_async(entry_service.validate_container_number)(
-        container_number
-    ):
+    # Validate format (accepts with or without spaces)
+    if not await sync_to_async(entry_service.validate_container_number)(raw_input):
         await message.answer(
             get_text("invalid_container_format", lang),
             reply_markup=reply.get_cancel_keyboard(lang),
         )
         return
+
+    # Normalize: remove spaces and uppercase (e.g., "MSKU 1234567" -> "MSKU1234567")
+    container_number = entry_service.normalize_container_number(raw_input)
 
     # Check if container has active entry
     active_entry = await sync_to_async(entry_service.check_active_entry)(
@@ -377,14 +336,27 @@ async def process_exit_transport_type(
         return
 
     await state.update_data(exit_transport_type=transport_type, exit_train_number="")
-    await state.set_state(ExitForm.exit_transport_number)
 
-    # Remove the message since we'll send a new one with reply keyboard
-    await callback.message.delete()
-    await callback.message.answer(
-        get_text("ask_exit_transport_number", lang),
-        reply_markup=reply.get_cancel_keyboard(lang),
-    )
+    if transport_type == "TRUCK":
+        # TRUCK: Go to combined photos step with plate recognition
+        await state.update_data(photos=[], show_photos=True)
+        await state.set_state(ExitForm.photos)
+
+        data = await state.get_data()
+        summary = await build_exit_summary(data, lang)
+        await callback.message.edit_text(
+            f"{summary}\n\n{get_text('ask_all_photos_truck', lang)}",
+            reply_markup=inline.get_exit_photo_keyboard(lang, has_photos=False),
+            parse_mode="HTML",
+        )
+    else:
+        # WAGON: Ask for transport number (manual entry)
+        await state.set_state(ExitForm.exit_transport_number)
+        await callback.message.delete()
+        await callback.message.answer(
+            get_text("ask_exit_transport_number", lang),
+            reply_markup=reply.get_cancel_keyboard(lang),
+        )
 
     await callback.answer()
 
@@ -514,84 +486,47 @@ async def done_destination_station(
     await callback.answer()
 
 
-@exit_router.message(ExitForm.crane_operations)
-@require_manager_access
-async def process_crane_operations(message: Message, state: FSMContext, user=None):
-    """Process crane operation dates"""
-    lang = await get_user_language(state)
-
-    if not message.text:
-        await message.answer(get_text("error_exit_text", lang))
-        return
-
-    text = message.text.strip()
-
-    data = await state.get_data()
-    crane_ops = data.get("crane_operations", [])
-
-    # Try to parse as datetime
-    op_date = parse_exit_date(text)
-    if not op_date:
-        await message.answer(get_text("invalid_crane_date", lang))
-        return
-
-    crane_ops.append({"operation_date": op_date.isoformat()})
-    await state.update_data(crane_operations=crane_ops)
-
-    # Show confirmation and ask if more operations
-    await message.answer(
-        get_text(
-            "crane_operation_added",
-            lang,
-            operation_date=op_date.strftime("%Y-%m-%d %H:%M"),
-        ),
-        reply_markup=inline.get_done_crane_operations_keyboard(lang),
-    )
-
-
-@exit_router.callback_query(F.data == "skip_crane_ops", ExitForm.crane_operations)
-@require_manager_access
-async def skip_crane_operations(callback: CallbackQuery, state: FSMContext, user=None):
-    """Skip crane operations"""
-    lang = await get_user_language(state)
-
-    await state.update_data(crane_operations=[], show_photos=True)
-    await state.set_state(ExitForm.photos)
-
-    data = await state.get_data()
-    summary = await build_exit_summary(data, lang)
-    await callback.message.edit_text(
-        f"{summary}\n\n{get_text('ask_exit_photos', lang)}",
-        reply_markup=inline.get_photo_skip_keyboard(lang, has_photos=False),
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@exit_router.callback_query(F.data == "done_crane_ops", ExitForm.crane_operations)
-@require_manager_access
-async def done_crane_operations(callback: CallbackQuery, state: FSMContext, user=None):
-    """Complete crane operations"""
-    lang = await get_user_language(state)
-
-    await state.update_data(show_photos=True)
-    await state.set_state(ExitForm.photos)
-
-    data = await state.get_data()
-    summary = await build_exit_summary(data, lang)
-    await callback.message.edit_text(
-        f"{summary}\n\n{get_text('ask_exit_photos', lang)}",
-        reply_markup=inline.get_photo_skip_keyboard(lang, has_photos=False),
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
 @exit_router.message(ExitForm.photos, F.photo)
 @require_manager_access
-async def process_exit_photo(message: Message, state: FSMContext, user=None):
-    """Process exit photos - delegates to shared photo handling module"""
-    await handle_photo_upload(message, state, summary_builder=build_exit_summary)
+async def process_exit_photo(
+    message: Message, state: FSMContext, bot: Bot, user=None
+):
+    """Process exit photos with plate recognition for TRUCK transport type"""
+    lang = await get_user_language(state)
+    data = await state.get_data()
+    transport_type = data.get("exit_transport_type")
+
+    # For TRUCK: try plate recognition if no plate detected yet
+    if transport_type == "TRUCK" and not data.get("detected_plate_number"):
+        photo = message.photo[-1]  # Get highest resolution photo
+        if plate_recognizer_service.api_key:
+            try:
+                file = await bot.get_file(photo.file_id)
+                photo_io = await bot.download_file(file.file_path)
+                photo_bytes = photo_io.read()
+                result = await plate_recognizer_service.recognize_plate(photo_bytes)
+                if result.success and result.confidence >= 0.50:
+                    formatted_plate = plate_recognizer_service.format_plate_number(
+                        result.plate_number
+                    )
+                    await state.update_data(
+                        detected_plate_number=formatted_plate,
+                        plate_confidence=result.confidence,
+                    )
+                    logger.info(
+                        f"Exit: Detected plate {formatted_plate} "
+                        f"(confidence: {result.confidence:.2%})"
+                    )
+            except Exception as e:
+                logger.error(f"Error during plate recognition in exit flow: {e}")
+
+    # Use exit-specific keyboard for photo upload
+    await handle_photo_upload(
+        message,
+        state,
+        summary_builder=build_exit_summary,
+        keyboard_func=inline.get_exit_photo_keyboard,
+    )
 
 
 @exit_router.callback_query(F.data == "done_photos", ExitForm.photos)
@@ -643,6 +578,199 @@ async def skip_exit_photos(callback: CallbackQuery, state: FSMContext, user=None
     await callback.message.edit_text(
         f"{get_text('exit_confirmation_header', lang)}\n\n{summary}\n\n{get_text('exit_confirmation_question', lang)}",
         reply_markup=inline.get_confirmation_keyboard(lang),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+# ============ TRUCK EXIT FLOW HANDLERS (with plate recognition) ============
+
+
+@exit_router.callback_query(F.data == "done_exit_photos", ExitForm.photos)
+@require_manager_access
+async def done_exit_truck_photos(
+    callback: CallbackQuery, state: FSMContext, user=None
+):
+    """Complete TRUCK photo upload - check for plate detection"""
+    user_id = callback.from_user.id
+    lang = await get_user_language(state)
+
+    # Cancel any pending photo confirmation task
+    cancel_photo_confirmation_task(user_id)
+
+    # Clear photo loading state
+    await state.update_data(last_photo_timestamp=None, photo_loading_msg_id=None)
+
+    data = await state.get_data()
+    detected_plate = data.get("detected_plate_number")
+    confidence = data.get("plate_confidence", 0)
+
+    if detected_plate:
+        # Plate was detected - show confirmation
+        await state.set_state(ExitForm.exit_transport_plate_photo)
+
+        summary = await build_exit_summary(data, lang)
+        plate_text = get_text(
+            "plate_recognized",
+            lang,
+            plate=detected_plate,
+            confidence=f"{confidence:.0%}",
+        )
+        await callback.message.edit_text(
+            f"{summary}\n\n{plate_text}",
+            reply_markup=inline.get_exit_plate_confirmation_keyboard(lang),
+            parse_mode="HTML",
+        )
+    else:
+        # No plate detected - ask for manual entry
+        await state.set_state(ExitForm.exit_transport_number)
+
+        await callback.message.delete()
+        await callback.message.answer(
+            get_text("ask_exit_transport_number", lang),
+            reply_markup=reply.get_cancel_keyboard(lang),
+        )
+
+    await callback.answer()
+
+
+@exit_router.callback_query(F.data == "skip_exit_photos", ExitForm.photos)
+@require_manager_access
+async def skip_exit_truck_photos(
+    callback: CallbackQuery, state: FSMContext, user=None
+):
+    """Skip TRUCK photos - ask for manual transport number entry"""
+    user_id = callback.from_user.id
+    lang = await get_user_language(state)
+
+    # Cancel any pending photo confirmation task
+    cancel_photo_confirmation_task(user_id)
+
+    await state.update_data(
+        photos=[],
+        show_photos=True,
+        last_photo_timestamp=None,
+        photo_loading_msg_id=None,
+        detected_plate_number=None,
+        plate_confidence=None,
+    )
+    await state.set_state(ExitForm.exit_transport_number)
+
+    await callback.message.delete()
+    await callback.message.answer(
+        get_text("ask_exit_transport_number", lang),
+        reply_markup=reply.get_cancel_keyboard(lang),
+    )
+    await callback.answer()
+
+
+@exit_router.callback_query(
+    F.data == "confirm_exit_plate", ExitForm.exit_transport_plate_photo
+)
+@require_manager_access
+async def confirm_exit_detected_plate(
+    callback: CallbackQuery, state: FSMContext, user=None
+):
+    """User confirmed detected plate number - proceed to destination"""
+    lang = await get_user_language(state)
+    data = await state.get_data()
+
+    # Save detected plate as exit transport number
+    detected_plate = data.get("detected_plate_number", "")
+    await state.update_data(exit_transport_number=detected_plate)
+    await state.set_state(ExitForm.destination_station)
+
+    # Show updated summary and ask for destination
+    data = await state.get_data()
+    summary = await build_exit_summary(data, lang)
+    await callback.message.edit_text(
+        f"{summary}\n\n{get_text('ask_destination_station', lang)}",
+        reply_markup=inline.get_skip_optional_field_keyboard(lang),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@exit_router.callback_query(
+    F.data == "edit_exit_plate", ExitForm.exit_transport_plate_photo
+)
+@require_manager_access
+async def edit_exit_detected_plate(
+    callback: CallbackQuery, state: FSMContext, user=None
+):
+    """User wants to edit detected plate - ask for manual entry"""
+    lang = await get_user_language(state)
+
+    # Clear detected plate and go to manual entry
+    await state.update_data(detected_plate_number=None, plate_confidence=None)
+    await state.set_state(ExitForm.exit_transport_number)
+
+    await callback.message.delete()
+    await callback.message.answer(
+        get_text("ask_exit_transport_number", lang),
+        reply_markup=reply.get_cancel_keyboard(lang),
+    )
+    await callback.answer()
+
+
+@exit_router.callback_query(
+    F.data == "back_to_exit_transport_type", ExitForm.photos
+)
+@require_manager_access
+async def back_to_exit_transport_type(
+    callback: CallbackQuery, state: FSMContext, user=None
+):
+    """Go back from photos to transport type selection"""
+    lang = await get_user_language(state)
+    user_id = callback.from_user.id
+
+    # Cancel any pending photo confirmation task
+    cancel_photo_confirmation_task(user_id)
+
+    # Clear photo-related state
+    await state.update_data(
+        photos=[],
+        exit_transport_type=None,
+        show_photos=False,
+        last_photo_timestamp=None,
+        photo_loading_msg_id=None,
+        detected_plate_number=None,
+        plate_confidence=None,
+    )
+    await state.set_state(ExitForm.exit_transport_type)
+
+    data = await state.get_data()
+    summary = await build_exit_summary(data, lang)
+    await callback.message.edit_text(
+        f"{summary}\n\n{get_text('ask_exit_transport_type', lang)}",
+        reply_markup=inline.get_exit_transport_type_keyboard(lang),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@exit_router.callback_query(
+    F.data == "back_to_exit_photos", ExitForm.exit_transport_plate_photo
+)
+@require_manager_access
+async def back_to_exit_photos(
+    callback: CallbackQuery, state: FSMContext, user=None
+):
+    """Go back from plate confirmation to photos"""
+    lang = await get_user_language(state)
+
+    # Clear detected plate and go back to photos
+    await state.update_data(detected_plate_number=None, plate_confidence=None)
+    await state.set_state(ExitForm.photos)
+
+    data = await state.get_data()
+    photos = data.get("photos", [])
+    summary = await build_exit_summary(data, lang)
+
+    has_photos = len(photos) > 0
+    await callback.message.edit_text(
+        f"{summary}\n\n{get_text('ask_all_photos_truck', lang)}",
+        reply_markup=inline.get_exit_photo_keyboard(lang, has_photos=has_photos),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -705,7 +833,7 @@ async def confirm_exit(callback: CallbackQuery, state: FSMContext, user=None):
         # Extract data in synchronous context to avoid async database access
         def get_exit_display_info(entry):
             return {
-                "container": entry.container.container_number,
+                "container": format_container_number(entry.container.container_number),
                 "exit_date": entry.exit_date.strftime("%Y-%m-%d %H:%M"),
                 "dwell_time": entry.dwell_time_days or 0,
             }

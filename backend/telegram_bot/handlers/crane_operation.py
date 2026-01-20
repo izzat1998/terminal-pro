@@ -17,6 +17,7 @@ from telegram_bot.middleware import require_manager_access
 from telegram_bot.services.entry_service import BotEntryService
 from telegram_bot.states.entry import CraneOperationForm
 from telegram_bot.translations import get_text
+from telegram_bot.utils import format_container_number
 
 
 logger = logging.getLogger(__name__)
@@ -66,17 +67,18 @@ async def process_crane_container_number(
         )
         return
 
-    container_number = message.text.upper().strip()
+    raw_input = message.text.strip()
 
-    # Validate format
-    if not await sync_to_async(entry_service.validate_container_number)(
-        container_number
-    ):
+    # Validate format (accepts with or without spaces)
+    if not await sync_to_async(entry_service.validate_container_number)(raw_input):
         await message.answer(
             get_text("invalid_container_format", lang),
             reply_markup=reply.get_cancel_keyboard(lang),
         )
         return
+
+    # Normalize: remove spaces and uppercase (e.g., "MSKU 1234567" -> "MSKU1234567")
+    container_number = entry_service.normalize_container_number(raw_input)
 
     # Check if container has active entry (on terminal)
     active_entry = await sync_to_async(entry_service.check_active_entry)(
@@ -116,11 +118,12 @@ async def process_crane_container_number(
         await state.set_state(CraneOperationForm.adding_operations)
 
         # Show success message with option to add more
+        # Format container number as PREFIX | POSTFIX for better readability
         await message.answer(
             get_text(
                 "crane_op_added",
                 lang,
-                container_number=container_number,
+                container_number=format_container_number(container_number),
                 operation_time=operation_time.strftime("%d.%m.%Y %H:%M"),
                 total_count=total_count,
             ),
@@ -174,11 +177,12 @@ async def add_more_crane_operation(
         await state.update_data(operations_added=operations_added)
 
         # Update message with new count
+        # Format container number as PREFIX | POSTFIX for better readability
         await callback.message.edit_text(
             get_text(
                 "crane_op_added",
                 lang,
-                container_number=container_number,
+                container_number=format_container_number(container_number),
                 operation_time=operation_time.strftime("%d.%m.%Y %H:%M"),
                 total_count=total_count,
             ),
@@ -214,11 +218,12 @@ async def done_crane_operations(callback: CallbackQuery, state: FSMContext, user
     operations_added = data.get("operations_added", 0)
 
     # Show completion message
+    # Format container number as PREFIX | POSTFIX for better readability
     await callback.message.edit_text(
         get_text(
             "crane_op_completed",
             lang,
-            container_number=container_number,
+            container_number=format_container_number(container_number),
             count=operations_added,
         )
     )

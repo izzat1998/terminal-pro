@@ -116,9 +116,21 @@ class BotEntryService:
         return entry
 
     def validate_container_number(self, number: str) -> bool:
-        """Validate container number format (4 letters + 7 digits)"""
+        """
+        Validate container number format (4 letters + 7 digits).
+        Accepts input with or without spaces (e.g., "MSKU1234567" or "MSKU 1234567").
+        """
+        # Remove spaces and normalize
+        cleaned = number.replace(" ", "").upper()
         pattern = r"^[A-Z]{4}[0-9]{7}$"
-        return bool(re.match(pattern, number.upper()))
+        return bool(re.match(pattern, cleaned))
+
+    def normalize_container_number(self, number: str) -> str:
+        """
+        Normalize container number by removing spaces and converting to uppercase.
+        Example: "MSKU 1234567" -> "MSKU1234567"
+        """
+        return number.replace(" ", "").upper()
 
     def check_active_entry(self, container_number: str) -> ContainerEntry | None:
         """
