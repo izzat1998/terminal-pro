@@ -368,3 +368,100 @@ class StatementLineItem(TimestampedModel):
     def container_status_display(self) -> str:
         """Return display name for container status."""
         return "Груженый" if self.container_status == "laden" else "Порожний"
+
+
+class ExpenseType(TimestampedModel):
+    """
+    Catalog of predefined expense types for additional charges.
+    Examples: Crane usage (Кран), Inspection (Досмотр), Handling, etc.
+    """
+
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        verbose_name="Название",
+    )
+
+    default_rate_usd = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        verbose_name="Ставка по умолчанию (USD)",
+    )
+
+    default_rate_uzs = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        verbose_name="Ставка по умолчанию (UZS)",
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Активен",
+    )
+
+    class Meta:
+        verbose_name = "Тип расхода"
+        verbose_name_plural = "Типы расходов"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class AdditionalCharge(TimestampedModel):
+    """
+    Discrete one-time charge applied to a container entry.
+    Examples: crane usage, inspection fee, handling charge, penalties.
+    """
+
+    container_entry = models.ForeignKey(
+        "terminal_operations.ContainerEntry",
+        on_delete=models.CASCADE,
+        related_name="additional_charges",
+        verbose_name="Запись контейнера",
+    )
+
+    description = models.CharField(
+        max_length=255,
+        verbose_name="Описание",
+    )
+
+    amount_usd = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        verbose_name="Сумма USD",
+    )
+
+    amount_uzs = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        verbose_name="Сумма UZS",
+    )
+
+    charge_date = models.DateField(
+        verbose_name="Дата начисления",
+    )
+
+    created_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_charges",
+        verbose_name="Создано пользователем",
+    )
+
+    class Meta:
+        verbose_name = "Дополнительное начисление"
+        verbose_name_plural = "Дополнительные начисления"
+        ordering = ["-charge_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["container_entry", "charge_date"], name="charge_entry_date_idx"),
+            models.Index(fields=["charge_date"], name="charge_date_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.description} - ${self.amount_usd}"

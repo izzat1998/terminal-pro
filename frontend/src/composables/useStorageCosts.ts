@@ -10,6 +10,7 @@
 
 import { ref } from 'vue';
 import { tariffsService, type StorageCostResult } from '../services/tariffsService';
+import { useAuth } from './useAuth';
 
 /**
  * Interface for records that can have storage cost fields merged into them
@@ -23,9 +24,11 @@ export interface StorageCostFields {
 
 export function useStorageCosts() {
   const isLoading = ref(false);
+  const { user } = useAuth();
 
   /**
    * Fetch storage costs for a list of records and merge results into each record.
+   * Uses customer endpoint for customer users, admin endpoint for admin users.
    *
    * @param records - Array of records to update with storage costs
    * @param getContainerId - Function to extract container entry ID from a record
@@ -45,9 +48,15 @@ export function useStorageCosts() {
     });
 
     try {
-      const response = await tariffsService.calculateBulkStorageCosts({
-        container_entry_ids: containerIds,
-      });
+      // Use customer endpoint for customer users, admin endpoint for admins
+      const isCustomer = user.value?.user_type === 'customer';
+      const response = isCustomer
+        ? await tariffsService.calculateCustomerBulkStorageCosts({
+            container_entry_ids: containerIds,
+          })
+        : await tariffsService.calculateBulkStorageCosts({
+            container_entry_ids: containerIds,
+          });
 
       if (response.success && response.data?.results) {
         // Build a map for O(1) lookup

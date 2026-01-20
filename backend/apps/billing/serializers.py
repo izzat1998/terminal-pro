@@ -9,7 +9,7 @@ from rest_framework import serializers
 
 from apps.accounts.models import Company
 
-from .models import ContainerBillingStatus, ContainerSize, MonthlyStatement, StatementLineItem, Tariff, TariffRate
+from .models import AdditionalCharge, ContainerBillingStatus, ContainerSize, ExpenseType, MonthlyStatement, StatementLineItem, Tariff, TariffRate
 
 
 class TariffRateSerializer(serializers.ModelSerializer):
@@ -358,3 +358,79 @@ class AvailablePeriodSerializer(serializers.Serializer):
     month = serializers.IntegerField()
     label = serializers.CharField()
     has_statement = serializers.BooleanField()
+
+
+# Additional Charge Serializers
+
+
+class AdditionalChargeSerializer(serializers.ModelSerializer):
+    """Serializer for reading additional charges."""
+
+    created_by_name = serializers.SerializerMethodField()
+    container_number = serializers.CharField(
+        source="container_entry.container.container_number", read_only=True
+    )
+    company_name = serializers.CharField(
+        source="container_entry.company.name", read_only=True
+    )
+
+    class Meta:
+        model = AdditionalCharge
+        fields = [
+            "id",
+            "container_entry",
+            "container_number",
+            "company_name",
+            "description",
+            "amount_usd",
+            "amount_uzs",
+            "charge_date",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "created_by_name",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "created_by"]
+
+    def get_created_by_name(self, obj) -> str:
+        if obj.created_by:
+            return obj.created_by.get_full_name() or obj.created_by.username
+        return ""
+
+
+class AdditionalChargeCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating/updating additional charges."""
+
+    class Meta:
+        model = AdditionalCharge
+        fields = [
+            "container_entry",
+            "description",
+            "amount_usd",
+            "amount_uzs",
+            "charge_date",
+        ]
+
+    def create(self, validated_data):
+        validated_data["created_by"] = self.context["request"].user
+        return super().create(validated_data)
+
+
+# Expense Type Serializers
+
+
+class ExpenseTypeSerializer(serializers.ModelSerializer):
+    """Serializer for ExpenseType model."""
+
+    class Meta:
+        model = ExpenseType
+        fields = [
+            "id",
+            "name",
+            "default_rate_usd",
+            "default_rate_uzs",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]

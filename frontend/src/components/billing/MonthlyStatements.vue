@@ -197,6 +197,28 @@ import {
 } from '@ant-design/icons-vue';
 import { http } from '../../utils/httpClient';
 
+// Props for admin mode (viewing company billing)
+interface Props {
+  companySlug?: string;
+}
+
+const props = defineProps<Props>();
+
+// Compute base URL based on whether we're in admin or customer mode
+const billingBaseUrl = computed(() => {
+  if (props.companySlug) {
+    return `/auth/companies/${props.companySlug}/billing`;
+  }
+  return '/customer/billing';
+});
+
+const apiBillingBaseUrl = computed(() => {
+  if (props.companySlug) {
+    return `/api/auth/companies/${props.companySlug}/billing`;
+  }
+  return '/api/customer/billing';
+});
+
 interface StatementLineItem {
   id: number;
   container_number: string;
@@ -298,7 +320,7 @@ const fetchAvailablePeriods = async () => {
   periodsLoading.value = true;
   try {
     const result = await http.get<{ success: boolean; data: AvailablePeriod[] }>(
-      '/customer/billing/available-periods/'
+      `${billingBaseUrl.value}/available-periods/`
     );
     availablePeriods.value = result.data || [];
 
@@ -327,7 +349,7 @@ const fetchStatement = async (regenerate = false) => {
   if (regenerate) regenerating.value = true;
 
   try {
-    const url = `/customer/billing/statements/${selectedYear.value}/${selectedMonth.value}/${regenerate ? '?regenerate=true' : ''}`;
+    const url = `${billingBaseUrl.value}/statements/${selectedYear.value}/${selectedMonth.value}/${regenerate ? '?regenerate=true' : ''}`;
     const result = await http.get<{ success: boolean; data: MonthlyStatement }>(url);
     statement.value = result.data;
 
@@ -351,7 +373,7 @@ const regenerateStatement = () => fetchStatement(true);
 const exportExcel = () => {
   if (!selectedYear.value || !selectedMonth.value) return;
   window.open(
-    `/api/customer/billing/statements/${selectedYear.value}/${selectedMonth.value}/export/excel/`,
+    `${apiBillingBaseUrl.value}/statements/${selectedYear.value}/${selectedMonth.value}/export/excel/`,
     '_blank'
   );
   message.success('Загрузка Excel начата');
@@ -360,7 +382,7 @@ const exportExcel = () => {
 const exportPdf = () => {
   if (!selectedYear.value || !selectedMonth.value) return;
   window.open(
-    `/api/customer/billing/statements/${selectedYear.value}/${selectedMonth.value}/export/pdf/`,
+    `${apiBillingBaseUrl.value}/statements/${selectedYear.value}/${selectedMonth.value}/export/pdf/`,
     '_blank'
   );
   message.success('Загрузка PDF начата');

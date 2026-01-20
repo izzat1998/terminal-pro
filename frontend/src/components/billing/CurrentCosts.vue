@@ -96,6 +96,10 @@
       row-key="container_entry_id"
       :scroll="{ x: 1200 }"
       size="small"
+      :custom-row="(record: StorageCostItem) => ({
+        onDblclick: () => handleRowDoubleClick(record),
+        style: isAdmin ? 'cursor: pointer;' : '',
+      })"
       @change="handleTableChange"
     >
       <template #bodyCell="{ column, record }">
@@ -145,11 +149,20 @@
       :entry-id="selectedEntryId"
       :container-number="selectedContainerNumber"
     />
+
+    <!-- Additional Charges Section -->
+    <a-divider style="margin: 24px 0;">Дополнительные начисления</a-divider>
+
+    <AdditionalCharges
+      ref="additionalChargesRef"
+      :company-slug="companySlug"
+      :is-admin="isAdmin"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue';
+import { ref, watch, onUnmounted, computed } from 'vue';
 import { message } from 'ant-design-vue';
 import type { TableProps } from 'ant-design-vue';
 import type { Dayjs } from 'dayjs';
@@ -162,6 +175,26 @@ import {
 import { http } from '../../utils/httpClient';
 import type { PaginatedResponse } from '../../types/api';
 import StorageCostModal from '../StorageCostModal.vue';
+import AdditionalCharges from './AdditionalCharges.vue';
+
+// Props for admin mode (viewing company billing)
+interface Props {
+  companySlug?: string;
+}
+
+const props = defineProps<Props>();
+
+// Admin mode detection and ref
+const isAdmin = computed(() => !!props.companySlug);
+const additionalChargesRef = ref<InstanceType<typeof AdditionalCharges>>();
+
+// Compute base URL based on whether we're in admin or customer mode
+const baseUrl = computed(() => {
+  if (props.companySlug) {
+    return `/auth/companies/${props.companySlug}/storage-costs`;
+  }
+  return '/customer/storage-costs';
+});
 
 interface StorageCostItem {
   container_entry_id: number;
@@ -309,6 +342,15 @@ const showCostDetails = (record: StorageCostItem) => {
   detailModalVisible.value = true;
 };
 
+const handleRowDoubleClick = (record: StorageCostItem) => {
+  if (isAdmin.value && additionalChargesRef.value) {
+    additionalChargesRef.value.openAddModalForContainer(
+      record.container_entry_id,
+      record.container_number
+    );
+  }
+};
+
 const fetchStorageCosts = async () => {
   loading.value = true;
   try {
@@ -330,7 +372,7 @@ const fetchStorageCosts = async () => {
       params.append('entry_date_to', dateRange.value[1].format('YYYY-MM-DD'));
     }
 
-    const url = `/customer/storage-costs/?${params.toString()}`;
+    const url = `${baseUrl.value}/?${params.toString()}`;
     const result = await http.get<PaginatedResponse<StorageCostItem> & { summary: CostSummary }>(url);
 
     costs.value = result.results || [];
@@ -362,7 +404,10 @@ const exportToExcel = async () => {
     }
 
     const query = params.toString();
-    window.open(`/api/customer/storage-costs/export/${query ? '?' + query : ''}`, '_blank');
+    const exportUrl = props.companySlug
+      ? `/api/auth/companies/${props.companySlug}/storage-costs/export/`
+      : '/api/customer/storage-costs/export/';
+    window.open(`${exportUrl}${query ? '?' + query : ''}`, '_blank');
     message.success('Экспорт начат');
   } catch (error) {
     message.error('Ошибка при экспорте');

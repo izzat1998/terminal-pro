@@ -191,7 +191,7 @@ class TariffsService {
   }
 
   /**
-   * Calculate storage costs for multiple containers
+   * Calculate storage costs for multiple containers (admin endpoint)
    */
   async calculateBulkStorageCosts(params: {
     container_entry_ids?: number[];
@@ -214,6 +214,27 @@ class TariffsService {
     }>
   > {
     return http.post('/billing/storage-costs/calculate/', params);
+  }
+
+  /**
+   * Calculate storage costs for multiple containers (customer endpoint)
+   * Only calculates costs for containers belonging to the customer's company
+   */
+  async calculateCustomerBulkStorageCosts(params: {
+    container_entry_ids: number[];
+    as_of_date?: string;
+  }): Promise<
+    ApiResponse<{
+      results: StorageCostResult[];
+      summary: {
+        total_containers: number;
+        total_usd: string;
+        total_uzs: string;
+        total_billable_days: number;
+      };
+    }>
+  > {
+    return http.post('/customer/storage-costs/calculate/', params);
   }
 }
 

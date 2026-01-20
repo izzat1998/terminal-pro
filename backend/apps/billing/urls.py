@@ -6,8 +6,11 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    AdditionalChargeViewSet,
     BulkStorageCostView,
+    CustomerAdditionalChargeView,
     CustomerStorageCostView,
+    ExpenseTypeViewSet,
     StorageCostView,
     TariffViewSet,
 )
@@ -15,6 +18,8 @@ from .views import (
 
 router = DefaultRouter()
 router.register(r"tariffs", TariffViewSet, basename="tariff")
+router.register(r"additional-charges", AdditionalChargeViewSet, basename="additional-charge")
+router.register(r"expense-types", ExpenseTypeViewSet, basename="expense-type")
 
 urlpatterns = [
     # Tariff management (admin)
@@ -38,5 +43,10 @@ customer_urlpatterns = [
         "storage-costs/",
         CustomerStorageCostView.as_view(),
         name="customer-storage-costs",
+    ),
+    path(
+        "additional-charges/",
+        CustomerAdditionalChargeView.as_view(),
+        name="customer-additional-charges",
     ),
 ]

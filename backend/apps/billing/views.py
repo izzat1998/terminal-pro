@@ -13,13 +13,16 @@ from rest_framework.views import APIView
 
 from apps.terminal_operations.models import ContainerEntry
 
-from .models import Tariff
+from .models import AdditionalCharge, ExpenseType, Tariff
 from apps.customer_portal.permissions import IsCustomer
 
 from .serializers import (
+    AdditionalChargeCreateSerializer,
+    AdditionalChargeSerializer,
     AvailablePeriodSerializer,
     BulkStorageCostRequestSerializer,
     BulkStorageCostResponseSerializer,
+    ExpenseTypeSerializer,
     MonthlyStatementSerializer,
     StorageCostResultSerializer,
     TariffCreateSerializer,
@@ -284,11 +287,91 @@ class BulkStorageCostView(APIView):
         return Response({"success": True, "data": response_data})
 
 
+class CustomerBulkStorageCostView(APIView):
+    """
+    Calculate storage costs for multiple container entries (customer version).
+
+    POST /api/customer/storage-costs/calculate/
+
+    Only allows calculation for containers belonging to the customer's company.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """Calculate storage costs for customer's containers."""
+        user = request.user
+
+        # Get customer's company
+        if hasattr(user, "customer_profile") and user.customer_profile.company:
+            company = user.customer_profile.company
+        elif user.company:
+            company = user.company
+        else:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "NO_COMPANY",
+                        "message": "Пользователь не привязан к компании",
+                    },
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        container_entry_ids = request.data.get("container_entry_ids", [])
+        as_of_date_str = request.data.get("as_of_date")
+
+        # Parse as_of_date if provided
+        as_of_date = None
+        if as_of_date_str:
+            from datetime import datetime
+            try:
+                as_of_date = datetime.strptime(as_of_date_str, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+
+        # Filter to only include containers from customer's company
+        entries = ContainerEntry.objects.filter(
+            id__in=container_entry_ids,
+            company=company,  # Security: only company's containers
+        ).select_related("container", "company")
+
+        # Calculate costs
+        service = StorageCostService()
+        results = service.calculate_bulk_costs(entries, as_of_date)
+
+        # Build summary
+        total_usd = sum(r.total_usd for r in results)
+        total_uzs = sum(r.total_uzs for r in results)
+        total_billable = sum(r.billable_days for r in results)
+
+        response_data = {
+            "results": [StorageCostResultSerializer(r).data for r in results],
+            "summary": {
+                "total_containers": len(results),
+                "total_usd": str(total_usd),
+                "total_uzs": str(total_uzs),
+                "total_billable_days": total_billable,
+            },
+        }
+
+        return Response({"success": True, "data": response_data})
+
+
 class CustomerStorageCostView(APIView):
     """
-    Customer view for their storage costs.
+    Customer view for their storage costs with pagination and filtering.
 
     GET /api/customer/storage-costs/
+
+    Query parameters:
+        - page: Page number (default: 1)
+        - page_size: Items per page (default: 20)
+        - status: 'active' (on terminal) or 'exited'
+        - search: Search by container number
+        - entry_date_from: Filter by entry date (YYYY-MM-DD)
+        - entry_date_to: Filter by entry date (YYYY-MM-DD)
     """
 
     permission_classes = [IsAuthenticated]
@@ -314,41 +397,86 @@ class CustomerStorageCostView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Get active containers for the company
+        # Build base queryset
         entries = ContainerEntry.objects.filter(
             company=company,
-            exit_date__isnull=True,
         ).select_related("container", "company")
 
-        service = StorageCostService()
-        results = service.calculate_bulk_costs(entries)
+        # Apply filters
+        status_filter = request.query_params.get("status")
+        if status_filter == "active":
+            entries = entries.filter(exit_date__isnull=True)
+        elif status_filter == "exited":
+            entries = entries.filter(exit_date__isnull=False)
 
-        # Build response
-        active_containers = []
-        for result in results:
-            active_containers.append(
+        search = request.query_params.get("search", "").strip()
+        if search:
+            entries = entries.filter(container__container_number__icontains=search)
+
+        entry_date_from = request.query_params.get("entry_date_from")
+        if entry_date_from:
+            entries = entries.filter(entry_time__date__gte=entry_date_from)
+
+        entry_date_to = request.query_params.get("entry_date_to")
+        if entry_date_to:
+            entries = entries.filter(entry_time__date__lte=entry_date_to)
+
+        # Order by entry time descending
+        entries = entries.order_by("-entry_time")
+
+        # Get total count before pagination
+        total_count = entries.count()
+
+        # Pagination
+        page = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 20))
+        offset = (page - 1) * page_size
+        paginated_entries = entries[offset : offset + page_size]
+
+        # Calculate costs for paginated entries
+        service = StorageCostService()
+        cost_results = service.calculate_bulk_costs(paginated_entries)
+
+        # Build response items
+        results = []
+        for result in cost_results:
+            results.append(
                 {
+                    "container_entry_id": result.container_entry_id,
                     "container_number": result.container_number,
-                    "entry_date": result.entry_date,
-                    "days_stored": result.total_days,
-                    "current_cost_usd": result.total_usd,
-                    "current_cost_uzs": result.total_uzs,
+                    "company_name": result.company_name,
+                    "container_size": result.container_size,
+                    "container_status": result.container_status,
+                    "entry_date": result.entry_date.isoformat(),
+                    "end_date": result.end_date.isoformat(),
+                    "is_active": result.is_active,
+                    "total_days": result.total_days,
+                    "free_days_applied": result.free_days_applied,
+                    "billable_days": result.billable_days,
+                    "total_usd": str(result.total_usd),
+                    "total_uzs": str(result.total_uzs),
+                    "calculated_at": result.calculated_at.isoformat(),
                 }
             )
 
-        total_usd = sum(r.total_usd for r in results)
-        total_uzs = sum(r.total_uzs for r in results)
+        # Calculate summary for ALL matching entries (not just paginated)
+        # For performance, we calculate summary from paginated results if page 1
+        # In production, you might want to cache this or use aggregations
+        all_cost_results = service.calculate_bulk_costs(entries) if total_count <= 500 else cost_results
+
+        total_usd = sum(r.total_usd for r in all_cost_results)
+        total_uzs = sum(r.total_uzs for r in all_cost_results)
+        total_billable_days = sum(r.billable_days for r in all_cost_results)
 
         return Response(
             {
-                "success": True,
-                "data": {
-                    "active_containers": active_containers,
-                    "summary": {
-                        "total_active": len(results),
-                        "total_current_cost_usd": total_usd,
-                        "total_current_cost_uzs": total_uzs,
-                    },
+                "results": results,
+                "count": total_count,
+                "summary": {
+                    "total_containers": len(all_cost_results) if total_count <= 500 else total_count,
+                    "total_billable_days": total_billable_days,
+                    "total_usd": str(total_usd),
+                    "total_uzs": str(total_uzs),
                 },
             }
         )
@@ -537,3 +665,223 @@ class CustomerStatementExportPdfView(APIView):
         response = HttpResponse(pdf_file.getvalue(), content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+
+class AdditionalChargeViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing additional charges (admin only)."""
+
+    queryset = AdditionalCharge.objects.all().select_related(
+        "container_entry__container",
+        "container_entry__company",
+        "created_by",
+    )
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    pagination_class = None  # Disable pagination - charges are fetched per container
+
+    def get_serializer_class(self):
+        if self.action in ("create", "update", "partial_update"):
+            return AdditionalChargeCreateSerializer
+        return AdditionalChargeSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        container_entry_id = self.request.query_params.get("container_entry_id")
+        if container_entry_id:
+            queryset = queryset.filter(container_entry_id=container_entry_id)
+
+        company_id = self.request.query_params.get("company_id")
+        if company_id:
+            queryset = queryset.filter(container_entry__company_id=company_id)
+
+        date_from = self.request.query_params.get("date_from")
+        if date_from:
+            queryset = queryset.filter(charge_date__gte=date_from)
+
+        date_to = self.request.query_params.get("date_to")
+        if date_to:
+            queryset = queryset.filter(charge_date__lte=date_to)
+
+        return queryset.order_by("-charge_date", "-created_at")
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        charge = serializer.save()
+        response_serializer = AdditionalChargeSerializer(charge)
+        return Response(
+            {"success": True, "data": response_serializer.data},
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        response_serializer = AdditionalChargeSerializer(instance)
+        return Response({"success": True, "data": response_serializer.data})
+
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().delete()
+        return Response({"success": True, "message": "Начисление удалено"}, status=status.HTTP_200_OK)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = AdditionalChargeSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = AdditionalChargeSerializer(queryset, many=True)
+        return Response({"success": True, "data": serializer.data})
+
+    def retrieve(self, request, *args, **kwargs):
+        serializer = AdditionalChargeSerializer(self.get_object())
+        return Response({"success": True, "data": serializer.data})
+
+    @action(detail=False, methods=["post"], url_path="bulk-summary")
+    def bulk_summary(self, request):
+        """
+        Get summary of additional charges for multiple container entries.
+
+        POST /api/billing/additional-charges/bulk-summary/
+        Body: {"container_entry_ids": [1, 2, 3, ...]}
+
+        Returns summary (total_usd, total_uzs, count) per container entry.
+        """
+        container_entry_ids = request.data.get("container_entry_ids", [])
+        if not container_entry_ids:
+            return Response(
+                {"success": False, "error": {"code": "MISSING_IDS", "message": "container_entry_ids required"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from django.db.models import Sum, Count
+
+        # Get aggregated sums per container entry
+        summaries = (
+            AdditionalCharge.objects.filter(container_entry_id__in=container_entry_ids)
+            .values("container_entry_id")
+            .annotate(
+                total_usd=Sum("amount_usd"),
+                total_uzs=Sum("amount_uzs"),
+                charge_count=Count("id"),
+            )
+        )
+
+        # Build response map
+        results = []
+        summary_map = {s["container_entry_id"]: s for s in summaries}
+
+        for entry_id in container_entry_ids:
+            summary = summary_map.get(entry_id)
+            results.append({
+                "container_entry_id": entry_id,
+                "total_usd": str(summary["total_usd"]) if summary else "0.00",
+                "total_uzs": str(summary["total_uzs"]) if summary else "0",
+                "charge_count": summary["charge_count"] if summary else 0,
+            })
+
+        return Response({"success": True, "data": results})
+
+
+class CustomerAdditionalChargeView(APIView):
+    """Customer view for their additional charges (read-only)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        if hasattr(user, "customer_profile") and user.customer_profile.company:
+            company = user.customer_profile.company
+        elif user.company:
+            company = user.company
+        else:
+            return Response(
+                {"success": False, "error": {"code": "NO_COMPANY", "message": "Пользователь не привязан к компании"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queryset = AdditionalCharge.objects.filter(
+            container_entry__company=company
+        ).select_related(
+            "container_entry__container",
+            "container_entry__company",
+            "created_by",
+        ).order_by("-charge_date", "-created_at")
+
+        date_from = request.query_params.get("date_from")
+        if date_from:
+            queryset = queryset.filter(charge_date__gte=date_from)
+
+        date_to = request.query_params.get("date_to")
+        if date_to:
+            queryset = queryset.filter(charge_date__lte=date_to)
+
+        search = request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(container_entry__container__container_number__icontains=search)
+
+        from django.db.models import Sum
+        totals = queryset.aggregate(total_usd=Sum("amount_usd"), total_uzs=Sum("amount_uzs"))
+
+        serializer = AdditionalChargeSerializer(queryset, many=True)
+
+        return Response({
+            "success": True,
+            "data": serializer.data,
+            "summary": {
+                "total_charges": queryset.count(),
+                "total_usd": str(totals["total_usd"] or 0),
+                "total_uzs": str(totals["total_uzs"] or 0),
+            },
+        })
+
+
+class ExpenseTypeViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing expense types (admin only)."""
+
+    queryset = ExpenseType.objects.all()
+    serializer_class = ExpenseTypeSerializer
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # Filter by active status if requested
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == "true")
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        expense_type = serializer.save()
+        return Response(
+            {"success": True, "data": ExpenseTypeSerializer(expense_type).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"success": True, "data": serializer.data})
+
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().delete()
+        return Response(
+            {"success": True, "message": "Тип расхода удален"},
+            status=status.HTTP_200_OK,
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({"success": True, "data": serializer.data})
+
+    def retrieve(self, request, *args, **kwargs):
+        serializer = self.get_serializer(self.get_object())
+        return Response({"success": True, "data": serializer.data})
