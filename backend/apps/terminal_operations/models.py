@@ -184,8 +184,9 @@ class ContainerEntry(TimestampedModel):
     def dwell_time_days(self):
         """
         Calculate dwell time in days.
-        - For exited containers: days between entry and exit (minimum 1 day)
-        - For containers on terminal: days between entry and today (0 is OK for same day)
+        Minimum 1 day for any container - if a container is on terminal,
+        it occupies space starting from day 1, not day 0.
+        Also protects against negative values from timezone edge cases.
         """
         if not self.entry_time:
             return None
@@ -196,11 +197,9 @@ class ContainerEntry(TimestampedModel):
         delta = end_date - self.entry_time
         days = delta.days
 
-        # For exited containers, minimum 1 day (even for same-day entry/exit)
-        if self.exit_date and days == 0:
-            return 1
-
-        return days
+        # Minimum 1 day for any container (storage counts from day 1)
+        # max() also protects against negative values from timezone issues
+        return max(1, days)
 
     def get_client_display(self):
         """

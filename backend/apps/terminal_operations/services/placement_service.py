@@ -963,6 +963,7 @@ class PlacementService(BaseService):
         zone: Optional[str] = None,
         tier: Optional[int] = None,
         limit: int = 50,
+        container_size: Optional[str] = None,
     ) -> list:
         """
         Get list of available positions with optional filters.
@@ -971,37 +972,54 @@ class PlacementService(BaseService):
             zone: Filter by zone (optional)
             tier: Filter by tier (optional)
             limit: Max results to return
+            container_size: Filter by container size ("20ft", "40ft", "45ft")
+                           - 40ft/45ft: Only rows 1-5, sub_slot A only
+                           - 20ft: Only rows 6-10, sub_slots A and B
 
         Returns:
             List of available positions
         """
-        # Get all occupied coordinates
+        # Get all occupied coordinates (including sub_slot)
         occupied = set(
-            ContainerPosition.objects.values_list("zone", "row", "bay", "tier")
+            ContainerPosition.objects.values_list("zone", "row", "bay", "tier", "sub_slot")
         )
 
         available = []
         zones_to_check = [zone] if zone else ZONES
         tiers_to_check = [tier] if tier else range(1, MAX_TIERS + 1)
 
+        # Determine allowed rows and sub-slots based on container size
+        if container_size in ("40ft", "45ft"):
+            allowed_rows = ROWS_40FT  # rows 1-5
+            allowed_slots = ["A"]  # 40ft uses full bay
+        elif container_size == "20ft":
+            allowed_rows = ROWS_20FT  # rows 6-10
+            allowed_slots = ["A", "B"]  # 20ft can share bay
+        else:
+            # No size filter - return all rows but only slot A for simplicity
+            allowed_rows = list(range(1, MAX_ROWS + 1))
+            allowed_slots = ["A"]
+
         for z in zones_to_check:
             for t in tiers_to_check:
-                for r in range(1, MAX_ROWS + 1):
+                for r in allowed_rows:
                     for b in range(1, MAX_BAYS + 1):
-                        if (z, r, b, t) not in occupied:
-                            # Check stacking rules
-                            if t == 1 or (z, r, b, t - 1) in occupied:
-                                available.append(
-                                    {
-                                        "zone": z,
-                                        "row": r,
-                                        "bay": b,
-                                        "tier": t,
-                                        "coordinate": format_coordinate(z, r, b, t),
-                                    }
-                                )
-                                if len(available) >= limit:
-                                    return available
+                        for sub_slot in allowed_slots:
+                            if (z, r, b, t, sub_slot) not in occupied:
+                                # Check stacking rules (with sub_slot)
+                                if t == 1 or (z, r, b, t - 1, sub_slot) in occupied:
+                                    available.append(
+                                        {
+                                            "zone": z,
+                                            "row": r,
+                                            "bay": b,
+                                            "tier": t,
+                                            "sub_slot": sub_slot,
+                                            "coordinate": format_coordinate(z, r, b, t, sub_slot),
+                                        }
+                                    )
+                                    if len(available) >= limit:
+                                        return available
 
         return available
 

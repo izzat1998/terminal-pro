@@ -1228,8 +1228,9 @@ class PlacementViewSet(viewsets.GenericViewSet):
     @extend_schema(
         summary="Get available positions",
         description=(
-            "Returns list of available positions with optional filtering by zone and tier. "
-            "Only returns positions that satisfy stacking rules."
+            "Returns list of available positions with optional filtering by zone, tier, and container size. "
+            "Only returns positions that satisfy stacking rules and row segregation. "
+            "IMPORTANT: Pass container_size to get size-appropriate positions (40ft=rows 1-5, 20ft=rows 6-10)."
         ),
         parameters=[
             OpenApiParameter(
@@ -1250,6 +1251,13 @@ class PlacementViewSet(viewsets.GenericViewSet):
                 type=int,
                 required=False,
                 description="Max positions to return (default 50)",
+            ),
+            OpenApiParameter(
+                name="container_size",
+                type=str,
+                enum=["20ft", "40ft", "45ft"],
+                required=False,
+                description="Filter by container size (40ft/45ft=rows 1-5, 20ft=rows 6-10)",
             ),
         ],
         responses={
@@ -1273,6 +1281,7 @@ class PlacementViewSet(viewsets.GenericViewSet):
         zone = request.query_params.get("zone")
         tier = request.query_params.get("tier")
         limit = int(request.query_params.get("limit", 50))
+        container_size = request.query_params.get("container_size")
 
         if tier:
             tier = int(tier)
@@ -1282,6 +1291,7 @@ class PlacementViewSet(viewsets.GenericViewSet):
             zone=zone,
             tier=tier,
             limit=limit,
+            container_size=container_size,
         )
 
         return Response(

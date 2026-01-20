@@ -135,12 +135,12 @@ class TestContainerEntryModel:
         """Test dwell time calculation using dwell_time_days property."""
         from datetime import timedelta
 
-        # No exit date - should return days from entry to now (0 for same day)
+        # No exit date - should return minimum 1 day (even for same-day entry)
         days_no_exit = container_entry.dwell_time_days
         assert days_no_exit is not None
-        assert days_no_exit >= 0
+        assert days_no_exit >= 1  # Minimum 1 day for any container
 
-        # Add exit date
+        # Add exit date 5 days later
         container_entry.exit_date = container_entry.entry_time + timedelta(days=5)
         container_entry.save()
 

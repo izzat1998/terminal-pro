@@ -5,7 +5,7 @@ from apps.containers.models import Container
 from apps.core.exceptions import BusinessLogicError, DuplicateEntryError
 from apps.core.services import BaseService
 
-from ..models import ContainerEntry, CraneOperation
+from ..models import ContainerEntry, ContainerPosition, CraneOperation
 
 
 class ContainerEntryService(BaseService):
@@ -223,6 +223,14 @@ class ContainerEntryService(BaseService):
         # Update exit fields
         if exit_date is not None:
             entry.exit_date = exit_date
+            # Remove position when container exits (free up terminal space)
+            if hasattr(entry, "position") and entry.position:
+                position_coord = entry.position.coordinate_string
+                entry.position.delete()
+                entry.location = ""  # Clear location field
+                self.logger.info(
+                    f"Removed position {position_coord} for exited container {entry.container.container_number}"
+                )
         if exit_transport_type is not None:
             entry.exit_transport_type = exit_transport_type
         if exit_train_number is not None:
