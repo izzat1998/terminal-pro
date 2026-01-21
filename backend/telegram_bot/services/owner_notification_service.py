@@ -160,10 +160,17 @@ class OwnerNotificationService:
 
     def _build_message_from_data(self, data: NotificationData) -> str:
         """Build notification message in Russian from extracted data."""
+        # Format container number with space for readability (e.g., TEMU 1234567)
+        container_num = data.container_number
+        if len(container_num) >= 4:
+            display_container = f"{container_num[:4]} {container_num[4:]}"
+        else:
+            display_container = container_num
+
         message = (
             f"📦 <b>Новый контейнер на терминале</b>\n"
             f"\n"
-            f"📋 Контейнер: <code>{escape(data.container_number)}</code>\n"
+            f"📋 Контейнер: <code>{escape(display_container)}</code>\n"
             f"📐 ISO тип: {escape(data.iso_type)}\n"
             f"📊 Статус: {escape(data.status_display)}\n"
             f"🚛 Транспорт: {escape(data.transport_display)} ({escape(data.transport_number)})\n"
