@@ -4,11 +4,13 @@ to container owner Telegram groups.
 """
 
 import logging
+from dataclasses import dataclass
 from html import escape
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import InputMediaPhoto
+from asgiref.sync import sync_to_async
 
 from apps.accounts.models import CustomUser
 from apps.terminal_operations.models import ContainerEntry
@@ -17,8 +19,56 @@ from apps.terminal_operations.models import ContainerEntry
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class NotificationResult:
+    """Result of a notification attempt."""
+
+    status: str  # 'sent', 'skipped', 'error'
+    error_message: str = ""
+
+
+@dataclass
+class NotificationData:
+    """Data extracted from entry for notification (sync-safe)."""
+
+    entry_id: int
+    owner_name: str | None
+    owner_notifications_enabled: bool
+    owner_telegram_group_id: str | None
+    container_number: str
+    iso_type: str
+    status_display: str
+    transport_display: str
+    transport_number: str
+    entry_time_str: str
+    manager_name: str
+
+
 class OwnerNotificationService:
     """Send notifications to container owner Telegram groups."""
+
+    def _extract_notification_data(
+        self, entry: ContainerEntry, manager: CustomUser
+    ) -> NotificationData:
+        """
+        Extract all needed data from entry in sync context.
+        Must be called via sync_to_async.
+        """
+        owner = entry.container_owner
+
+        return NotificationData(
+            entry_id=entry.id,
+            owner_name=owner.name if owner else None,
+            owner_notifications_enabled=owner.notifications_enabled if owner else False,
+            owner_telegram_group_id=owner.telegram_group_id if owner else None,
+            container_number=entry.container.container_number,
+            iso_type=entry.container.iso_type or "-",
+            status_display=entry.get_status_display(),
+            transport_display=entry.get_transport_type_display(),
+            transport_number=entry.transport_number or "-",
+            entry_time_str=entry.entry_time.strftime("%d.%m.%Y %H:%M"),
+            manager_name=manager.get_full_name() or manager.username,
+        )
 
     async def notify_container_entry(
         self,
@@ -26,7 +76,7 @@ class OwnerNotificationService:
         entry: ContainerEntry,
         manager: CustomUser,
         photo_file_ids: list[str] | None = None,
-    ) -> bool:
+    ) -> NotificationResult:
         """
         Send entry notification to container owner's group.
 
@@ -37,28 +87,30 @@ class OwnerNotificationService:
             photo_file_ids: Optional list of Telegram photo file_ids
 
         Returns:
-            True if sent, False if skipped/failed (silent failure)
+            NotificationResult with status ('sent', 'skipped', 'error') and error_message
         """
+        # Extract all data in sync context to avoid async ORM issues
+        data = await sync_to_async(self._extract_notification_data)(entry, manager)
+
         # Check if container owner is set and notifications enabled
-        owner = entry.container_owner
-        if not owner:
-            logger.debug(f"No container owner for entry {entry.id}, skipping notification")
-            return False
+        if not data.owner_name:
+            logger.debug(f"No container owner for entry {data.entry_id}, skipping notification")
+            return NotificationResult(status="skipped", error_message="Владелец не указан")
 
-        if not owner.notifications_enabled:
-            logger.debug(f"Notifications disabled for owner {owner.name}, skipping")
-            return False
+        if not data.owner_notifications_enabled:
+            logger.debug(f"Notifications disabled for owner {data.owner_name}, skipping")
+            return NotificationResult(status="skipped", error_message="Уведомления отключены")
 
-        if not owner.telegram_group_id:
-            logger.debug(f"No telegram_group_id for owner {owner.name}, skipping")
-            return False
+        if not data.owner_telegram_group_id:
+            logger.debug(f"No telegram_group_id for owner {data.owner_name}, skipping")
+            return NotificationResult(status="skipped", error_message="Группа не настроена")
 
         # Build notification message
-        message = self._build_message(entry, manager)
+        message = self._build_message_from_data(data)
 
         try:
             # Send to group (supports both numeric ID and @username)
-            chat_id = owner.telegram_group_id.strip()
+            chat_id = data.owner_telegram_group_id.strip()
 
             if photo_file_ids:
                 # Send photos as media group with caption on first photo
@@ -72,18 +124,18 @@ class OwnerNotificationService:
                 )
 
             logger.info(
-                f"Sent container entry notification to {owner.name} "
-                f"(group: {chat_id}) for entry {entry.id}"
+                f"Sent container entry notification to {data.owner_name} "
+                f"(group: {chat_id}) for entry {data.entry_id}"
             )
-            return True
+            return NotificationResult(status="sent")
 
         except Exception as e:
             # Silent fail - log error but don't interrupt entry creation
             logger.error(
-                f"Failed to send notification to owner {owner.name} "
-                f"(group: {owner.telegram_group_id}): {e}"
+                f"Failed to send notification to owner {data.owner_name} "
+                f"(group: {data.owner_telegram_group_id}): {e}"
             )
-            return False
+            return NotificationResult(status="error", error_message=str(e))
 
     async def _send_with_photos(
         self,
@@ -106,40 +158,17 @@ class OwnerNotificationService:
 
         await bot.send_media_group(chat_id=chat_id, media=media_group)
 
-    def _build_message(self, entry: ContainerEntry, manager: CustomUser) -> str:
-        """Build notification message in Russian."""
-        # Format container number with space (e.g., MSKU 1234567)
-        container_num = entry.container.container_number
-        if len(container_num) >= 4:
-            formatted_container = f"{container_num[:4]} {container_num[4:]}"
-        else:
-            formatted_container = container_num
-
-        # Get ISO type
-        iso_type = entry.container.iso_type or "-"
-
-        # Get status display (Russian)
-        status_display = entry.get_status_display()
-
-        # Get transport display (Russian)
-        transport_display = entry.get_transport_type_display()
-        transport_number = entry.transport_number or "-"
-
-        # Format entry time
-        entry_time = entry.entry_time.strftime("%d.%m.%Y %H:%M")
-
-        # Manager name (escape for HTML safety)
-        manager_name = escape(manager.get_full_name() or manager.username)
-
+    def _build_message_from_data(self, data: NotificationData) -> str:
+        """Build notification message in Russian from extracted data."""
         message = (
             f"📦 <b>Новый контейнер на терминале</b>\n"
             f"\n"
-            f"📋 Контейнер: <code>{escape(formatted_container)}</code>\n"
-            f"📐 ISO тип: {escape(iso_type)}\n"
-            f"📊 Статус: {escape(status_display)}\n"
-            f"🚛 Транспорт: {escape(transport_display)} ({escape(transport_number)})\n"
-            f"🕐 Время въезда: {entry_time}\n"
-            f"👤 Менеджер: {manager_name}"
+            f"📋 Контейнер: <code>{escape(data.container_number)}</code>\n"
+            f"📐 ISO тип: {escape(data.iso_type)}\n"
+            f"📊 Статус: {escape(data.status_display)}\n"
+            f"🚛 Транспорт: {escape(data.transport_display)} ({escape(data.transport_number)})\n"
+            f"🕐 Время въезда: {data.entry_time_str}\n"
+            f"👤 Менеджер: {escape(data.manager_name)}"
         )
 
         return message
