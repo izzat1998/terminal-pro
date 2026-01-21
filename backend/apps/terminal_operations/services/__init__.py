@@ -1,6 +1,7 @@
 from .container_entry_export_service import ContainerEntryExportService
 from .container_entry_import_service import ContainerEntryImportService
 from .container_entry_service import ContainerEntryService
+from .container_event_service import ContainerEventService
 from .crane_operation_service import CraneOperationService
 from .executive_dashboard_service import ExecutiveDashboardService
 from .gate_matching_service import GateMatchingService
@@ -14,6 +15,7 @@ __all__ = [
     "ContainerEntryExportService",
     "ContainerEntryImportService",
     "ContainerEntryService",
+    "ContainerEventService",
     "CraneOperationService",
     "ExecutiveDashboardService",
     "GateMatchingService",
