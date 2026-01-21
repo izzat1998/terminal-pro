@@ -33,6 +33,10 @@
         <template v-if="column.key === 'number'">
           {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
         </template>
+        <template v-else-if="column.key === 'notifications'">
+          <a-tag v-if="record.notifications_enabled" color="green">Вкл</a-tag>
+          <a-tag v-else color="default">Выкл</a-tag>
+        </template>
         <template v-else-if="column.key === 'actions'">
           <a-space>
             <a-tooltip title="Редактировать">
@@ -75,6 +79,17 @@
       <a-form-item label="Название" required>
         <a-input v-model:value="createForm.name" />
       </a-form-item>
+      <a-divider>Telegram уведомления</a-divider>
+      <a-form-item label="ID группы">
+        <a-input v-model:value="createForm.telegram_group_id" placeholder="-1001234567890 или @groupname" />
+      </a-form-item>
+      <a-form-item label="Название группы">
+        <a-input v-model:value="createForm.telegram_group_name" placeholder="Для отображения в списке" />
+      </a-form-item>
+      <a-form-item label="Уведомления">
+        <a-switch v-model:checked="createForm.notifications_enabled" />
+        <span style="margin-left: 8px;">{{ createForm.notifications_enabled ? 'Включены' : 'Выключены' }}</span>
+      </a-form-item>
     </a-form>
   </a-modal>
 
@@ -89,6 +104,17 @@
     <a-form :model="editForm" layout="vertical">
       <a-form-item label="Название" required>
         <a-input v-model:value="editForm.name" />
+      </a-form-item>
+      <a-divider>Telegram уведомления</a-divider>
+      <a-form-item label="ID группы">
+        <a-input v-model:value="editForm.telegram_group_id" placeholder="-1001234567890 или @groupname" />
+      </a-form-item>
+      <a-form-item label="Название группы">
+        <a-input v-model:value="editForm.telegram_group_name" placeholder="Для отображения в списке" />
+      </a-form-item>
+      <a-form-item label="Уведомления">
+        <a-switch v-model:checked="editForm.notifications_enabled" />
+        <span style="margin-left: 8px;">{{ editForm.notifications_enabled ? 'Включены' : 'Выключены' }}</span>
       </a-form-item>
     </a-form>
   </a-modal>
@@ -105,6 +131,9 @@ interface Owner {
   id: number;
   name: string;
   slug: string;
+  telegram_group_id: string | null;
+  telegram_group_name: string;
+  notifications_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -114,6 +143,9 @@ interface OwnerRecord {
   id: number;
   name: string;
   slug: string;
+  telegram_group_id: string | null;
+  telegram_group_name: string;
+  notifications_enabled: boolean;
   created: string;
   updated: string;
 }
@@ -126,27 +158,40 @@ const columns = [
     title: '№',
     key: 'number',
     align: 'center' as const,
-    width: 80,
+    width: 60,
   },
   {
     title: 'Название',
     dataIndex: 'name',
     key: 'name',
     align: 'center' as const,
-    width: 300,
+    width: 200,
+  },
+  {
+    title: 'Telegram группа',
+    dataIndex: 'telegram_group_name',
+    key: 'telegram_group_name',
+    align: 'center' as const,
+    width: 150,
+  },
+  {
+    title: 'Уведомления',
+    key: 'notifications',
+    align: 'center' as const,
+    width: 120,
   },
   {
     title: 'Дата обновления',
     dataIndex: 'updated',
     key: 'updated',
     align: 'center' as const,
-    width: 200,
+    width: 160,
   },
   {
     title: 'Действия',
     key: 'actions',
     align: 'center' as const,
-    width: 150,
+    width: 120,
   },
 ];
 
@@ -182,6 +227,9 @@ const fetchData = async (page?: number, pageSize?: number) => {
       id: owner.id,
       name: owner.name,
       slug: owner.slug,
+      telegram_group_id: owner.telegram_group_id,
+      telegram_group_name: owner.telegram_group_name || '-',
+      notifications_enabled: owner.notifications_enabled,
       created: formatDateTime(owner.created_at),
       updated: formatDateTime(owner.updated_at),
     }));
@@ -212,16 +260,25 @@ const createModalVisible = ref(false);
 const createLoading = ref(false);
 const createForm = reactive({
   name: '',
+  telegram_group_id: '',
+  telegram_group_name: '',
+  notifications_enabled: false,
 });
 
 const showCreateModal = () => {
   createForm.name = '';
+  createForm.telegram_group_id = '';
+  createForm.telegram_group_name = '';
+  createForm.notifications_enabled = false;
   createModalVisible.value = true;
 };
 
 const handleCreateCancel = () => {
   createModalVisible.value = false;
   createForm.name = '';
+  createForm.telegram_group_id = '';
+  createForm.telegram_group_name = '';
+  createForm.notifications_enabled = false;
 };
 
 const handleCreateSubmit = async () => {
@@ -233,7 +290,12 @@ const handleCreateSubmit = async () => {
   try {
     createLoading.value = true;
 
-    await http.post('/terminal/owners/', { name: createForm.name });
+    await http.post('/terminal/owners/', {
+      name: createForm.name,
+      telegram_group_id: createForm.telegram_group_id || null,
+      telegram_group_name: createForm.telegram_group_name,
+      notifications_enabled: createForm.notifications_enabled,
+    });
 
     message.success('Собственник успешно создан');
     createModalVisible.value = false;
@@ -251,11 +313,17 @@ const editLoading = ref(false);
 const editForm = reactive({
   id: 0,
   name: '',
+  telegram_group_id: '',
+  telegram_group_name: '',
+  notifications_enabled: false,
 });
 
 const showEditModal = (record: OwnerRecord) => {
   editForm.id = record.id;
   editForm.name = record.name;
+  editForm.telegram_group_id = record.telegram_group_id || '';
+  editForm.telegram_group_name = record.telegram_group_name === '-' ? '' : record.telegram_group_name;
+  editForm.notifications_enabled = record.notifications_enabled;
   editModalVisible.value = true;
 };
 
@@ -263,6 +331,9 @@ const handleEditCancel = () => {
   editModalVisible.value = false;
   editForm.id = 0;
   editForm.name = '';
+  editForm.telegram_group_id = '';
+  editForm.telegram_group_name = '';
+  editForm.notifications_enabled = false;
 };
 
 const handleEditSubmit = async () => {
@@ -274,7 +345,12 @@ const handleEditSubmit = async () => {
   try {
     editLoading.value = true;
 
-    await http.patch(`/terminal/owners/${editForm.id}/`, { name: editForm.name });
+    await http.patch(`/terminal/owners/${editForm.id}/`, {
+      name: editForm.name,
+      telegram_group_id: editForm.telegram_group_id || null,
+      telegram_group_name: editForm.telegram_group_name,
+      notifications_enabled: editForm.notifications_enabled,
+    });
 
     message.success('Собственник успешно обновлён');
     editModalVisible.value = false;

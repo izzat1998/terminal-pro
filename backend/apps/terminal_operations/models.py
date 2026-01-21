@@ -18,6 +18,25 @@ class ContainerOwner(TimestampedModel):
         max_length=250, unique=True, help_text="URL-совместимый идентификатор"
     )
 
+    # Telegram notification settings
+    telegram_group_id = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name="Telegram группа",
+        help_text="ID группы (-1001234567890) или username (@mygroup)",
+    )
+    telegram_group_name = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Название группы",
+    )
+    notifications_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Уведомления включены",
+    )
+
     class Meta:
         ordering = ["name"]
         verbose_name = "Владелец контейнера"

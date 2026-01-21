@@ -26,6 +26,7 @@ from telegram_bot.keyboards.inline import (
 from telegram_bot.keyboards.reply import get_cancel_keyboard, get_main_keyboard
 from telegram_bot.middleware import require_manager_access
 from telegram_bot.services.entry_service import BotEntryService
+from telegram_bot.services.owner_notification_service import OwnerNotificationService
 from telegram_bot.services.plate_recognizer_service import PlateRecognizerService
 from telegram_bot.states.entry import EntryForm
 from telegram_bot.translations import (
@@ -54,6 +55,7 @@ entry_service = BotEntryService()
 plate_recognizer_service = PlateRecognizerService()
 gate_matching_service = GateMatchingService()
 activity_log_service = ActivityLogService()
+owner_notification_service = OwnerNotificationService()
 
 
 async def get_user_language(state: FSMContext) -> str:
@@ -858,6 +860,14 @@ async def confirm_entry(
             user=user,
             telegram_user_id=callback.from_user.id,
             container_entry=entry,
+        )
+
+        # Send notification to container owner's Telegram group (silent fail)
+        await owner_notification_service.notify_container_entry(
+            bot=bot,
+            entry=entry,
+            manager=user,
+            photo_file_ids=all_photo_file_ids if all_photo_file_ids else None,
         )
 
         # Complete pre-order match if one was found

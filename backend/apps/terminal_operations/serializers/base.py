@@ -18,10 +18,22 @@ class ContainerOwnerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ContainerOwner
-        fields = ["id", "name", "slug", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "telegram_group_id",
+            "telegram_group_name",
+            "notifications_enabled",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["id", "created_at", "updated_at"]
         extra_kwargs = {
-            "slug": {"required": False}  # Auto-generated if not provided
+            "slug": {"required": False},  # Auto-generated if not provided
+            "telegram_group_id": {"required": False, "allow_null": True},
+            "telegram_group_name": {"required": False},
+            "notifications_enabled": {"required": False},
         }
 
     def validate_name(self, value):
