@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.core.models import TelegramActivityLog
 from apps.core.pagination import StandardResultsSetPagination
@@ -15,6 +16,7 @@ from apps.core.serializers import (
     TelegramActivityLogSerializer,
     TelegramActivityLogSummarySerializer,
 )
+from apps.core.services.telegram_group_test_service import TelegramGroupTestService
 
 
 class TelegramActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
@@ -123,3 +125,61 @@ class TelegramActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = self.get_queryset().filter(created_at__gte=since)[:50]
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+
+class TestTelegramGroupView(APIView):
+    """
+    Test if the Telegram bot has access to a group.
+
+    POST /api/telegram/test-group/
+    {
+        "group_id": "-1001234567890"  // or "@groupname"
+    }
+
+    Returns group info on success, error details on failure.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        group_id = request.data.get("group_id", "").strip()
+
+        if not group_id:
+            return Response(
+                {
+                    "success": False,
+                    "data": {
+                        "accessible": False,
+                        "error_code": "INVALID_ID",
+                        "error_message": "ID группы не указан",
+                    },
+                },
+                status=400,
+            )
+
+        service = TelegramGroupTestService()
+        result = service.test_group(group_id)
+
+        if result.accessible:
+            return Response(
+                {
+                    "success": True,
+                    "data": {
+                        "accessible": True,
+                        "group_title": result.group_title,
+                        "group_type": result.group_type,
+                        "member_count": result.member_count,
+                    },
+                }
+            )
+        else:
+            return Response(
+                {
+                    "success": False,
+                    "data": {
+                        "accessible": False,
+                        "error_code": result.error_code,
+                        "error_message": result.error_message,
+                    },
+                }
+            )
