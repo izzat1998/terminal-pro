@@ -770,3 +770,91 @@ class WorkOrder(TimestampedModel):
             f"{self.order_number}: {self.container_entry.container.container_number} "
             f"→ {self.target_coordinate_string} ({self.get_status_display()})"
         )
+
+
+class ContainerEvent(TimestampedModel):
+    """
+    Tracks all significant events in a container's lifecycle on the terminal.
+    Single table design with event_type discriminator and JSON details.
+    """
+
+    EVENT_TYPE_CHOICES = [
+        ("ENTRY_CREATED", "Контейнер принят"),
+        ("STATUS_CHANGED", "Статус изменён"),
+        ("POSITION_ASSIGNED", "Позиция назначена"),
+        ("POSITION_REMOVED", "Позиция освобождена"),
+        ("CRANE_OPERATION", "Крановая операция"),
+        ("WORK_ORDER_CREATED", "Наряд создан"),
+        ("WORK_ORDER_COMPLETED", "Наряд завершён"),
+        ("EXIT_RECORDED", "Выезд зарегистрирован"),
+    ]
+
+    SOURCE_CHOICES = [
+        ("API", "API"),
+        ("TELEGRAM_BOT", "Telegram бот"),
+        ("EXCEL_IMPORT", "Импорт Excel"),
+        ("SYSTEM", "Система"),
+    ]
+
+    container_entry = models.ForeignKey(
+        ContainerEntry,
+        on_delete=models.CASCADE,
+        related_name="events",
+        help_text="Запись въезда контейнера",
+    )
+
+    event_type = models.CharField(
+        max_length=30,
+        choices=EVENT_TYPE_CHOICES,
+        db_index=True,
+        help_text="Тип события",
+    )
+
+    event_time = models.DateTimeField(
+        db_index=True,
+        help_text="Время события",
+    )
+
+    performed_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="container_events",
+        help_text="Пользователь, выполнивший действие",
+    )
+
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default="API",
+        help_text="Источник события",
+    )
+
+    details = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Детали события в формате JSON",
+    )
+
+    class Meta:
+        ordering = ["event_time", "created_at"]
+        verbose_name = "Событие контейнера"
+        verbose_name_plural = "События контейнеров"
+        indexes = [
+            models.Index(
+                fields=["container_entry", "event_time"],
+                name="event_entry_time_idx",
+            ),
+            models.Index(
+                fields=["event_type", "-event_time"],
+                name="event_type_time_idx",
+            ),
+            models.Index(
+                fields=["-event_time"],
+                name="event_time_desc_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.container_entry.container.container_number}: {self.get_event_type_display()} ({self.event_time})"
