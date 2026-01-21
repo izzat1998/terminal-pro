@@ -43,6 +43,8 @@ ALLOWED_HOSTS = os.getenv(
 # CSRF Trusted Origins - for production domains
 CSRF_TRUSTED_ORIGINS = [
     "https://api-mtt.xlog.uz",
+    "https://mtt-pro.xlog.uz",
+    "https://mtt-pro-api.xlog.uz",
     "http://localhost:8008",
     "http://127.0.0.1:8008",
 ]
@@ -268,6 +270,8 @@ if not DEBUG:
         "https://173.212.243.40",
         "http://mtt.xlog.uz",
         "https://mtt.xlog.uz",
+        "https://mtt-pro.xlog.uz",
+        "https://mtt-pro-api.xlog.uz",
         "https://barbershop-miniapp-beta.automations.uz",
     ]
 else:
