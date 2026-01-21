@@ -71,6 +71,13 @@ from .work_orders import (
     get_container_size_from_iso,
 )
 
+# Event serializers
+from .events import (
+    ContainerEventSerializer,
+    ContainerTimelineSerializer,
+    EventPerformerSerializer,
+)
+
 
 __all__ = [
     # Base
@@ -119,4 +126,8 @@ __all__ = [
     "WorkOrderListSerializer",
     "WorkOrderCreateSerializer",
     "WorkOrderAssignSerializer",
+    # Events
+    "EventPerformerSerializer",
+    "ContainerEventSerializer",
+    "ContainerTimelineSerializer",
 ]
