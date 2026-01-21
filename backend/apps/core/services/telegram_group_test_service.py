@@ -65,11 +65,12 @@ class TelegramGroupTestService:
                     error_message="Указанный ID не является группой или каналом",
                 )
 
+            # member_count requires separate API call in aiogram 3.x, skip it
             return GroupTestResult(
                 accessible=True,
                 group_title=chat.title,
                 group_type=chat.type,
-                member_count=chat.member_count,
+                member_count=None,
             )
 
         except TelegramNotFound:
