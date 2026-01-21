@@ -146,6 +146,7 @@ class ManagerViewSet(viewsets.ModelViewSet):
                 gate_access=serializer.validated_data.get("gate_access", False),
                 is_active=serializer.validated_data.get("is_active", True),
                 password=serializer.validated_data.get("password"),
+                telegram_user_id=serializer.validated_data.get("telegram_user_id"),
             )
 
             return Response(

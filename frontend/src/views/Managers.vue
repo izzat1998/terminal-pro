@@ -97,6 +97,15 @@
       <a-form-item label="Пароль" required extra="Минимум 8 символов">
         <a-input-password v-model:value="createForm.password" placeholder="Введите пароль" />
       </a-form-item>
+      <a-form-item label="Telegram ID" extra="Необязательно. ID пользователя в Telegram для привязки аккаунта">
+        <a-input-number
+          v-model:value="createForm.telegram_user_id"
+          placeholder="Например: 123456789"
+          style="width: 100%"
+          :min="1"
+          :controls="false"
+        />
+      </a-form-item>
       <a-form-item label="Доступ к боту">
         <a-switch v-model:checked="createForm.bot_access" />
       </a-form-item>
@@ -115,6 +124,7 @@
     :manager-id="editingManager.id"
     :first-name="editingManager.first_name"
     :phone-number="editingManager.phone_number"
+    :telegram-user-id="editingManager.telegram_user_id"
     :bot-access="editingManager.bot_access"
     :gate-access="editingManager.gate_access"
     :is-active="editingManager.is_active"
@@ -150,6 +160,7 @@ interface Manager {
   id: number;
   first_name: string;
   phone_number: string;
+  telegram_user_id: number | null;
   bot_access: boolean;
   gate_access: boolean;
   is_active: boolean;
@@ -162,6 +173,7 @@ interface ManagerRecord {
   id: number;
   first_name: string;
   phone_number: string;
+  telegram_user_id: number | null;
   bot_access: boolean;
   gate_access: boolean;
   is_active: boolean;
@@ -190,6 +202,13 @@ const columns = [
     key: 'phone_number',
     align: 'center' as const,
     width: 150,
+  },
+  {
+    title: 'Telegram ID',
+    dataIndex: 'telegram_user_id',
+    key: 'telegram_user_id',
+    align: 'center' as const,
+    width: 140,
   },
   {
     title: 'Доступ к боту',
@@ -260,6 +279,7 @@ const fetchData = async (page?: number, pageSize?: number) => {
       id: manager.id,
       first_name: manager.first_name,
       phone_number: manager.phone_number,
+      telegram_user_id: manager.telegram_user_id,
       bot_access: manager.bot_access,
       gate_access: manager.gate_access,
       is_active: manager.is_active,
@@ -301,29 +321,30 @@ const createForm = reactive({
   first_name: '',
   phone_number: '',
   password: '',
+  telegram_user_id: null as number | null,
   bot_access: true,
   gate_access: true,
   is_active: true,
 });
 
-const showCreateModal = () => {
+const resetCreateForm = () => {
   createForm.first_name = '';
   createForm.phone_number = '';
   createForm.password = '';
+  createForm.telegram_user_id = null;
   createForm.bot_access = true;
   createForm.gate_access = true;
   createForm.is_active = true;
+};
+
+const showCreateModal = () => {
+  resetCreateForm();
   createModalVisible.value = true;
 };
 
 const handleCreateCancel = () => {
   createModalVisible.value = false;
-  createForm.first_name = '';
-  createForm.phone_number = '';
-  createForm.password = '';
-  createForm.bot_access = true;
-  createForm.gate_access = true;
-  createForm.is_active = true;
+  resetCreateForm();
 };
 
 const handleCreateSubmit = async () => {
@@ -357,14 +378,22 @@ const handleCreateSubmit = async () => {
   try {
     createLoading.value = true;
 
-    await http.post('/auth/managers/', {
+    // Build request data, only include telegram_user_id if provided
+    const requestData: Record<string, unknown> = {
       first_name: createForm.first_name,
       phone_number: createForm.phone_number,
       password: createForm.password,
       bot_access: createForm.bot_access,
       gate_access: createForm.gate_access,
       is_active: createForm.is_active,
-    });
+    };
+
+    // Only send telegram_user_id if it's a valid number
+    if (createForm.telegram_user_id !== null && createForm.telegram_user_id > 0) {
+      requestData.telegram_user_id = createForm.telegram_user_id;
+    }
+
+    await http.post('/auth/managers/', requestData);
 
     message.success('Менеджер успешно создан');
     createModalVisible.value = false;
@@ -382,6 +411,7 @@ const editingManager = reactive({
   id: undefined as number | undefined,
   first_name: '',
   phone_number: '',
+  telegram_user_id: null as number | null,
   bot_access: true,
   gate_access: true,
   is_active: true,
@@ -391,6 +421,7 @@ const showEditModal = (record: ManagerRecord) => {
   editingManager.id = record.id;
   editingManager.first_name = record.first_name;
   editingManager.phone_number = record.phone_number;
+  editingManager.telegram_user_id = record.telegram_user_id;
   editingManager.bot_access = record.bot_access;
   editingManager.gate_access = record.gate_access;
   editingManager.is_active = record.is_active;

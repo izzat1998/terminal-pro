@@ -406,7 +406,7 @@
                     >
                       <div class="expense-info">
                         <span class="expense-name">{{ expense.description }}</span>
-                        <span class="expense-date">{{ new Date(expense.charge_date).toLocaleDateString('ru-RU') }}</span>
+                        <span class="expense-date">{{ formatDateLocale(expense.charge_date) }}</span>
                       </div>
                       <div class="expense-amount">
                         <span class="expense-usd">${{ parseFloat(expense.amount_usd).toFixed(2) }}</span>
@@ -712,6 +712,8 @@ import Container3DModal from './Container3DModal.vue';
 import StorageCostModal from './StorageCostModal.vue';
 import AdditionalCharges from './billing/AdditionalCharges.vue';
 import { additionalChargesService, type AdditionalCharge } from '../services/additionalChargesService';
+import { formatDateLocale } from '../utils/dateFormat';
+import dayjs from '@/config/dayjs';
 
 // Initialize composables
 const { transformEntries } = useContainerTransform();
@@ -1513,7 +1515,7 @@ const handleStatusTabChange = () => {
 
 // Stat card click handlers
 const handleStatClick = (statType: string) => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = dayjs().format('YYYY-MM-DD');
 
   // Toggle off if clicking same filter
   if (activeStatFilter.value === statType) {

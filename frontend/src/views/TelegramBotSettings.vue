@@ -156,6 +156,14 @@
                   </a-tag>
                 </a-tooltip>
               </template>
+              <template v-else-if="column.key === 'groupNotification'">
+                <span v-if="record.groupNotificationStatus === 'not_applicable'" class="text-muted">—</span>
+                <a-tooltip v-else :title="record.groupNotificationError || undefined">
+                  <a-tag :color="getGroupNotificationColor(record.groupNotificationStatus)">
+                    {{ record.groupNotificationStatusDisplay }}
+                  </a-tag>
+                </a-tooltip>
+              </template>
               <template v-else-if="column.key === 'relatedObject'">
                 <span v-if="record.relatedObjectStr">{{ record.relatedObjectStr }}</span>
                 <span v-else class="text-muted">—</span>
@@ -253,6 +261,7 @@ import {
   telegramActivityService,
   type TelegramActivityLog,
   type ActivityLogFilters,
+  type GroupNotificationStatus,
 } from '../services/telegramActivityService';
 
 // Types
@@ -304,6 +313,9 @@ interface ActivityLogRecord {
   details: Record<string, unknown>;
   success: boolean;
   errorMessage: string;
+  groupNotificationStatus: GroupNotificationStatus;
+  groupNotificationStatusDisplay: string;
+  groupNotificationError: string;
   relatedObjectStr: string | null;
   createdAt: string;
 }
@@ -336,6 +348,7 @@ const activityColumns = [
   { title: 'Объект', key: 'relatedObject', width: 150 },
   { title: 'Детали', key: 'details', width: 80, align: 'center' as const },
   { title: 'Статус', key: 'success', width: 100, align: 'center' as const },
+  { title: 'Группа', key: 'groupNotification', width: 120, align: 'center' as const },
   { title: 'Дата', dataIndex: 'createdAt', key: 'createdAt', width: 150 },
 ];
 
@@ -532,6 +545,9 @@ function transformActivityLog(log: TelegramActivityLog): ActivityLogRecord {
     details: log.details,
     success: log.success,
     errorMessage: log.error_message,
+    groupNotificationStatus: log.group_notification_status,
+    groupNotificationStatusDisplay: log.group_notification_status_display,
+    groupNotificationError: log.group_notification_error,
     relatedObjectStr: log.related_object_str,
     createdAt: formatDateTime(log.created_at),
   };
@@ -539,6 +555,17 @@ function transformActivityLog(log: TelegramActivityLog): ActivityLogRecord {
 
 function hasActivityDetails(details: Record<string, unknown>): boolean {
   return Object.keys(details).length > 0;
+}
+
+function getGroupNotificationColor(status: GroupNotificationStatus): string {
+  switch (status) {
+    case 'sent':
+      return 'success';
+    case 'error':
+      return 'error';
+    default:
+      return 'default';
+  }
 }
 
 async function fetchActivity(page?: number, pageSize?: number): Promise<void> {

@@ -12,6 +12,9 @@ class TelegramActivityLogSerializer(serializers.ModelSerializer):
         source="get_user_type_display", read_only=True
     )
     related_object_str = serializers.SerializerMethodField()
+    group_notification_status_display = serializers.CharField(
+        source="get_group_notification_status_display", read_only=True
+    )
 
     class Meta:
         model = TelegramActivityLog
@@ -27,6 +30,9 @@ class TelegramActivityLogSerializer(serializers.ModelSerializer):
             "details",
             "success",
             "error_message",
+            "group_notification_status",
+            "group_notification_status_display",
+            "group_notification_error",
             "related_object_str",
             "created_at",
         ]

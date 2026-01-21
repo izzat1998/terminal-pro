@@ -1,0 +1,16 @@
+[Unit]
+Description=MTT Telegram Bot Webhook
+After=network.target postgresql.service redis.service mtt-terminal.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/terminal-pro/backend
+Environment="PATH=/var/www/terminal-pro/backend/.venv/bin"
+ExecStart=/var/www/terminal-pro/backend/.venv/bin/python manage.py run_telegram_webhook
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

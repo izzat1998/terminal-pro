@@ -7,6 +7,7 @@
 
 import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } from 'vue';
 import { message } from 'ant-design-vue';
+import dayjs from '@/config/dayjs';
 import { getExecutiveDashboard } from '../services/executiveDashboardService';
 import type {
   ExecutiveDashboardData,
@@ -48,8 +49,7 @@ const DEFAULT_GRID = {
 };
 
 function formatDateLabel(value: string): string {
-  const date = new Date(value);
-  return `${date.getDate()}/${date.getMonth() + 1}`;
+  return dayjs(value).format('D/M');
 }
 
 // ============ Composable Interface ============
@@ -388,7 +388,7 @@ export function useExecutiveDashboard(
 
     try {
       data.value = await getExecutiveDashboard();
-      lastUpdated.value = new Date();
+      lastUpdated.value = dayjs().toDate();
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Не удалось загрузить данные';
       message.error(error.value);

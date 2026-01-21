@@ -6,6 +6,7 @@
  */
 
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import dayjs from '@/config/dayjs'
 import { getTerminalVehiclesWithStatus } from '../services/terminalVehicleStatusService'
 import type { TerminalVehicleWithStatus } from '../types/terminalVehicles'
 
@@ -35,7 +36,7 @@ async function fetchVehicleStatus() {
     const result = await getTerminalVehiclesWithStatus()
     vehicles.value = result.vehicles
     workingCount.value = result.workingCount
-    lastFetched.value = new Date()
+    lastFetched.value = dayjs().toDate()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to fetch vehicle status'
     console.error('Failed to fetch vehicle status:', err)

@@ -196,6 +196,7 @@ import {
   FilePdfOutlined,
 } from '@ant-design/icons-vue';
 import { http } from '../../utils/httpClient';
+import { formatDateLocale, formatDateTime as formatDateTimeTz } from '../../utils/dateFormat';
 
 // Props for admin mode (viewing company billing)
 interface Props {
@@ -293,12 +294,12 @@ const columns: TableProps['columns'] = [
 
 const formatDate = (dateStr: string): string => {
   if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('ru-RU');
+  return formatDateLocale(dateStr) || '—';
 };
 
 const formatDateTime = (dateStr: string): string => {
   if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleString('ru-RU');
+  return formatDateTimeTz(dateStr) || '—';
 };
 
 const formatCurrency = (value: string, currency: 'USD' | 'UZS'): string => {

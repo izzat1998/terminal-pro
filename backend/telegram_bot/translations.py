@@ -33,7 +33,7 @@ TRANSLATIONS = {
         "no_operation": "Нет активных операций для отмены",
         "operation_cancelled": "Операция отменена ❌",
         # Entry creation flow
-        "start_entry": "Начинаем создание записи о въезде контейнера.\n\n📝 Введите номер контейнера (4 буквы + 7 цифр):\nПример: MSKU1234567",
+        "start_entry": "Начинаем создание записи о въезде контейнера.\n\n📝 Введите номер контейнера:",
         "error_text_only": "❌ Пожалуйста, отправьте текстовое сообщение с номером контейнера",
         "invalid_container_format": "❌ Неверный формат номера контейнера!\nФормат: 4 буквы + 7 цифр (например: MSKU1234567)\n\nПопробуйте ещё раз:",
         "container_already_active": "❌ Контейнер {container_number} уже находится на терминале!\n\n📅 Дата въезда: {entry_date}\n🚛 Транспорт: {transport_type}\n\nПожалуйста, сначала зарегистрируйте выезд этого контейнера или введите другой номер контейнера:",
@@ -158,7 +158,7 @@ TRANSLATIONS = {
         # Exit container flow
         "btn_exit_container": "🚚 Выезд",
         "btn_train": "Поезд",
-        "start_exit": "Начинаем регистрацию выезда контейнера.\n\n📝 Введите номер контейнера (4 буквы + 7 цифр):\nПример: MSKU1234567",
+        "start_exit": "Начинаем регистрацию выезда контейнера.\n\n📝 Введите номер контейнера:",
         "container_not_found": "❌ Контейнер {container_number} не найден на терминале!\n\nПожалуйста, проверьте номер контейнера и попробуйте ещё раз:",
         "container_already_exited": "❌ Контейнер {container_number} уже выехал с терминала!\n\n📅 Дата выезда: {exit_date}\n\nПожалуйста, введите другой номер контейнера:",
         "ask_exit_date": "📅 Введите дату выезда контейнера (форматы: 2025-10-28 или 28.10.2025 или 28/10/2025 или 28-10-2025).\nЧасы и минуты опциональны (например: 2025-10-28 14:30):",
@@ -202,7 +202,7 @@ TRANSLATIONS = {
         "exit_cancelled": "❌ Регистрация выезда отменена",
         # Crane operation flow
         "btn_crane_operation": "🏗️ Кран",
-        "start_crane_operation": "Добавление крановой операции.\n\n📝 Введите номер контейнера (4 буквы + 7 цифр):\nПример: MSKU1234567",
+        "start_crane_operation": "Добавление крановой операции.\n\n📝 Введите номер контейнера:",
         "crane_op_container_not_found": "❌ Контейнер {container_number} не найден на терминале!\n\nПожалуйста, проверьте номер и попробуйте ещё раз:",
         "crane_op_added": "✅ Крановая операция добавлена!\n\n📦 Контейнер: {container_number}\n🕐 Время: {operation_time}\n📊 Всего операций: {total_count}\n\nДобавить ещё операцию?",
         "crane_op_error": "❌ Ошибка при добавлении операции:\n{error}",
@@ -376,7 +376,7 @@ TRANSLATIONS = {
         "no_operation": "Bekor qilish uchun faol operatsiya yo'q",
         "operation_cancelled": "Operatsiya bekor qilindi ❌",
         # Entry creation flow
-        "start_entry": "Konteyner kirishi haqida yozuv yaratishni boshlaymiz.\n\n📝 Konteyner raqamini kiriting (4 harf + 7 raqam):\nMisol: MSKU1234567",
+        "start_entry": "Konteyner kirishi haqida yozuv yaratishni boshlaymiz.\n\n📝 Konteyner raqamini kiriting:",
         "error_text_only": "❌ Iltimos, konteyner raqami bilan matnli xabar yuboring",
         "invalid_container_format": "❌ Konteyner raqami formati noto'g'ri!\nFormat: 4 harf + 7 raqam (masalan: MSKU1234567)\n\nQaytadan urinib ko'ring:",
         "container_already_active": "❌ Konteyner {container_number} allaqachon terminalda!\n\n📅 Kirish sanasi: {entry_date}\n🚛 Transport: {transport_type}\n\nIltimos, avval bu konteyner chiqishini ro'yxatdan o'tkazing yoki boshqa konteyner raqamini kiriting:",
@@ -501,7 +501,7 @@ TRANSLATIONS = {
         # Exit container flow
         "btn_exit_container": "🚚 Chiqish",
         "btn_train": "Poyezd",
-        "start_exit": "Konteyner chiqishini ro'yxatdan o'tkkazishni boshlaymiz.\n\n📝 Konteyner raqamini kiriting (4 harf + 7 raqam):\nMisol: MSKU1234567",
+        "start_exit": "Konteyner chiqishini ro'yxatdan o'tkkazishni boshlaymiz.\n\n📝 Konteyner raqamini kiriting:",
         "container_not_found": "❌ Konteyner {container_number} terminalda topilmadi!\n\nKonteyner raqamini tekshiring va qaytadan urinib ko'ring:",
         "container_already_exited": "❌ Konteyner {container_number} allaqachon terminaldan chiqgan!\n\n📅 Chiqish sanasi: {exit_date}\n\nBoshqa konteyner raqamini kiriting:",
         "ask_exit_date": "📅 Konteyner chiqish sanasini kiriting (formatlar: 2025-10-28 yoki 28.10.2025 yoki 28/10/2025 yoki 28-10-2025).\nSoatlar va daqiqalar ixtiyoriy (masalan: 2025-10-28 14:30):",
@@ -545,7 +545,7 @@ TRANSLATIONS = {
         "exit_cancelled": "❌ Chiqishni ro'yxatdan o'tkazish bekor qilindi",
         # Crane operation flow
         "btn_crane_operation": "🏗️ Kran",
-        "start_crane_operation": "Kran operatsiyasini qo'shish.\n\n📝 Konteyner raqamini kiriting (4 harf + 7 raqam):\nMisol: MSKU1234567",
+        "start_crane_operation": "Kran operatsiyasini qo'shish.\n\n📝 Konteyner raqamini kiriting:",
         "crane_op_container_not_found": "❌ Konteyner {container_number} terminalda topilmadi!\n\nRaqamni tekshiring va qaytadan urinib ko'ring:",
         "crane_op_added": "✅ Kran operatsiyasi qo'shildi!\n\n📦 Konteyner: {container_number}\n🕐 Vaqt: {operation_time}\n📊 Jami operatsiyalar: {total_count}\n\nYana operatsiya qo'shishni xohlaysizmi?",
         "crane_op_error": "❌ Operatsiya qo'shishda xatolik:\n{error}",

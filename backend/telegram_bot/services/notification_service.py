@@ -3,12 +3,12 @@ Telegram notification service for sending messages to users from Django context.
 Bridges sync Django with async aiogram Bot API.
 """
 
-import asyncio
 import logging
 import os
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
+from asgiref.sync import async_to_sync
 from django.conf import settings
 
 from telegram_bot.translations import get_text
@@ -69,12 +69,8 @@ class TelegramNotificationService:
         Returns:
             True if sent successfully, False otherwise
         """
-        try:
-            return asyncio.run(self._send_message(chat_id, text))
-        except RuntimeError:
-            # If there's already an event loop running, use it
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(self._send_message(chat_id, text))
+        # Use async_to_sync for proper event loop handling in any context
+        return async_to_sync(self._send_message)(chat_id, text)
 
     def _get_customer_language(self, customer) -> str:
         """Get customer's preferred language, defaulting to Russian."""

@@ -154,21 +154,8 @@ def require_manager_access(handler: Callable) -> Callable:
             )
             return  # Silent skip - let customer handlers pick it up
 
-        # Check if user is active
-        if not user.is_active:
-            logger.warning(f"Access denied: User {user.full_name} is deactivated")
-
-            message = event if isinstance(event, Message) else event.message
-            if not message:
-                logger.error(
-                    f"Cannot send reply: original message was deleted for user {user.id}"
-                )
-                return
-
-            await message.answer(
-                get_text("account_deactivated", lang), parse_mode="HTML"
-            )
-            return
+        # Note: is_active controls website access only, not bot access
+        # Bot access is controlled by bot_access flag
 
         # Check if user has bot access (profile first, then legacy)
         if not await get_user_bot_access(user):
@@ -261,15 +248,8 @@ def require_customer_access(handler: Callable) -> Callable:
             )
             return  # Silent skip - let other handlers pick it up
 
-        # Check if customer is active
-        if not user.is_active:
-            logger.warning(f"Customer access denied: {user.full_name} is deactivated")
-            message = event if isinstance(event, Message) else event.message
-            if message:
-                await message.answer(
-                    get_text("account_deactivated", lang), parse_mode="HTML"
-                )
-            return
+        # Note: is_active controls website access only, not bot access
+        # Bot access is controlled by bot_access flag
 
         # Check if customer has bot access (profile first, then legacy)
         if not await get_user_bot_access(user):

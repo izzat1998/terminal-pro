@@ -313,6 +313,12 @@ if redis_url:
 
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_BOT_MODE = os.getenv("TELEGRAM_BOT_MODE", "polling")  # "polling" or "webhook"
+
+# Webhook mode settings (only used when TELEGRAM_BOT_MODE=webhook)
+TELEGRAM_WEBHOOK_URL = os.getenv("TELEGRAM_WEBHOOK_URL", "")
+TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+TELEGRAM_WEBHOOK_PORT = int(os.getenv("TELEGRAM_WEBHOOK_PORT", "8001"))
 
 # Proxy Configuration - Trust reverse proxy headers for HTTPS
 # Required when Django is behind nginx/proxy that terminates SSL

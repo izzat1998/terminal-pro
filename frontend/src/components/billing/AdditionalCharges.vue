@@ -247,7 +247,7 @@ import { ref, reactive, watch, onMounted, computed } from 'vue';
 import { message } from 'ant-design-vue';
 import type { FormInstance, TableProps } from 'ant-design-vue';
 import type { Dayjs } from 'dayjs';
-import dayjs from 'dayjs';
+import dayjs from '@/config/dayjs';
 import {
   PlusOutlined,
   EditOutlined,
@@ -261,6 +261,7 @@ import {
 } from '../../services/additionalChargesService';
 import { expenseTypesService, type ExpenseType } from '../../services/expenseTypesService';
 import { http } from '../../utils/httpClient';
+import { formatDateLocale } from '../../utils/dateFormat';
 
 interface Props {
   companySlug?: string;
@@ -361,7 +362,7 @@ watch(searchText, () => {
 
 const formatDate = (dateStr: string): string => {
   if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('ru-RU');
+  return formatDateLocale(dateStr) || '—';
 };
 
 const formatCurrency = (value: string, currency: 'USD' | 'UZS'): string => {

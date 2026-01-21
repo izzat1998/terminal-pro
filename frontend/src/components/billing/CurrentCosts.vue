@@ -174,6 +174,7 @@ import {
 } from '@ant-design/icons-vue';
 import { http } from '../../utils/httpClient';
 import type { PaginatedResponse } from '../../types/api';
+import { formatDateLocale } from '../../utils/dateFormat';
 import StorageCostModal from '../StorageCostModal.vue';
 import AdditionalCharges from './AdditionalCharges.vue';
 
@@ -317,8 +318,7 @@ const handleTableChange: TableProps['onChange'] = (pag, _filters, sorter) => {
 
 const formatDate = (dateStr: string): string => {
   if (!dateStr) return '—';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('ru-RU');
+  return formatDateLocale(dateStr) || '—';
 };
 
 const formatCurrency = (value: string, currency: 'USD' | 'UZS'): string => {

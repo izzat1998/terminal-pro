@@ -23,6 +23,7 @@ import {
 import { isApiError } from '../types/api';
 import { http } from '../utils/httpClient';
 import { formatDateLocale } from '../utils/dateFormat';
+import dayjs from '@/config/dayjs';
 
 // ============================================================================
 // Types
@@ -215,7 +216,7 @@ function openCreateModal() {
   tariffType.value = 'general';
   createForm.value = {
     company: null,
-    effective_from: new Date().toISOString().split('T')[0] ?? '',
+    effective_from: dayjs().format('YYYY-MM-DD'),
     effective_to: null,
     notes: '',
     rates: sizes.flatMap((size) =>

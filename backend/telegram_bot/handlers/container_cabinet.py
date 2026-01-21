@@ -37,12 +37,21 @@ async def get_user_language(state: FSMContext) -> str:
 
 
 def format_container_detail(entry, lang: str) -> str:
-    """Format container entry details for display"""
-    # Basic info
+    """
+    Format container entry details for display.
+    MUST be called via sync_to_async from async handlers.
+    """
+    # Basic info - access all ORM fields here in sync context
+    container_number = entry.container.container_number
+    iso_type = entry.container.iso_type
+    status_display = entry.get_status_display()
+    transport_type_display = entry.get_transport_type_display()
+    owner_name = entry.container_owner.name if entry.container_owner else None
+
     text = get_text("container_detail", lang).format(
-        number=html.escape(entry.container.container_number),
-        status=entry.get_status_display(),
-        iso_type=entry.container.iso_type,
+        number=html.escape(container_number),
+        status=status_display,
+        iso_type=iso_type,
         entry_date=entry.entry_time.strftime("%d.%m.%Y %H:%M"),
         dwell_days=entry.dwell_time_days or 0,
     )
@@ -63,14 +72,14 @@ def format_container_detail(entry, lang: str) -> str:
             location=html.escape(entry.location)
         ) + "\n"
 
-    if entry.container_owner:
+    if owner_name:
         text += get_text("container_detail_owner", lang).format(
-            owner=html.escape(entry.container_owner.name)
+            owner=html.escape(owner_name)
         ) + "\n"
 
     if entry.transport_number:
         text += get_text("container_detail_transport", lang).format(
-            type=entry.get_transport_type_display(),
+            type=transport_type_display,
             number=html.escape(entry.transport_number),
         ) + "\n"
 
@@ -201,8 +210,8 @@ async def show_container_detail(callback: CallbackQuery, state: FSMContext, user
     await state.update_data(current_entry_id=entry_id)
     await state.set_state(CustomerContainerCabinet.viewing_details)
 
-    # Format and show detail
-    text = format_container_detail(entry, lang)
+    # Format and show detail (must use sync_to_async for ORM access)
+    text = await sync_to_async(format_container_detail)(entry, lang)
     await callback.message.edit_text(
         text,
         reply_markup=get_container_detail_keyboard(entry_id, photo_count, lang),
@@ -344,7 +353,7 @@ async def process_container_search(message: Message, state: FSMContext, user=Non
     await state.update_data(current_entry_id=entry.id)
     await state.set_state(CustomerContainerCabinet.viewing_details)
 
-    text = format_container_detail(entry, lang)
+    text = await sync_to_async(format_container_detail)(entry, lang)
     await message.answer(
         text,
         reply_markup=get_container_detail_keyboard(entry.id, photo_count, lang),
@@ -375,10 +384,16 @@ async def send_container_photos(callback: CallbackQuery, state: FSMContext, user
         await callback.answer(get_text("container_search_not_found", lang), show_alert=True)
         return
 
-    # Get photos
-    photos = await sync_to_async(cabinet_service.get_container_photos)(entry_id)
+    # Get photos and container number in sync context
+    def get_photos_with_data(eid, ent):
+        photos = cabinet_service.get_container_photos(eid)
+        container_number = ent.container.container_number
+        photo_paths = [(att.file.file.path,) for att in photos]
+        return photo_paths, container_number
 
-    if not photos:
+    photo_data, container_number = await sync_to_async(get_photos_with_data)(entry_id, entry)
+
+    if not photo_data:
         await callback.answer(get_text("photos_none", lang), show_alert=True)
         return
 
@@ -388,12 +403,11 @@ async def send_container_photos(callback: CallbackQuery, state: FSMContext, user
     try:
         # Build media group
         media_group = []
-        for idx, attachment in enumerate(photos):
-            file_path = attachment.file.file.path
+        for idx, (file_path,) in enumerate(photo_data):
             input_file = FSInputFile(file_path)
 
             if idx == 0:
-                caption = f"📦 {entry.container.container_number}"
+                caption = f"📦 {container_number}"
                 media_group.append(InputMediaPhoto(media=input_file, caption=caption))
             else:
                 media_group.append(InputMediaPhoto(media=input_file))

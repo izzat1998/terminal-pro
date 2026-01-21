@@ -52,8 +52,8 @@ async def check_manager_access(telegram_user_id: int) -> tuple[CustomUser | None
     if not user:
         return None, "needs_phone"
 
-    if not user.is_active:
-        return user, "deactivated"
+    # Note: is_active controls website access only, not bot access
+    # Bot access is controlled by bot_access flag
 
     # Check bot_access from profile first, then legacy field
     if not await get_user_bot_access(user):

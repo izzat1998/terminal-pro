@@ -3,6 +3,9 @@ import './style.css'
 import App from './App.vue'
 import router from './router'
 
+// Initialize dayjs with Asia/Tashkent timezone before any date operations
+import '@/config/dayjs';
+
 import Antd from 'ant-design-vue';
 import 'ant-design-vue/dist/reset.css';
 

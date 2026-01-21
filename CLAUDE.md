@@ -130,6 +130,74 @@ Examples:
    PLATE_RECOGNIZER_API_KEY=your-api-key
    ```
 
+## Production Environment
+
+**This server is running in PRODUCTION. Not using Docker.**
+
+### Production URLs
+
+| Service | Domain | Description |
+|---------|--------|-------------|
+| Frontend | `https://mtt-pro.xlog.uz` | Vue SPA (admin panel) |
+| Backend API | `https://mtt-pro-api.xlog.uz/api` | Django REST API |
+
+### Systemctl Services
+
+Production uses systemd services, NOT Docker:
+
+| Service | Command | Description |
+|---------|---------|-------------|
+| `mtt-terminal.service` | `sudo systemctl restart mtt-terminal` | Django API (Gunicorn on Unix socket) |
+| `mtt-telegram-bot.service` | `sudo systemctl restart mtt-telegram-bot` | Telegram bot webhook |
+| `nginx.service` | `sudo systemctl reload nginx` | Reverse proxy |
+
+### Deployment Commands
+
+```bash
+# Backend: Restart after code changes
+sudo systemctl restart mtt-terminal
+
+# Frontend: Rebuild and deploy
+cd /var/www/terminal-pro/frontend
+npm run build
+# dist/ is served by nginx automatically
+
+# View logs
+journalctl -u mtt-terminal -f
+journalctl -u mtt-telegram-bot -f
+```
+
+### Production Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `/etc/systemd/system/mtt-terminal.service` | Backend service definition |
+| `/etc/systemd/system/mtt-telegram-bot.service` | Telegram bot service |
+| `/etc/nginx/sites-enabled/mtt-pro-api` | API nginx config |
+| `/etc/nginx/sites-enabled/mtt-pro-frontend` | Frontend nginx config |
+| `/var/www/terminal-pro/frontend/.env.production` | Frontend production env |
+| `/var/www/terminal-pro/backend/.env` | Backend environment |
+
+### Backend Socket
+
+Backend runs via Gunicorn on Unix socket (not HTTP port):
+- Socket: `/run/mtt-terminal.sock`
+- Nginx proxies to this socket
+
+### Frontend Build
+
+Frontend must be built with production API URL:
+```bash
+# .env.production contains:
+VITE_API_BASE_URL=https://mtt-pro-api.xlog.uz/api
+
+# Build for production
+cd /var/www/terminal-pro/frontend
+npm run build
+```
+
+**IMPORTANT:** After frontend code changes, always run `npm run build` - the dev server is NOT used in production.
+
 ## AI Assistant Guidelines
 
 ### Cross-Cutting Concerns
@@ -169,10 +237,20 @@ Read `telegram-miniapp/CLAUDE.md` for:
 
 ## Quick Debug
 
+### Development
 | Issue | Check |
 |-------|-------|
 | Backend won't start | `python manage.py check` in backend/ |
 | Frontend build fails | `npm run build` shows TypeScript errors |
 | API connection refused | Backend running? Check `localhost:8008/api/docs` |
-| Docker issues | `docker-compose logs -f` for details |
 | Migration errors | `python manage.py showmigrations` |
+
+### Production
+| Issue | Check |
+|-------|-------|
+| Backend not responding | `sudo systemctl status mtt-terminal` |
+| Backend errors | `journalctl -u mtt-terminal -n 100` |
+| Frontend shows old code | Run `npm run build` in frontend/ |
+| API returns localhost errors | Check `.env.production` has correct API URL, rebuild |
+| 502 Bad Gateway | Check if socket exists: `ls -la /run/mtt-terminal.sock` |
+| Nginx issues | `sudo nginx -t && sudo systemctl reload nginx` |

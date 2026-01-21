@@ -8,6 +8,7 @@
 
 import { computed, ref } from 'vue';
 import { ClockCircleOutlined, EnvironmentOutlined } from '@ant-design/icons-vue';
+import dayjs from '@/config/dayjs';
 import type { WorkOrder } from '../../types/placement';
 import type { TerminalVehicle } from '../../services/workOrderService';
 
@@ -42,11 +43,10 @@ const priorityConfig = computed((): { color: string; label: string } => {
 
 // Time since creation (for display)
 const timeElapsed = computed(() => {
-  const created = new Date(props.task.created_at);
-  const now = new Date();
-  const diffMs = now.getTime() - created.getTime();
+  const created = dayjs(props.task.created_at);
+  const now = dayjs();
+  const diffMins = now.diff(created, 'minute');
 
-  const diffMins = Math.floor(diffMs / 60000);
   if (diffMins < 60) {
     return { text: `${diffMins} мин назад`, isOld: diffMins > 30 };
   }

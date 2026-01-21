@@ -302,9 +302,11 @@ class ManagerCreateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating a new manager with password.
     Phone validation is handled by the model's RegexValidator.
+    telegram_user_id can be pre-populated to skip Telegram bot registration.
     """
 
     password = serializers.CharField(write_only=True, min_length=8, required=False)
+    telegram_user_id = serializers.IntegerField(required=False, allow_null=True)
 
     class Meta:
         model = CustomUser
@@ -315,6 +317,7 @@ class ManagerCreateSerializer(serializers.ModelSerializer):
             "bot_access",
             "gate_access",
             "is_active",
+            "telegram_user_id",
         )
 
     def create(self, validated_data):
@@ -336,9 +339,11 @@ class ManagerUpdateSerializer(serializers.ModelSerializer):
     Serializer for updating manager information.
     Phone validation is handled by the model's RegexValidator.
     Password update is optional.
+    telegram_user_id can be updated to link/unlink Telegram account.
     """
 
     password = serializers.CharField(write_only=True, min_length=8, required=False)
+    telegram_user_id = serializers.IntegerField(required=False, allow_null=True)
 
     class Meta:
         model = CustomUser
@@ -349,6 +354,7 @@ class ManagerUpdateSerializer(serializers.ModelSerializer):
             "is_active",
             "bot_access",
             "gate_access",
+            "telegram_user_id",
         )
 
     def validate_phone_number(self, value):

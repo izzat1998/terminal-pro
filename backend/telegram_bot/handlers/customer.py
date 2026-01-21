@@ -460,30 +460,25 @@ async def confirm_cancel_order(callback: CallbackQuery, state: FSMContext, user=
     customer = user
 
     try:
-        cancelled_order = await sync_to_async(preorder_service.cancel_order)(
-            order_id=data["cancel_order_id"], customer=customer
-        )
-
-        # Log activity
-        await sync_to_async(activity_log_service.log_preorder_cancelled)(
-            user=customer,
-            telegram_user_id=callback.from_user.id,
-            preorder=cancelled_order,
-        )
-
-        # Also cancel the linked VehicleEntry if it exists and is in WAITING status
-        if (
-            cancelled_order.vehicle_entry
-            and cancelled_order.vehicle_entry.status == "WAITING"
-        ):
-            await sync_to_async(vehicle_entry_service.cancel)(
-                cancelled_order.vehicle_entry
+        # Cancel order and linked vehicle entry in single sync context
+        def cancel_order_with_vehicle(order_id, cust, tg_user_id):
+            order = preorder_service.cancel_order(order_id=order_id, customer=cust)
+            plate = order.plate_number  # Extract before any lazy loads
+            # Also cancel the linked VehicleEntry if it exists and is in WAITING status
+            if order.vehicle_entry and order.vehicle_entry.status == "WAITING":
+                vehicle_entry_service.cancel(order.vehicle_entry)
+            # Log activity in same sync context
+            activity_log_service.log_preorder_cancelled(
+                user=cust, telegram_user_id=tg_user_id, preorder=order
             )
+            return plate
+
+        plate_number = await sync_to_async(cancel_order_with_vehicle)(
+            data["cancel_order_id"], customer, callback.from_user.id
+        )
 
         await callback.message.edit_text(
-            get_text(
-                "customer_order_cancelled", lang, plate=cancelled_order.plate_number
-            )
+            get_text("customer_order_cancelled", lang, plate=plate_number)
         )
     except Exception as e:
         await callback.message.edit_text(

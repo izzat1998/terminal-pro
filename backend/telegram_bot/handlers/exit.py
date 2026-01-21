@@ -265,7 +265,8 @@ async def process_exit_container_number(message: Message, state: FSMContext, use
     raw_input = message.text.strip()
 
     # Validate format (accepts with or without spaces)
-    if not await sync_to_async(entry_service.validate_container_number)(raw_input):
+    # Note: validate_container_number is pure Python regex, no DB access
+    if not entry_service.validate_container_number(raw_input):
         await message.answer(
             get_text("invalid_container_format", lang),
             reply_markup=reply.get_cancel_keyboard(lang),

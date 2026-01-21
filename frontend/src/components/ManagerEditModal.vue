@@ -32,6 +32,16 @@
         />
       </a-form-item>
 
+      <a-form-item label="Telegram ID" extra="ID пользователя в Telegram. Оставьте пустым для отвязки">
+        <a-input-number
+          v-model:value="formState.telegram_user_id"
+          placeholder="Например: 123456789"
+          style="width: 100%"
+          :min="1"
+          :controls="false"
+        />
+      </a-form-item>
+
       <a-form-item label="Доступ к боту">
         <a-switch v-model:checked="formState.bot_access" />
       </a-form-item>
@@ -58,6 +68,7 @@ interface Props {
   managerId?: number;
   firstName?: string;
   phoneNumber?: string;
+  telegramUserId?: number | null;
   botAccess?: boolean;
   gateAccess?: boolean;
   isActive?: boolean;
@@ -72,6 +83,7 @@ interface FormState {
   first_name: string;
   phone_number: string;
   password: string;
+  telegram_user_id: number | null;
   bot_access: boolean;
   gate_access: boolean;
   is_active: boolean;
@@ -88,6 +100,7 @@ const formState = reactive<FormState>({
   first_name: '',
   phone_number: '',
   password: '',
+  telegram_user_id: null,
   bot_access: true,
   gate_access: true,
   is_active: true,
@@ -96,6 +109,7 @@ const formState = reactive<FormState>({
 const loadFormData = () => {
   if (props.firstName) formState.first_name = props.firstName;
   if (props.phoneNumber) formState.phone_number = props.phoneNumber;
+  formState.telegram_user_id = props.telegramUserId ?? null;
   if (props.botAccess !== undefined) formState.bot_access = props.botAccess;
   if (props.gateAccess !== undefined) formState.gate_access = props.gateAccess;
   if (props.isActive !== undefined) formState.is_active = props.isActive;
@@ -106,6 +120,7 @@ const resetForm = () => {
   formState.first_name = '';
   formState.phone_number = '';
   formState.password = '';
+  formState.telegram_user_id = null;
   formState.bot_access = true;
   formState.gate_access = true;
   formState.is_active = true;
@@ -139,13 +154,16 @@ const handleSubmit = async () => {
 
   try {
     // Prepare data - only include password if it's not empty
-    const submitData: any = {
+    const submitData: Record<string, unknown> = {
       first_name: formState.first_name,
       phone_number: formState.phone_number,
       bot_access: formState.bot_access,
       gate_access: formState.gate_access,
       is_active: formState.is_active,
     };
+
+    // Include telegram_user_id (can be null to unlink, or a number to link)
+    submitData.telegram_user_id = formState.telegram_user_id;
 
     // Only include password if user entered a new one
     if (formState.password.trim()) {

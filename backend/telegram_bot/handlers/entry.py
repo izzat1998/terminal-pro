@@ -856,18 +856,25 @@ async def confirm_entry(
         )
 
         # Log activity
-        await sync_to_async(activity_log_service.log_container_entry_created)(
+        activity_log = await sync_to_async(activity_log_service.log_container_entry_created)(
             user=user,
             telegram_user_id=callback.from_user.id,
             container_entry=entry,
         )
 
-        # Send notification to container owner's Telegram group (silent fail)
-        await owner_notification_service.notify_container_entry(
+        # Send notification to container owner's Telegram group
+        notification_result = await owner_notification_service.notify_container_entry(
             bot=bot,
             entry=entry,
             manager=user,
             photo_file_ids=all_photo_file_ids if all_photo_file_ids else None,
+        )
+
+        # Update activity log with notification result
+        await sync_to_async(activity_log_service.update_group_notification_status)(
+            activity_log_id=activity_log.id,
+            status=notification_result.status,
+            error_message=notification_result.error_message,
         )
 
         # Complete pre-order match if one was found
@@ -890,13 +897,23 @@ async def confirm_entry(
                 logger.error(f"Failed to complete pre-order match: {match_error}")
                 # Don't fail the entry creation if match fails
 
+        # Extract display data in sync context
+        def get_entry_display_data(e):
+            return {
+                "id": e.id,
+                "container_number": e.container.container_number,
+                "entry_time": e.entry_time.strftime("%d.%m.%Y %H:%M"),
+            }
+
+        display_data = await sync_to_async(get_entry_display_data)(entry)
+
         await callback.message.edit_text(
             get_text(
                 "entry_created",
                 lang,
-                id=entry.id,
-                container=format_container_number(str(entry.container)),
-                time=entry.entry_time.strftime("%d.%m.%Y %H:%M"),
+                id=display_data["id"],
+                container=format_container_number(display_data["container_number"]),
+                time=display_data["entry_time"],
             )
         )
         # Show main keyboard after success

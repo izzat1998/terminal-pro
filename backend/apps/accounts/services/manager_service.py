@@ -48,6 +48,50 @@ class ManagerService(BaseService):
 
         return cleaned
 
+    def _validate_telegram_user_id_unique(self, telegram_user_id, exclude_user_id=None):
+        """
+        Validate that telegram_user_id is not already used by another user.
+
+        Args:
+            telegram_user_id: Telegram user ID to validate
+            exclude_user_id: Optional user ID to exclude from check (for updates)
+
+        Raises:
+            BusinessLogicError: If telegram_user_id is already taken
+        """
+        if not telegram_user_id:
+            return
+
+        # Check ManagerProfile
+        profile_query = ManagerProfile.objects.filter(telegram_user_id=telegram_user_id)
+        if exclude_user_id:
+            profile_query = profile_query.exclude(user_id=exclude_user_id)
+        if profile_query.exists():
+            raise BusinessLogicError(
+                message=f"Telegram ID {telegram_user_id} уже привязан к другому менеджеру",
+                error_code="TELEGRAM_ID_ALREADY_EXISTS",
+                details={"telegram_user_id": telegram_user_id},
+            )
+
+        # Check legacy CustomUser field
+        user_query = CustomUser.objects.filter(telegram_user_id=telegram_user_id)
+        if exclude_user_id:
+            user_query = user_query.exclude(id=exclude_user_id)
+        if user_query.exists():
+            raise BusinessLogicError(
+                message=f"Telegram ID {telegram_user_id} уже привязан к другому пользователю",
+                error_code="TELEGRAM_ID_ALREADY_EXISTS",
+                details={"telegram_user_id": telegram_user_id},
+            )
+
+        # Check CustomerProfile
+        if CustomerProfile.objects.filter(telegram_user_id=telegram_user_id).exists():
+            raise BusinessLogicError(
+                message=f"Telegram ID {telegram_user_id} уже привязан к клиенту",
+                error_code="TELEGRAM_ID_ALREADY_EXISTS",
+                details={"telegram_user_id": telegram_user_id},
+            )
+
     @transaction.atomic
     def create_manager(
         self,
@@ -58,6 +102,7 @@ class ManagerService(BaseService):
         is_active=True,
         password=None,
         company_id=None,
+        telegram_user_id=None,
     ):
         """
         Create a new manager with profile.
@@ -70,6 +115,7 @@ class ManagerService(BaseService):
             is_active: Whether manager account is active (default: True)
             password: Optional password (will be hashed)
             company_id: Optional company ID to link manager to
+            telegram_user_id: Optional Telegram user ID (pre-populated to skip bot registration)
 
         Returns:
             CustomUser instance (with user_type='manager')
@@ -117,6 +163,9 @@ class ManagerService(BaseService):
                     details={"company_id": company_id},
                 )
 
+        # Validate telegram_user_id uniqueness if provided
+        self._validate_telegram_user_id_unique(telegram_user_id)
+
         # Auto-generate username from phone_number
         username = f"mgr_{phone_number}"
 
@@ -131,6 +180,7 @@ class ManagerService(BaseService):
             user_type="manager",
             username=username,
             company=company,  # LEGACY - remove after migration
+            telegram_user_id=telegram_user_id,  # LEGACY - remove after migration
         )
 
         # Set password if provided
@@ -145,6 +195,7 @@ class ManagerService(BaseService):
             bot_access=bot_access,
             gate_access=gate_access,
             company=company,
+            telegram_user_id=telegram_user_id,
         )
 
         self.logger.info(f"Created manager with profile: {manager.first_name} ({phone_number})")
@@ -348,13 +399,8 @@ class ManagerService(BaseService):
                 },
             )
 
-        # Check if user is active
-        if not user.is_active:
-            raise BusinessLogicError(
-                message="Ваш аккаунт деактивирован. Обратитесь к администратору.",
-                error_code="USER_DEACTIVATED",
-                details={"phone_number": phone_number},
-            )
+        # Note: is_active controls website access only, not bot access
+        # Bot access is controlled by bot_access flag, checked after linking
 
         # Update profile if exists
         profile = user.get_profile()
@@ -419,7 +465,8 @@ class ManagerService(BaseService):
 
         Args:
             manager_id: Manager ID to update
-            **kwargs: Fields to update (first_name, phone_number, password, is_active, bot_access, gate_access, company_id)
+            **kwargs: Fields to update (first_name, phone_number, password, is_active,
+                      bot_access, gate_access, company_id, telegram_user_id)
 
         Returns:
             CustomUser manager instance
@@ -502,6 +549,13 @@ class ManagerService(BaseService):
             else:
                 profile.company = None
                 manager.company = None  # LEGACY
+
+        # Update telegram_user_id if provided
+        if "telegram_user_id" in kwargs:
+            new_telegram_id = kwargs["telegram_user_id"]
+            self._validate_telegram_user_id_unique(new_telegram_id, exclude_user_id=manager_id)
+            profile.telegram_user_id = new_telegram_id
+            manager.telegram_user_id = new_telegram_id  # LEGACY
 
         # Update profile fields
         profile_fields = ["bot_access", "gate_access"]

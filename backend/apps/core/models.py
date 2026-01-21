@@ -36,6 +36,13 @@ class TelegramActivityLog(TimestampedModel):
         ("customer", "Клиент"),
     ]
 
+    GROUP_NOTIFICATION_STATUS_CHOICES = [
+        ("sent", "Отправлено"),
+        ("skipped", "Пропущено"),
+        ("error", "Ошибка"),
+        ("not_applicable", "Не применимо"),
+    ]
+
     # Who performed the action
     user = models.ForeignKey(
         "accounts.CustomUser",
@@ -66,6 +73,19 @@ class TelegramActivityLog(TimestampedModel):
     # Outcome
     success = models.BooleanField(default=True)
     error_message = models.TextField(blank=True, default="")
+
+    # Group notification tracking (for container_entry_created action)
+    group_notification_status = models.CharField(
+        max_length=20,
+        choices=GROUP_NOTIFICATION_STATUS_CHOICES,
+        default="not_applicable",
+        verbose_name="Статус уведомления группы",
+    )
+    group_notification_error = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Ошибка уведомления группы",
+    )
 
     class Meta:
         verbose_name = "Лог активности Telegram"

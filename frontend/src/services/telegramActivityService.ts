@@ -1,6 +1,8 @@
 import { http } from '../utils/httpClient';
 import type { PaginatedResponse } from '../types/api';
 
+export type GroupNotificationStatus = 'sent' | 'skipped' | 'error' | 'not_applicable';
+
 export interface TelegramActivityLog {
   id: number;
   user: number | null;
@@ -13,6 +15,9 @@ export interface TelegramActivityLog {
   details: Record<string, unknown>;
   success: boolean;
   error_message: string;
+  group_notification_status: GroupNotificationStatus;
+  group_notification_status_display: string;
+  group_notification_error: string;
   related_object_str: string | null;
   created_at: string;
 }

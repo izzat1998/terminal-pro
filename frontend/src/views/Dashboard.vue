@@ -105,6 +105,7 @@ import { ref, onMounted } from 'vue';
 import { message } from 'ant-design-vue';
 import { ContainerOutlined, CarOutlined, BankOutlined, TeamOutlined } from '@ant-design/icons-vue';
 import { http } from '../utils/httpClient';
+import dayjs from '@/config/dayjs';
 
 interface DashboardStats {
   containersOnTerminal: number;
@@ -147,7 +148,7 @@ const fetchStats = async () => {
     stats.value.activeManagers = managersRes.data?.managers_with_access || 0;
 
     // Today's stats - simplified (could add dedicated endpoint)
-    const today = new Date().toISOString().split('T')[0];
+    const today = dayjs().format('YYYY-MM-DD');
     const [todayContainers, todayVehicles] = await Promise.all([
       http.get<any>(`/terminal/entries/?entry_date_after=${today}&page_size=1`),
       http.get<any>(`/vehicles/entries/?entry_date_after=${today}&page_size=1`),
