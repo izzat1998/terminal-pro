@@ -114,18 +114,26 @@
 
         <!-- Container History Search (admin only) - right side, vertically centered -->
         <div v-if="isAdmin" class="header-search">
-          <a-input-search
+          <a-auto-complete
             v-model:value="containerSearchQuery"
+            :options="containerSuggestions"
             placeholder="История контейнера..."
             style="width: 220px;"
             allow-clear
-            @search="handleContainerSearch"
-            @pressEnter="handleContainerSearch"
+            @search="handleContainerSuggestionSearch"
+            @select="handleContainerSelect"
+            @keydown.enter="handleContainerSearch"
           >
-            <template #prefix>
-              <HistoryOutlined style="color: rgba(255,255,255,0.5);" />
+            <template #option="{ value: val }">
+              <div class="suggestion-item">
+                <HistoryOutlined style="margin-right: 8px; color: #8c8c8c;" />
+                {{ val }}
+              </div>
             </template>
-          </a-input-search>
+          </a-auto-complete>
+          <a-button type="primary" size="small" class="search-btn" @click="handleContainerSearch">
+            <template #icon><SearchOutlined /></template>
+          </a-button>
         </div>
 
         <!-- User Dropdown -->
@@ -179,6 +187,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   RobotOutlined,
+  SearchOutlined,
   ShopOutlined,
   TeamOutlined,
   ToolOutlined,
@@ -188,6 +197,8 @@ import {
 import { useAuth } from '../composables/useAuth';
 import { sidebarTheme } from '../theme';
 import { getActiveWorkOrdersCount } from '../services/workOrderService';
+import { http } from '../utils/httpClient';
+import { debounce } from 'lodash-es';
 import SidebarVehicleStatus from './SidebarVehicleStatus.vue';
 import ContainerFullHistoryModal from './ContainerFullHistoryModal.vue';
 
@@ -203,6 +214,48 @@ const taskCount = ref<number>(0);
 const containerSearchQuery = ref('');
 const containerHistoryModalVisible = ref(false);
 const containerHistoryNumber = ref('');
+const containerSuggestions = ref<{ value: string }[]>([]);
+
+interface ContainerEntry {
+  container: {
+    container_number: string;
+  };
+}
+
+async function fetchContainerSuggestions(search: string) {
+  if (!search || search.length < 2) {
+    containerSuggestions.value = [];
+    return;
+  }
+
+  try {
+    const response = await http.get<{ results: ContainerEntry[] }>(
+      `/terminal/entries/?search_text=${encodeURIComponent(search)}&page_size=10`
+    );
+
+    // Extract unique container numbers
+    const numbers = new Set<string>();
+    response.results?.forEach((entry: ContainerEntry) => {
+      if (entry.container?.container_number) {
+        numbers.add(entry.container.container_number);
+      }
+    });
+
+    containerSuggestions.value = Array.from(numbers).map(num => ({ value: num }));
+  } catch (error) {
+    console.error('Failed to fetch container suggestions:', error);
+    containerSuggestions.value = [];
+  }
+}
+
+const handleContainerSuggestionSearch = debounce((search: string) => {
+  fetchContainerSuggestions(search);
+}, 300);
+
+function handleContainerSelect(value: string) {
+  containerSearchQuery.value = value;
+  handleContainerSearch();
+}
 
 function handleContainerSearch() {
   const query = containerSearchQuery.value.trim().toUpperCase();
@@ -210,6 +263,7 @@ function handleContainerSearch() {
 
   containerHistoryNumber.value = query;
   containerHistoryModalVisible.value = true;
+  containerSuggestions.value = [];
 }
 
 // Fetch active work orders count for sidebar badge
@@ -366,6 +420,11 @@ const isAdmin = computed(() => user.value?.user_type === 'admin')
   display: flex;
   align-items: center;
   margin-right: 16px;
+  gap: 4px;
+}
+
+.header-search .search-btn {
+  height: 32px;
 }
 
 .header-search :deep(.ant-input-search) {
@@ -374,13 +433,13 @@ const isAdmin = computed(() => user.value?.user_type === 'admin')
 }
 
 .header-search :deep(.ant-input) {
-  background: transparent;
-  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.95);
+  color: #262626;
   border: none;
 }
 
 .header-search :deep(.ant-input::placeholder) {
-  color: rgba(255, 255, 255, 0.45);
+  color: #8c8c8c;
 }
 
 .header-search :deep(.ant-input-search-button) {
@@ -395,11 +454,11 @@ const isAdmin = computed(() => user.value?.user_type === 'admin')
 }
 
 .header-search :deep(.ant-input-clear-icon) {
-  color: rgba(255, 255, 255, 0.45);
+  color: #8c8c8c;
 }
 
 .header-search :deep(.ant-input-clear-icon:hover) {
-  color: rgba(255, 255, 255, 0.85);
+  color: #262626;
 }
 
 /* Menu group titles */
