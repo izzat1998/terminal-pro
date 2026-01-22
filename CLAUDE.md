@@ -28,9 +28,6 @@ Full-stack container terminal management system for:
 # Start all services (recommended for development)
 make dev
 
-# Start with Docker (production-like)
-make prod
-
 # Individual services
 make backend           # Django on port 8008
 make frontend          # Vue on port 5174
@@ -49,13 +46,12 @@ make makemigrations  # Create migrations
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | Production orchestration (PostgreSQL, Redis, backend, frontends) |
-| `docker-compose.dev.yml` | Development overrides |
 | `Makefile` | Development automation commands |
 | `backend/terminal_app/settings.py` | Django configuration (DB, auth, CORS) |
 | `frontend/vite.config.ts` | Vue frontend build configuration |
 | `telegram-miniapp/vite.config.ts` | Telegram Mini App build configuration |
 | `.env.example` | Environment variable template |
+| `docs/deployment/` | Systemd service files and nginx configs |
 
 ## Architecture Overview
 
@@ -65,7 +61,7 @@ make makemigrations  # Create migrations
 ├─────────────────────────────┬───────────────────────────────┤
 │   Vue 3 SPA (Admin/Customer)│  React Telegram Mini App       │
 │   localhost:5174 (dev)      │  localhost:5175 (dev)          │
-│   localhost:1001 (prod)     │  localhost:1002 (prod)         │
+│   mtt-pro.xlog.uz (prod)    │  Telegram WebApp (prod)        │
 └─────────────────────────────┴───────────────────────────────┘
                           │ HTTP/REST
 ┌─────────────────────────▼───────────────────────────────────┐
@@ -209,7 +205,6 @@ npm run build
 - Keep API contracts consistent between frontend and backend
 
 **NEVER:**
-- Modify docker-compose.yml without understanding all services
 - Change environment variable names without updating both frontend and backend
 - Skip testing after cross-cutting changes
 - Commit secrets or credentials

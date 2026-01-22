@@ -1,6 +1,5 @@
-.PHONY: help dev dev-docker prod backend frontend telegram-miniapp \
-        migrate makemigrations test test-backend lint clean install \
-        logs shell down
+.PHONY: help dev backend frontend telegram-miniapp \
+        migrate makemigrations test test-backend lint clean install shell
 
 # Use bash for better compatibility with complex commands
 SHELL := /bin/bash
@@ -21,12 +20,6 @@ help:
 	@echo "  make backend           - Start only Django backend (port 8008)"
 	@echo "  make frontend          - Start only Vue frontend (port 5174)"
 	@echo "  make telegram-miniapp  - Start only Telegram Mini App (port 5175)"
-	@echo ""
-	@echo "Docker:"
-	@echo "  make dev-docker   - Start all services with Docker (dev mode)"
-	@echo "  make prod         - Start all services with Docker (production)"
-	@echo "  make logs         - View Docker logs"
-	@echo "  make down         - Stop all Docker services"
 	@echo ""
 	@echo "Database:"
 	@echo "  make migrate      - Run Django migrations"
@@ -68,21 +61,6 @@ frontend:
 
 telegram-miniapp:
 	cd telegram-miniapp && npm run dev
-
-# Docker development
-dev-docker:
-	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-
-# Docker production
-prod:
-	docker-compose up --build -d
-
-# Docker utilities
-logs:
-	docker-compose logs -f
-
-down:
-	docker-compose down
 
 # Database management
 migrate:
