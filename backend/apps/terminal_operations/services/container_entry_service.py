@@ -6,9 +6,19 @@ from apps.core.exceptions import BusinessLogicError, DuplicateEntryError
 from apps.core.services import BaseService
 
 from ..models import ContainerEntry, ContainerPosition, CraneOperation
+from .container_event_service import ContainerEventService
 
 
 class ContainerEntryService(BaseService):
+    def __init__(self):
+        super().__init__()
+        self._event_service = None
+
+    @property
+    def event_service(self):
+        if self._event_service is None:
+            self._event_service = ContainerEventService()
+        return self._event_service
     @transaction.atomic
     def create_entry(
         self,
@@ -95,6 +105,13 @@ class ContainerEntryService(BaseService):
 
         entry = ContainerEntry.objects.create(**create_kwargs)
 
+        # Emit ENTRY_CREATED event
+        self.event_service.create_entry_created_event(
+            container_entry=entry,
+            performed_by=final_recorded_by,
+            source="API",
+        )
+
         # Sync additional_crane_operation_date to CraneOperation model for backward compatibility
         if additional_crane_operation_date:
             self._sync_crane_operation_date(entry, additional_crane_operation_date)
@@ -158,6 +175,9 @@ class ContainerEntryService(BaseService):
         cargo_weight=None,
     ):
         """Update an existing container entry"""
+        # Track old status for event emission
+        old_status = entry.status
+
         # Handle container number change
         if (
             container_number is not None
@@ -251,6 +271,21 @@ class ContainerEntryService(BaseService):
             entry.cargo_weight = cargo_weight
 
         entry.save()
+
+        # Emit STATUS_CHANGED event if status changed
+        if status is not None and status != old_status:
+            self.event_service.create_status_changed_event(
+                container_entry=entry,
+                old_status=old_status,
+                new_status=status,
+            )
+
+        # Emit EXIT_RECORDED event if exit_date was set
+        if exit_date is not None:
+            self.event_service.create_exit_recorded_event(
+                container_entry=entry,
+            )
+
         self.logger.info(
             f"Updated entry {entry.id} for container {entry.container.container_number}"
         )
@@ -285,6 +320,13 @@ class ContainerEntryService(BaseService):
 
         operation = CraneOperation.objects.create(
             container_entry=entry, operation_date=operation_date
+        )
+
+        # Emit CRANE_OPERATION event
+        self.event_service.create_crane_operation_event(
+            container_entry=entry,
+            operation_date=operation_date,
+            crane_operation_id=operation.id,
         )
 
         self.logger.info(
