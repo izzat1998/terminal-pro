@@ -133,6 +133,13 @@
           </template>
           <span v-else class="text-muted">На терминале</span>
         </template>
+        <template v-if="column.key === 'actions'">
+          <a-tooltip title="История контейнера">
+            <a-button type="text" size="small" @click="openHistory(record)">
+              <template #icon><HistoryOutlined /></template>
+            </a-button>
+          </a-tooltip>
+        </template>
       </template>
     </a-table>
 
@@ -142,18 +149,27 @@
       v-model:open="show3DModal"
       :container="selected3DContainer"
     />
+
+    <!-- History Modal -->
+    <ContainerHistoryModal
+      v-model:open="historyModalVisible"
+      :entry-id="selectedHistoryEntry?.id ?? null"
+      :container-number="selectedHistoryEntry?.containerNumber ?? ''"
+      :images="selectedHistoryEntry?.images"
+    />
   </a-card>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onUnmounted } from 'vue';
 import { message } from 'ant-design-vue';
-import { LoadingOutlined } from '@ant-design/icons-vue';
+import { LoadingOutlined, HistoryOutlined } from '@ant-design/icons-vue';
 import type { TableProps } from 'ant-design-vue';
 import { http } from '../../utils/httpClient';
 import { formatDateTime } from '../../utils/dateFormat';
 import type { PaginatedResponse } from '../../types/api';
 import Container3DModal from '../../components/Container3DModal.vue';
+import ContainerHistoryModal from '../../components/ContainerHistoryModal.vue';
 import { useStorageCosts } from '../../composables/useStorageCosts';
 
 interface Company {
@@ -242,6 +258,23 @@ function openLocation3D(record: ContainerEntry) {
     status: record.status,
   };
   show3DModal.value = true;
+}
+
+// History modal state
+const historyModalVisible = ref(false);
+const selectedHistoryEntry = ref<{
+  id: number;
+  containerNumber: string;
+  images: ContainerImage[];
+} | null>(null);
+
+function openHistory(record: ContainerEntry) {
+  selectedHistoryEntry.value = {
+    id: record.id,
+    containerNumber: record.container.container_number,
+    images: record.images || [],
+  };
+  historyModalVisible.value = true;
 }
 
 // Server-side pagination state
@@ -358,6 +391,12 @@ const columns: TableProps['columns'] = [
     title: 'Выезд',
     key: 'exit',
     width: 140,
+  },
+  {
+    title: '',
+    key: 'actions',
+    width: 50,
+    fixed: 'right' as const,
   },
 ];
 
