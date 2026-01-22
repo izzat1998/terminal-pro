@@ -24,12 +24,84 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "terminal_app.settings")
 django.setup()
 
+import time
+
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from django.conf import settings
+
+
+# Global deduplication cache at HTTP level
+_processed_updates: dict[int, float] = {}
+_dedup_lock = None
+
+
+class DeduplicatingRequestHandler(SimpleRequestHandler):
+    """
+    Custom webhook handler that deduplicates updates at the HTTP level.
+    Prevents duplicate processing when Telegram sends the same update multiple times.
+    """
+
+    async def handle(self, request: web.Request) -> web.Response:
+        """Handle incoming webhook request with deduplication."""
+        global _dedup_lock
+        if _dedup_lock is None:
+            _dedup_lock = asyncio.Lock()
+
+        # Parse the update to get update_id
+        try:
+            data = await request.json()
+            update_id = data.get("update_id")
+
+            # DEBUG: Log the update type with message_id
+            update_type = "unknown"
+            msg_id = None
+            user_id = None
+            if "message" in data:
+                msg = data["message"]
+                text = msg.get("text", "")[:30] if msg.get("text") else ""
+                msg_id = msg.get("message_id")
+                user_id = msg.get("from", {}).get("id")
+                update_type = f"message: {text}"
+            elif "callback_query" in data:
+                cb = data["callback_query"]
+                cb_data = cb.get("data", "")[:30]
+                msg_id = cb.get("message", {}).get("message_id")
+                user_id = cb.get("from", {}).get("id")
+                update_type = f"callback_query: {cb_data}"
+            elif "edited_message" in data:
+                msg = data["edited_message"]
+                msg_id = msg.get("message_id")
+                user_id = msg.get("from", {}).get("id")
+                update_type = "edited_message"
+            logger.info(f"INCOMING: update_id={update_id}, msg_id={msg_id}, user={user_id}, type={update_type}")
+        except Exception:
+            # If we can't parse, let the parent handle it
+            return await super().handle(request)
+
+        if update_id:
+            current_time = time.time()
+
+            async with _dedup_lock:
+                # Clean old entries (older than 5 minutes)
+                cutoff = current_time - 300
+                old_ids = [uid for uid, ts in _processed_updates.items() if ts < cutoff]
+                for uid in old_ids:
+                    del _processed_updates[uid]
+
+                # Check for duplicate
+                if update_id in _processed_updates:
+                    logger.info(f"HTTP-level skip: duplicate update_id={update_id}")
+                    return web.Response(text="ok")  # Respond OK but don't process
+
+                # Mark as processed
+                _processed_updates[update_id] = current_time
+
+        # Process the update
+        return await super().handle(request)
 
 from telegram_bot.handlers import (
     common,
@@ -40,7 +112,7 @@ from telegram_bot.handlers import (
     manager_access,
 )
 from telegram_bot.health import health_check, readiness_check
-from telegram_bot.middleware import ManagerAccessMiddleware
+from telegram_bot.middleware import ManagerAccessMiddleware, UpdateDeduplicationMiddleware
 
 
 # Configure logging
@@ -143,6 +215,9 @@ def create_dispatcher() -> Dispatcher:
     dp = Dispatcher(storage=storage)
 
     # Register middleware
+    # Deduplication middleware at dispatcher level to catch ALL updates before any processing
+    dedup_middleware = UpdateDeduplicationMiddleware()
+    dp.update.outer_middleware(dedup_middleware)
     dp.message.middleware(ManagerAccessMiddleware())
     dp.callback_query.middleware(ManagerAccessMiddleware())
 
@@ -167,8 +242,8 @@ def create_app(bot: Bot, dp: Dispatcher, config: dict) -> web.Application:
     """
     app = web.Application()
 
-    # Create webhook request handler with secret token verification
-    webhook_handler = SimpleRequestHandler(
+    # Create webhook request handler with deduplication and secret token verification
+    webhook_handler = DeduplicatingRequestHandler(
         dispatcher=dp,
         bot=bot,
         secret_token=config["webhook_secret"],

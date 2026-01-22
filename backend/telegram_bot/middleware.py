@@ -2,20 +2,125 @@
 Middleware and decorators for Telegram bot access control.
 """
 
+import asyncio
 import functools
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, TelegramObject
+from aiogram.types import CallbackQuery, Message, TelegramObject, Update
 from asgiref.sync import sync_to_async
 
 from apps.accounts.services import ManagerService
 
 
 logger = logging.getLogger(__name__)
+
+
+class UpdateDeduplicationMiddleware(BaseMiddleware):
+    """
+    Middleware to prevent duplicate processing of the same Telegram message.
+
+    Deduplicates based on message content (chat_id + message_id) rather than
+    update_id, because Telegram can send the same message with different update_ids
+    when the user has multiple clients or network issues cause retransmission.
+
+    Uses asyncio.Lock for thread-safe check-and-set operations since multiple
+    requests can arrive concurrently.
+    """
+
+    # Class-level cache shared across all instances
+    # Key: dedup_key (str), Value: timestamp
+    _seen_messages: dict[str, float] = {}
+    _cleanup_interval = 60  # seconds
+    _last_cleanup = 0.0
+    _max_age = 300  # Keep entries for 5 minutes
+    _lock: asyncio.Lock | None = None
+
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        """Get or create the asyncio lock (must be created in async context)."""
+        if cls._lock is None:
+            cls._lock = asyncio.Lock()
+        return cls._lock
+
+    def _get_dedup_key(self, update: Update) -> str | None:
+        """
+        Generate a deduplication key based on message content.
+
+        For messages: chat_id:message_id
+        For callbacks: callback_query_id (globally unique)
+        For edited messages: chat_id:message_id:edited
+        """
+        if update.message:
+            return f"msg:{update.message.chat.id}:{update.message.message_id}"
+        elif update.callback_query:
+            # callback_query.id is globally unique
+            return f"cb:{update.callback_query.id}"
+        elif update.edited_message:
+            # Include "edited" to distinguish from original message
+            return f"edited:{update.edited_message.chat.id}:{update.edited_message.message_id}"
+        return None
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        """
+        Check if this message has already been processed.
+        Uses lock to ensure atomic check-and-set for concurrent requests.
+        """
+        update: Update | None = None
+        if isinstance(event, Update):
+            update = event
+        else:
+            update = data.get("event_update")
+
+        if not update:
+            return await handler(event, data)
+
+        dedup_key = self._get_dedup_key(update)
+
+        if not dedup_key:
+            # Update type we can't deduplicate, process normally
+            return await handler(event, data)
+
+        current_time = time.time()
+        lock = self._get_lock()
+
+        async with lock:
+            # Periodic cleanup of old entries
+            if current_time - self._last_cleanup > self._cleanup_interval:
+                self._cleanup_old_entries(current_time)
+                UpdateDeduplicationMiddleware._last_cleanup = current_time
+
+            # Check if we've seen this message
+            if dedup_key in self._seen_messages:
+                logger.debug(f"Skipping duplicate message: {dedup_key}")
+                return None  # Skip duplicate
+
+            # Mark as seen BEFORE releasing lock
+            UpdateDeduplicationMiddleware._seen_messages[dedup_key] = current_time
+
+        # Process the update
+        return await handler(event, data)
+
+    def _cleanup_old_entries(self, current_time: float) -> None:
+        """Remove entries older than max_age."""
+        cutoff = current_time - self._max_age
+        old_keys = [
+            key for key, ts in self._seen_messages.items()
+            if ts < cutoff
+        ]
+        for key in old_keys:
+            del UpdateDeduplicationMiddleware._seen_messages[key]
+        if old_keys:
+            logger.debug(f"Cleaned up {len(old_keys)} old dedup entries")
 
 
 def _get_user_bot_access_sync(user) -> bool:

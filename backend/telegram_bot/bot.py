@@ -30,7 +30,7 @@ from telegram_bot.handlers import (
     exit,
     manager_access,
 )
-from telegram_bot.middleware import ManagerAccessMiddleware
+from telegram_bot.middleware import ManagerAccessMiddleware, UpdateDeduplicationMiddleware
 
 
 # Configure logging
@@ -76,7 +76,12 @@ async def main():
     # Initialize Dispatcher
     dp = Dispatcher(storage=storage)
 
-    # Register middleware to inject manager into all handlers
+    # Register middleware
+    # Deduplication middleware at dispatcher level to catch ALL updates before any processing
+    dedup_middleware = UpdateDeduplicationMiddleware()
+    dp.update.outer_middleware(dedup_middleware)
+
+    # Manager access middleware to inject user into handlers
     dp.message.middleware(ManagerAccessMiddleware())
     dp.callback_query.middleware(ManagerAccessMiddleware())
 
