@@ -598,6 +598,31 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=True, methods=["get"])
+    def events(self, request, pk=None):
+        """
+        Get event timeline for a container.
+
+        GET /api/terminal/entries/{id}/events/
+
+        Returns chronological list of all events for this container entry.
+        """
+        from .serializers import ContainerEventSerializer
+        from .services import ContainerEventService
+
+        entry = self.get_object()
+        event_service = ContainerEventService()
+        events = event_service.get_container_timeline(entry)
+
+        return Response({
+            "success": True,
+            "data": {
+                "container_number": entry.container.container_number,
+                "container_entry_id": entry.id,
+                "events": ContainerEventSerializer(events, many=True).data,
+            }
+        })
+
     @action(
         detail=False,
         methods=["post"],
