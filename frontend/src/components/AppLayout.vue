@@ -109,6 +109,22 @@
           </div>
         </div>
 
+        <!-- Container History Search (admin only) -->
+        <div v-if="isAdmin" class="header-search">
+          <a-input-search
+            v-model:value="containerSearchQuery"
+            placeholder="История контейнера..."
+            style="width: 220px;"
+            allow-clear
+            @search="handleContainerSearch"
+            @pressEnter="handleContainerSearch"
+          >
+            <template #prefix>
+              <HistoryOutlined style="color: rgba(255,255,255,0.5);" />
+            </template>
+          </a-input-search>
+        </div>
+
         <!-- User Dropdown -->
         <a-dropdown :trigger="['click']">
           <a class="user-dropdown" @click.prevent>
@@ -133,6 +149,12 @@
         MTT
       </a-layout-footer>
     </a-layout>
+
+    <!-- Container Full History Modal -->
+    <ContainerFullHistoryModal
+      v-model:open="containerHistoryModalVisible"
+      :container-number="containerHistoryNumber"
+    />
   </a-layout>
 </template>
 
@@ -148,6 +170,7 @@ import {
   DollarOutlined,
   DownOutlined,
   FundOutlined,
+  HistoryOutlined,
   IdcardOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
@@ -163,6 +186,7 @@ import { useAuth } from '../composables/useAuth';
 import { sidebarTheme } from '../theme';
 import { getActiveWorkOrdersCount } from '../services/workOrderService';
 import SidebarVehicleStatus from './SidebarVehicleStatus.vue';
+import ContainerFullHistoryModal from './ContainerFullHistoryModal.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -171,6 +195,19 @@ const selectedKeys = ref<string[]>(['dashboard']);
 const openKeys = ref<string[]>([]);
 const collapsed = ref<boolean>(false);
 const taskCount = ref<number>(0);
+
+// Container history search state
+const containerSearchQuery = ref('');
+const containerHistoryModalVisible = ref(false);
+const containerHistoryNumber = ref('');
+
+function handleContainerSearch() {
+  const query = containerSearchQuery.value.trim().toUpperCase();
+  if (!query) return;
+
+  containerHistoryNumber.value = query;
+  containerHistoryModalVisible.value = true;
+}
 
 // Fetch active work orders count for sidebar badge
 async function fetchTaskCount(): Promise<void> {
@@ -319,6 +356,48 @@ const isAdmin = computed(() => user.value?.user_type === 'admin')
 
 .user-dropdown:hover {
   color: #3b82f6;
+}
+
+/* Header search */
+.header-search {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+}
+
+.header-search :deep(.ant-input-search) {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.header-search :deep(.ant-input) {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  border: none;
+}
+
+.header-search :deep(.ant-input::placeholder) {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.header-search :deep(.ant-input-search-button) {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.header-search :deep(.ant-input-search-button:hover) {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.header-search :deep(.ant-input-clear-icon) {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.header-search :deep(.ant-input-clear-icon:hover) {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 /* Menu group titles */

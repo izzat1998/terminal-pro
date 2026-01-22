@@ -137,6 +137,24 @@ class TerminalService {
 
     return [];
   }
+
+  async getContainerHistory(containerNumber: string): Promise<TerminalEntry[]> {
+    const response = await http.get<PaginatedResponse<TerminalEntry> | { success: boolean; data: TerminalEntry[] }>(
+      `/terminal/entries/by-container/?container_number=${encodeURIComponent(containerNumber.toUpperCase())}`
+    );
+
+    // Handle paginated response
+    if (response && typeof response === 'object' && 'results' in response) {
+      return response.results;
+    }
+
+    // Handle success wrapper response
+    if (response && typeof response === 'object' && 'data' in response) {
+      return response.data;
+    }
+
+    return [];
+  }
 }
 
 export const terminalService = new TerminalService();
