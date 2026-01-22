@@ -31,7 +31,7 @@
         pageSizeOptions: ['10', '20', '50', '100'],
       }"
       row-key="id"
-      :scroll="{ x: 1200 }"
+      :scroll="{ x: 1350 }"
       size="small"
       @change="handleTableChange"
     >

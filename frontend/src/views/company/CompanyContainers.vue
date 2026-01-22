@@ -13,7 +13,7 @@
       :loading="loading"
       :pagination="{ pageSize: 10 }"
       row-key="id"
-      :scroll="{ x: 1400 }"
+      :scroll="{ x: 1500 }"
       size="small"
     >
       <template #bodyCell="{ column, record }">

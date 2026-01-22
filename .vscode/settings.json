@@ -2,10 +2,13 @@
   // ========================================
   // Python & Django Settings
   // ========================================
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
   "python.languageServer": "Pylance",
   "python.analysis.typeCheckingMode": "basic",
   "python.analysis.autoImportCompletions": true,
-  "python.analysis.diagnosticMode": "workspace",
+  "python.analysis.diagnosticMode": "openFilesOnly",
+  "python.analysis.extraPaths": ["${workspaceFolder}/backend"],
+  "python.envFile": "${workspaceFolder}/backend/.env",
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.formatOnSave": true,
@@ -74,7 +77,7 @@
   // ========================================
   // Theme & Appearance
   // ========================================
-  "workbench.colorTheme": "Default Dark Modern",
+  "workbench.colorTheme": "Abyss",
 
   // ========================================
   // Font Settings (JetBrains Mono)
