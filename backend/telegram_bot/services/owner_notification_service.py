@@ -11,6 +11,7 @@ from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import InputMediaPhoto
 from asgiref.sync import sync_to_async
+from django.utils import timezone
 
 from apps.accounts.models import CustomUser
 from apps.terminal_operations.models import ContainerEntry
@@ -66,7 +67,7 @@ class OwnerNotificationService:
             status_display=entry.get_status_display(),
             transport_display=entry.get_transport_type_display(),
             transport_number=entry.transport_number or "-",
-            entry_time_str=entry.entry_time.strftime("%d.%m.%Y %H:%M"),
+            entry_time_str=timezone.localtime(entry.entry_time).strftime("%d.%m.%Y %H:%M"),
             manager_name=manager.get_full_name() or manager.username,
         )
 
@@ -167,8 +168,14 @@ class OwnerNotificationService:
         else:
             display_container = container_num
 
+        # Title based on container status
+        if data.status_display == "Порожний":
+            title = "📦 Прием порожнего контейнера"
+        else:
+            title = "📦 Прием груженого контейнера"
+
         message = (
-            f"📦 <b>Новый контейнер на терминале</b>\n"
+            f"<b>{title}</b>\n"
             f"\n"
             f"📋 Контейнер: <code>{escape(display_container)}</code>\n"
             f"📐 ISO тип: {escape(data.iso_type)}\n"
