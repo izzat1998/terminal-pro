@@ -78,16 +78,32 @@
         <template v-if="column.key === 'recorded_by'">
           {{ record.recorded_by?.full_name || '—' }}
         </template>
+        <template v-if="column.key === 'actions'">
+          <a-tooltip title="История контейнера">
+            <a-button type="text" size="small" @click="openHistory(record)">
+              <template #icon><HistoryOutlined /></template>
+            </a-button>
+          </a-tooltip>
+        </template>
       </template>
     </a-table>
+
+    <!-- History Modal -->
+    <ContainerHistoryModal
+      v-model:open="historyModalVisible"
+      :entry-id="selectedHistoryEntry?.id ?? null"
+      :container-number="selectedHistoryEntry?.containerNumber ?? ''"
+    />
   </a-card>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
+import { HistoryOutlined } from '@ant-design/icons-vue';
 import { http } from '../../utils/httpClient';
 import { formatDateTime } from '../../utils/dateFormat';
+import ContainerHistoryModal from '../../components/ContainerHistoryModal.vue';
 
 interface Company {
   id: number;
@@ -165,6 +181,21 @@ const props = defineProps<{
 const entries = ref<ContainerEntry[]>([]);
 const loading = ref(false);
 
+// History modal state
+const historyModalVisible = ref(false);
+const selectedHistoryEntry = ref<{
+  id: number;
+  containerNumber: string;
+} | null>(null);
+
+function openHistory(record: ContainerEntry) {
+  selectedHistoryEntry.value = {
+    id: record.id,
+    containerNumber: record.container.container_number,
+  };
+  historyModalVisible.value = true;
+}
+
 const columns = [
   {
     title: 'Контейнер',
@@ -221,6 +252,12 @@ const columns = [
     title: 'Записал',
     key: 'recorded_by',
     width: 100,
+  },
+  {
+    title: '',
+    key: 'actions',
+    width: 50,
+    fixed: 'right' as const,
   },
 ];
 
