@@ -15,6 +15,7 @@ from apps.core.exceptions import BusinessLogicError
 from apps.core.services.base_service import BaseService
 from apps.terminal_operations.models import ContainerEntry, TerminalVehicle, WorkOrder
 
+from .container_event_service import ContainerEventService
 from .placement_service import PlacementService
 
 
@@ -57,6 +58,13 @@ class WorkOrderService(BaseService):
     def __init__(self):
         super().__init__()
         self.placement_service = PlacementService()
+        self._event_service = None
+
+    @property
+    def event_service(self):
+        if self._event_service is None:
+            self._event_service = ContainerEventService()
+        return self._event_service
 
     def create_work_order(
         self,
@@ -165,6 +173,16 @@ class WorkOrderService(BaseService):
 
         work_order.save()
 
+        # Emit WORK_ORDER_CREATED event
+        self.event_service.create_work_order_created_event(
+            container_entry=entry,
+            order_number=work_order.order_number,
+            target_coordinate=work_order.target_coordinate_string,
+            priority=priority,
+            work_order_id=work_order.id,
+            performed_by=created_by,
+        )
+
         self.logger.info(
             f"Created work order {work_order.order_number} for container "
             f"{entry.container.container_number} → {work_order.target_coordinate_string}"
@@ -234,6 +252,15 @@ class WorkOrderService(BaseService):
         work_order.status = "COMPLETED"
         work_order.completed_at = timezone.now()
         work_order.save(update_fields=["status", "completed_at", "updated_at"])
+
+        # Emit WORK_ORDER_COMPLETED event
+        self.event_service.create_work_order_completed_event(
+            container_entry=work_order.container_entry,
+            order_number=work_order.order_number,
+            work_order_id=work_order.id,
+            completed_at=work_order.completed_at,
+            performed_by=operator,
+        )
 
         operator_name = operator.get_full_name() if operator else "Operator"
         self.logger.info(f"Work order {work_order.order_number} completed by {operator_name}")
