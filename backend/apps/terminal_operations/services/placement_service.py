@@ -13,6 +13,8 @@ from apps.core.exceptions import BusinessLogicError
 from apps.core.services.base_service import BaseService
 from apps.terminal_operations.models import ContainerEntry, ContainerPosition, WorkOrder
 
+from .container_event_service import ContainerEventService
+
 
 class PositionOccupiedError(BusinessLogicError):
     """Raised when trying to assign an already occupied position."""
@@ -151,6 +153,12 @@ class PlacementService(BaseService):
     - Stacking rules enforcement
     - Layout data for visualization
     """
+
+    @property
+    def event_service(self):
+        if not hasattr(self, '_event_service'):
+            self._event_service = ContainerEventService()
+        return self._event_service
 
     def get_layout(self) -> dict:
         """
@@ -782,6 +790,18 @@ class PlacementService(BaseService):
         entry.location = position.coordinate_string
         entry.save(update_fields=["location"])
 
+        # Emit POSITION_ASSIGNED event
+        self.event_service.create_position_assigned_event(
+            container_entry=entry,
+            zone=zone,
+            row=row,
+            bay=bay,
+            tier=tier,
+            sub_slot=sub_slot,
+            auto_assigned=auto_assigned,
+            source="SYSTEM" if auto_assigned else "API",
+        )
+
         self.logger.info(
             f"Assigned container {entry.container.container_number} "
             f"to position {position.coordinate_string}"
@@ -907,6 +927,11 @@ class PlacementService(BaseService):
         )
 
         old_coordinate = position.coordinate_string
+        old_zone = position.zone
+        old_row = position.row
+        old_bay = position.bay
+        old_tier = position.tier
+        old_sub_slot = position.sub_slot
 
         # Update position
         position.zone = new_zone
@@ -918,6 +943,27 @@ class PlacementService(BaseService):
         # Update ContainerEntry.location
         position.container_entry.location = position.coordinate_string
         position.container_entry.save(update_fields=["location"])
+
+        # Emit POSITION_REMOVED event for old position
+        self.event_service.create_position_removed_event(
+            container_entry=position.container_entry,
+            previous_zone=old_zone,
+            previous_row=old_row,
+            previous_bay=old_bay,
+            previous_tier=old_tier,
+            previous_sub_slot=old_sub_slot,
+        )
+
+        # Emit POSITION_ASSIGNED event for new position
+        self.event_service.create_position_assigned_event(
+            container_entry=position.container_entry,
+            zone=new_zone,
+            row=new_row,
+            bay=new_bay,
+            tier=new_tier,
+            sub_slot=old_sub_slot,  # sub_slot doesn't change in move
+            auto_assigned=False,
+        )
 
         self.logger.info(
             f"Moved container {position.container_entry.container.container_number} "
@@ -946,13 +992,31 @@ class PlacementService(BaseService):
 
         container_number = position.container_entry.container.container_number
         coordinate = position.coordinate_string
+        container_entry = position.container_entry
+
+        # Store position data for event before deletion
+        prev_zone = position.zone
+        prev_row = position.row
+        prev_bay = position.bay
+        prev_tier = position.tier
+        prev_sub_slot = position.sub_slot
 
         # Clear location on entry
-        position.container_entry.location = ""
-        position.container_entry.save(update_fields=["location"])
+        container_entry.location = ""
+        container_entry.save(update_fields=["location"])
 
         # Delete position
         position.delete()
+
+        # Emit POSITION_REMOVED event
+        self.event_service.create_position_removed_event(
+            container_entry=container_entry,
+            previous_zone=prev_zone,
+            previous_row=prev_row,
+            previous_bay=prev_bay,
+            previous_tier=prev_tier,
+            previous_sub_slot=prev_sub_slot,
+        )
 
         self.logger.info(
             f"Removed container {container_number} from position {coordinate}"
