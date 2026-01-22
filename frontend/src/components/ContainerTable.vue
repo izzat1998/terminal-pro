@@ -600,13 +600,6 @@
         </template>
         <template v-else-if="column.key === 'actions'">
           <a-space>
-            <a-tooltip title="История контейнера">
-              <a-button type="link" size="small" @click="openHistory(record)">
-                <template #icon>
-                  <HistoryOutlined style="color: #722ed1;" />
-                </template>
-              </a-button>
-            </a-tooltip>
             <a-tooltip title="Стоимость хранения">
               <a-button type="link" size="small" @click="showStorageCost(record)">
                 <template #icon>
@@ -672,13 +665,6 @@
     :container-number="storageCostContainerNumber"
   />
 
-  <!-- History Modal -->
-  <ContainerHistoryModal
-    v-model:open="historyModalVisible"
-    :entry-id="historyEntryId"
-    :container-number="historyContainerNumber"
-  />
-
   <!-- Additional Charges (hidden, used for expense type selection modal) -->
   <AdditionalCharges
     ref="additionalChargesRef"
@@ -712,7 +698,6 @@ import {
   DatabaseOutlined,
   DollarOutlined,
   LoadingOutlined,
-  HistoryOutlined,
 } from '@ant-design/icons-vue';
 import { http } from '../utils/httpClient';
 import { debounce } from 'lodash-es';
@@ -726,7 +711,6 @@ import ExcelExportModal from './ExcelExportModal.vue';
 import Container3DModal from './Container3DModal.vue';
 import StorageCostModal from './StorageCostModal.vue';
 import AdditionalCharges from './billing/AdditionalCharges.vue';
-import ContainerHistoryModal from './ContainerHistoryModal.vue';
 import { additionalChargesService, type AdditionalCharge } from '../services/additionalChargesService';
 import { formatDateLocale } from '../utils/dateFormat';
 import dayjs from '@/config/dayjs';
@@ -1297,17 +1281,6 @@ const excelExportModalVisible = ref(false);
 const storageCostModalVisible = ref(false);
 const storageCostContainerId = ref<number | null>(null);
 const storageCostContainerNumber = ref('');
-
-// History modal state
-const historyModalVisible = ref(false);
-const historyEntryId = ref<number | null>(null);
-const historyContainerNumber = ref('');
-
-function openHistory(record: ContainerRecord) {
-  historyEntryId.value = record.containerId;
-  historyContainerNumber.value = record.container;
-  historyModalVisible.value = true;
-}
 
 // Additional charges component ref
 const additionalChargesRef = ref<InstanceType<typeof AdditionalCharges> | null>(null);
