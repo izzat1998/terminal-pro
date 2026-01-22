@@ -109,12 +109,15 @@
           </div>
         </div>
 
-        <!-- Container History Search (admin only) - centered -->
+        <!-- Spacer -->
+        <div style="flex: 1;"></div>
+
+        <!-- Container History Search (admin only) - right side, vertically centered -->
         <div v-if="isAdmin" class="header-search">
           <a-input-search
             v-model:value="containerSearchQuery"
             placeholder="История контейнера..."
-            style="width: 240px;"
+            style="width: 220px;"
             allow-clear
             @search="handleContainerSearch"
             @pressEnter="handleContainerSearch"
@@ -358,11 +361,11 @@ const isAdmin = computed(() => user.value?.user_type === 'admin')
   color: #3b82f6;
 }
 
-/* Header search - centered */
+/* Header search - right side, vertically centered */
 .header-search {
-  flex: 1;
   display: flex;
-  justify-content: center;
+  align-items: center;
+  margin-right: 16px;
 }
 
 .header-search :deep(.ant-input-search) {
