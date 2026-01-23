@@ -35,6 +35,12 @@ declare module 'vue-router' {
 
 const routes = [
   {
+    path: '/',
+    name: 'Landing',
+    component: () => import('../views/LandingView.vue'),
+    meta: { requiresAuth: false, title: 'МТТ - Container Terminal Management' },
+  },
+  {
     path: '/login',
     name: 'Login',
     component: LoginView,
@@ -46,8 +52,15 @@ const routes = [
     component: () => import('../views/UnauthorizedView.vue'),
     meta: { requiresAuth: true, title: 'Нет доступа - МТТ' },
   },
+  // Standalone test route (no auth required for development testing)
   {
-    path: '/',
+    path: '/yard-test-dev',
+    name: 'YardTestDev',
+    component: () => import('../views/YardTestView.vue'),
+    meta: { requiresAuth: false, title: 'Тест 3D Площадки - МТТ' },
+  },
+  {
+    path: '/app',
     component: AppLayout,
     meta: { requiresAuth: true },
     children: [
@@ -125,6 +138,12 @@ const routes = [
         name: 'ContainerPlacement',
         component: () => import('../views/ContainerPlacement.vue'),
         meta: { title: 'Площадка 3D - МТТ', roles: ['admin'] as UserRole[] },
+      },
+      {
+        path: '/yard-test',
+        name: 'YardTest',
+        component: () => import('../views/YardTestView.vue'),
+        meta: { title: 'Тест 3D Площадки - МТТ', roles: ['admin'] as UserRole[] },
       },
       {
         path: '/tasks',
@@ -247,8 +266,8 @@ router.beforeEach(async (to, _from, next) => {
       return;
     }
 
-    // Handle root path redirect based on user type
-    if (to.path === '/') {
+    // Handle app routes redirect based on user type
+    if (to.path === '/app' || to.path === '/app/') {
       const redirectPath = user.value?.user_type === 'customer' ? '/customer' : '/containers';
       next({ path: redirectPath });
       return;
@@ -267,8 +286,15 @@ router.beforeEach(async (to, _from, next) => {
 
     next();
   } else {
-    // If going to login page and already authenticated, redirect based on user type
+    // If going to login page and already authenticated, redirect to app
     if (to.name === 'Login' && isAuthenticated.value) {
+      const redirectPath = user.value?.user_type === 'customer' ? '/customer' : '/containers';
+      next({ path: redirectPath });
+      return;
+    }
+
+    // If authenticated user visits landing page, redirect to app
+    if (to.name === 'Landing' && isAuthenticated.value) {
       const redirectPath = user.value?.user_type === 'customer' ? '/customer' : '/containers';
       next({ path: redirectPath });
       return;

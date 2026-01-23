@@ -491,3 +491,117 @@ Access in code:
 ```typescript
 const apiUrl = import.meta.env.VITE_API_BASE_URL
 ```
+
+## 3D Yard Visualization (DXF to Three.js)
+
+The terminal yard is visualized using DXF files converted to Three.js. Understanding the coordinate transformation is critical for correct container placement.
+
+### Coordinate Systems
+
+| System | X Axis | Y Axis | Z Axis | Units |
+|--------|--------|--------|--------|-------|
+| **DXF (AutoCAD)** | Right → | Up ↑ (2D plan) | Out of screen | Meters (INSUNITS=6) |
+| **Three.js** | Right → | Up ↑ | Toward camera | Meters |
+
+### Transformation Pipeline
+
+```
+DXF Coordinates          Three.js World           Final Position
+(13016, 73253)    →     (1782, 0, -257)    →    (1788, 1.3, -263)
+                  │                        │
+            Step 1: Center + Axis    Step 2: Corner→Center
+                    Swap                    Offset
+```
+
+### Step 1: DXF to Three.js World Coordinates
+
+```typescript
+// In useContainers3D.ts and useDxfYard.ts
+function dxfToWorld(dxfX: number, dxfY: number): THREE.Vector3 {
+  const x = (dxfX - center.x) * scale    // Center at origin
+  const z = -(dxfY - center.y) * scale   // DXF Y → negative Three.js Z
+  return new THREE.Vector3(x, 0, z)
+}
+```
+
+**Why negate Y?** DXF Y-axis points "up" in plan view, but in Three.js top-down view, "forward" is negative Z.
+
+### Step 2: Corner-to-Center Offset (Critical Fix)
+
+**Problem:** DXF block INSERT points are at the corner, but Three.js boxes are drawn centered.
+
+**Solution:** Offset by half-dimensions, rotated by container angle:
+
+```typescript
+// In useContainers3D.ts, lines 242-260
+const halfLength = dims.length / 2  // ~6.1m for 40ft container
+const halfWidth = dims.width / 2    // ~1.2m
+
+// Rotate offset by container rotation angle
+const cos = Math.cos(rotationRad)
+const sin = Math.sin(rotationRad)
+const offsetX = halfLength * cos - halfWidth * sin
+const offsetZ = -(halfLength * sin + halfWidth * cos)
+
+// Final position = INSERT point + rotated offset
+const finalX = worldPos.x + offsetX
+const finalZ = worldPos.z + offsetZ
+```
+
+**Visual explanation:**
+```
+DXF Block (corner origin):        Three.js Box (centered):
+
+   ┌────────────────┐               ┌────────────────┐
+   │                │               │       ×        │ ← Center
+   │                │      →        │                │
+   ●────────────────┘               └────────────────┘
+   ↑ INSERT point
+
+   Offset = (halfLength, halfWidth) rotated by θ
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/composables/useContainers3D.ts` | 3D container rendering with coordinate transform |
+| `src/composables/useDxfYard.ts` | DXF infrastructure loading and rendering |
+| `src/utils/dxfToThree.ts` | DXF parsing and Three.js geometry creation |
+| `src/utils/jsonCoordinates.ts` | Coordinate conversion utilities |
+| `src/data/containers.json` | Container positions extracted from DXF |
+| `public/yard.json` | Pre-parsed DXF data with coordinate system |
+
+### Container Position Data Format
+
+```typescript
+interface ContainerPosition {
+  id: number
+  x: number           // Pre-centered X (legacy, don't use with DXF)
+  y: number           // Pre-centered Y (legacy, don't use with DXF)
+  rotation: number    // Degrees, counter-clockwise from +X
+  blockName: string   // "40ft" or "20ft"
+  layer: string       // DXF layer name
+  _original: {        // ← USE THIS when aligning with DXF infrastructure
+    x: number         // Original DXF X coordinate
+    y: number         // Original DXF Y coordinate
+  }
+}
+```
+
+### Debugging Tips
+
+If containers appear misaligned:
+
+1. **Check coordinate system:** Ensure `coordinateSystem` from DXF is passed to `createContainerMeshes()`
+2. **Verify `_original` is used:** When `coordinateSystem` is provided, code should use `pos._original` not `pos.x/y`
+3. **Add debug markers:** Temporarily add spheres at INSERT points to visualize:
+   ```typescript
+   const marker = new THREE.Mesh(
+     new THREE.SphereGeometry(1),
+     new THREE.MeshBasicMaterial({ color: 0xff0000 })
+   )
+   marker.position.set(worldPos.x, 3, worldPos.z)
+   group.add(marker)
+   ```
+4. **Check offset direction:** If containers are shifted wrong direction, the block origin may be at a different corner - adjust offset signs accordingly
