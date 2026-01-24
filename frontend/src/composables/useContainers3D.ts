@@ -15,11 +15,68 @@ export interface ContainerPosition {
   rotation: number  // Degrees
   blockName?: string
   layer?: string
+  tier?: number  // Stack level (1 = ground, 2-4 = stacked on top)
   // Original DXF coordinates (before centering) - used for alignment with DXF infrastructure
   _original?: {
     x: number
     y: number
   }
+}
+
+/**
+ * Add random stacking (tiers) to existing containers
+ * Takes existing ground-level containers and randomly stacks more on top
+ */
+export function addRandomStacking(
+  baseContainers: ContainerPosition[],
+  options: {
+    maxTier?: number     // Maximum stack height (default: 4)
+    stackRate?: number   // Probability of stacking on existing container (0-1, default: 0.6)
+  } = {}
+): ContainerPosition[] {
+  const {
+    maxTier = 4,
+    stackRate = 0.6,
+  } = options
+
+  // Mark all base containers as tier 1
+  const groundContainers = baseContainers.map(c => ({
+    ...c,
+    tier: 1,
+  }))
+
+  const result: ContainerPosition[] = [...groundContainers]
+  let nextId = Math.max(...baseContainers.map(c => c.id)) + 1
+
+  // Track current tier for each ground container
+  const tierMap: Map<number, number> = new Map()
+  groundContainers.forEach(c => tierMap.set(c.id, 1))
+
+  // Add stacked containers on top of existing ones
+  for (let tier = 2; tier <= maxTier; tier++) {
+    for (const groundContainer of groundContainers) {
+      const currentTier = tierMap.get(groundContainer.id) ?? 1
+
+      // Only stack if this container is at tier-1 and random check passes
+      if (currentTier === tier - 1 && Math.random() < stackRate) {
+        tierMap.set(groundContainer.id, tier)
+
+        // Create stacked container at same position but higher tier
+        result.push({
+          id: nextId++,
+          x: groundContainer.x,
+          y: groundContainer.y,
+          rotation: groundContainer.rotation,
+          blockName: groundContainer.blockName,
+          layer: groundContainer.layer,
+          tier,
+          _original: groundContainer._original,
+        })
+      }
+    }
+  }
+
+  return result
 }
 
 // Container data from backend
@@ -41,18 +98,28 @@ export interface Container3D extends ContainerPosition {
   isHovered: boolean
 }
 
-// Color schemes
+// Premium visual color palette (from Hero3DView - creates variety)
+export const VISUAL_CONTAINER_PALETTE = [
+  new THREE.Color(0x0077B6),   // Deep Blue
+  new THREE.Color(0x00B4D8),   // Light Cyan
+  new THREE.Color(0x023E8A),   // Navy
+  new THREE.Color(0x48CAE4),   // Sky Blue
+  new THREE.Color(0x90E0EF),   // Light Blue
+  new THREE.Color(0xF97316),   // Orange accent
+]
+
+// Functional color schemes (for status/dwell modes)
 export const CONTAINER_COLORS = {
-  // Status colors
-  laden: new THREE.Color(0x1890ff),    // Blue
-  empty: new THREE.Color(0xfa8c16),    // Orange
+  // Status colors (premium blue palette)
+  laden: new THREE.Color(0x0077B6),    // Deep Blue
+  empty: new THREE.Color(0xF97316),    // Orange
   unknown: new THREE.Color(0x8c8c8c),  // Gray
 
-  // Selection colors
+  // Selection colors (always override visual colors)
   selected: new THREE.Color(0x52c41a), // Green
-  hovered: new THREE.Color(0x69c0ff),  // Light blue
+  hovered: new THREE.Color(0x48CAE4),  // Sky Blue
 
-  // Dwell time colors (for heat map mode)
+  // Dwell time colors (heat map)
   dwellLow: new THREE.Color(0x52c41a),    // Green (0-7 days)
   dwellMedium: new THREE.Color(0xfaad14), // Yellow (7-14 days)
   dwellHigh: new THREE.Color(0xf5222d),   // Red (14+ days)
@@ -65,7 +132,7 @@ export const CONTAINER_DIMENSIONS = {
   '40HC': { length: 12.192, width: 2.438, height: 2.896 },
 }
 
-export type ColorMode = 'status' | 'dwell' | 'company'
+export type ColorMode = 'status' | 'dwell' | 'company' | 'visual'
 
 export interface UseContainers3DOptions {
   /** Scale factor for coordinates (default: 1.0 for meters, or from DXF) */
@@ -100,38 +167,29 @@ export function useContainers3D(
   // Three.js objects
   const containerMesh = shallowRef<THREE.InstancedMesh | null>(null)
   const outlineMesh = shallowRef<THREE.InstancedMesh | null>(null)
+  const stripMesh = shallowRef<THREE.InstancedMesh | null>(null)  // White ID strips
   const containerGroup = shallowRef<THREE.Group | null>(null)
 
   // State
-  const colorMode = ref<ColorMode>('status')
+  const colorMode = ref<ColorMode>('visual')  // Default to visual mode for colorful display
   const selectedIds = ref<Set<number>>(new Set())
   const hoveredId = ref<number | null>(null)
 
-  // Computed: merged container data
-  const containers = computed<Container3D[]>(() => {
-    return positionsRef.value.map(pos => {
-      // Find matching backend data by ID
-      const data = dataRef.value.find(d => d.id === pos.id)
+  // Simple string hash for consistent company colors
+  function hashString(str: string): number {
+    let hash = 0
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i)
+      hash |= 0
+    }
+    return Math.abs(hash)
+  }
 
-      // Determine color based on mode and state
-      let color = CONTAINER_COLORS.unknown
-      if (selectedIds.value.has(pos.id)) {
-        color = CONTAINER_COLORS.selected
-      } else if (hoveredId.value === pos.id) {
-        color = CONTAINER_COLORS.hovered
-      } else if (data) {
-        color = getContainerColor(data, colorMode.value)
-      }
-
-      return {
-        ...pos,
-        data,
-        color,
-        isSelected: selectedIds.value.has(pos.id),
-        isHovered: hoveredId.value === pos.id,
-      }
-    })
-  })
+  // Get visual color for container (ID-based for consistent variety)
+  function getVisualColor(containerId: number): THREE.Color {
+    const colorIndex = containerId % VISUAL_CONTAINER_PALETTE.length
+    return VISUAL_CONTAINER_PALETTE[colorIndex]!.clone()
+  }
 
   // Get color based on mode
   function getContainerColor(data: ContainerData, mode: ColorMode): THREE.Color {
@@ -151,20 +209,46 @@ export function useContainers3D(
         const hash = hashString(data.company_name)
         return new THREE.Color().setHSL((hash % 360) / 360, 0.7, 0.5)
 
+      case 'visual':
+        // Use ID-based color from visual palette for consistent variety
+        return getVisualColor(data.id)
+
       default:
         return CONTAINER_COLORS.unknown
     }
   }
 
-  // Simple string hash for consistent company colors
-  function hashString(str: string): number {
-    let hash = 0
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) - hash) + str.charCodeAt(i)
-      hash |= 0
-    }
-    return Math.abs(hash)
-  }
+  // Computed: merged container data
+  const containers = computed<Container3D[]>(() => {
+    return positionsRef.value.map(pos => {
+      // Find matching backend data by ID
+      const data = dataRef.value.find(d => d.id === pos.id)
+
+      // Determine color based on mode and state
+      let color = CONTAINER_COLORS.unknown
+      if (selectedIds.value.has(pos.id)) {
+        color = CONTAINER_COLORS.selected
+      } else if (hoveredId.value === pos.id) {
+        color = CONTAINER_COLORS.hovered
+      } else if (colorMode.value === 'visual') {
+        // Visual mode: use colorful palette regardless of data
+        color = getVisualColor(pos.id)
+      } else if (data) {
+        color = getContainerColor(data, colorMode.value)
+      } else {
+        // No data and not visual mode: use visual colors as fallback for variety
+        color = getVisualColor(pos.id)
+      }
+
+      return {
+        ...pos,
+        data,
+        color,
+        isSelected: selectedIds.value.has(pos.id),
+        isHovered: hoveredId.value === pos.id,
+      }
+    })
+  })
 
   /**
    * Initialize container meshes
@@ -194,11 +278,13 @@ export function useContainers3D(
     const dims = CONTAINER_DIMENSIONS[mergedOpts.defaultContainerType]
     const geometry = new THREE.BoxGeometry(dims.length, dims.height, dims.width)
 
-    // Create material
-    const material = new THREE.MeshLambertMaterial({
+    // Create PBR material for premium visuals (metallic sheen)
+    const material = new THREE.MeshStandardMaterial({
       color: 0xffffff,
+      roughness: 0.4,
+      metalness: 0.3,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.95,
     })
 
     // Create instanced mesh
@@ -221,8 +307,21 @@ export function useContainers3D(
     outline.name = 'container_outlines'
     outline.visible = false // Only show for selected
 
+    // Create white identification strips (like real container labels)
+    const stripGeometry = new THREE.BoxGeometry(2, 0.8, 0.05)
+    const stripMaterial = new THREE.MeshStandardMaterial({
+      color: 0xFFFFFF,
+      roughness: 0.3,
+      metalness: 0.1,
+    })
+    const strips = new THREE.InstancedMesh(stripGeometry, stripMaterial, positions.length)
+    strips.name = 'container_strips'
+    strips.castShadow = true
+    strips.receiveShadow = true
+
     // Position containers
     const matrix = new THREE.Matrix4()
+    const stripMatrix = new THREE.Matrix4()
     const color = new THREE.Color()
 
     positions.forEach((pos, index) => {
@@ -259,16 +358,41 @@ export function useContainers3D(
       const finalX = worldPos.x + offsetX
       const finalZ = worldPos.z + offsetZ
 
+      // Calculate Y position based on tier (stacking)
+      // Tier 1 = ground level, Tier 2+ = stacked on top
+      const tier = pos.tier ?? 1
+      const yPosition = dims.height / 2 + (tier - 1) * dims.height
+
       matrix.identity()
       matrix.makeRotationY(rotationRad)
       matrix.setPosition(
         finalX,
-        dims.height / 2,
+        yPosition,
         finalZ
       )
 
       mesh.setMatrixAt(index, matrix)
       outline.setMatrixAt(index, matrix)
+
+      // Position white strip on front face of container
+      // Strip is offset: Y +0.5 (upper area), Z +halfWidth (front face)
+      const stripOffsetY = 0.5
+      const stripOffsetZ = halfWidth + 0.03  // Slightly in front of container face
+
+      // Rotate strip offset by container rotation
+      const stripLocalX = 0
+      const stripLocalZ = stripOffsetZ
+      const stripWorldOffsetX = stripLocalX * cos - stripLocalZ * sin
+      const stripWorldOffsetZ = -(stripLocalX * sin + stripLocalZ * cos)
+
+      stripMatrix.identity()
+      stripMatrix.makeRotationY(rotationRad)
+      stripMatrix.setPosition(
+        finalX + stripWorldOffsetX,
+        yPosition + stripOffsetY,
+        finalZ + stripWorldOffsetZ
+      )
+      strips.setMatrixAt(index, stripMatrix)
 
       // Set initial color
       const container = containers.value[index]
@@ -278,13 +402,16 @@ export function useContainers3D(
 
     mesh.instanceMatrix.needsUpdate = true
     outline.instanceMatrix.needsUpdate = true
+    strips.instanceMatrix.needsUpdate = true
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
 
     containerMesh.value = mesh
     outlineMesh.value = outline
+    stripMesh.value = strips
 
     group.add(mesh)
     group.add(outline)
+    group.add(strips)
 
     return group
   }
@@ -448,6 +575,14 @@ export function useContainers3D(
         outlineMesh.value.material.dispose()
       }
       outlineMesh.value = null
+    }
+
+    if (stripMesh.value) {
+      stripMesh.value.geometry.dispose()
+      if (stripMesh.value.material instanceof THREE.Material) {
+        stripMesh.value.material.dispose()
+      }
+      stripMesh.value = null
     }
 
     if (containerGroup.value) {

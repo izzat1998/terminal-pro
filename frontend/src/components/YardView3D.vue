@@ -8,12 +8,14 @@ import { ref, shallowRef, onMounted, onUnmounted, computed, watch, nextTick } fr
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { useDxfYard, type YardLayerInfo } from '@/composables/useDxfYard'
-import { useContainers3D, type ContainerPosition, type ContainerData, type ColorMode } from '@/composables/useContainers3D'
+import { useContainers3D, addRandomStacking, type ContainerPosition, type ContainerData, type ColorMode } from '@/composables/useContainers3D'
 import { useBuildings3D, type BuildingPosition } from '@/composables/useBuildings3D'
 import { useFences3D, type FenceSegment } from '@/composables/useFences3D'
 import { useRailway3D, type RailwayTrack } from '@/composables/useRailway3D'
 import { usePlatforms3D, type PlatformData } from '@/composables/usePlatforms3D'
 import { useRoads3D, type RoadSegment, type SidewalkData } from '@/composables/useRoads3D'
+import { useVehicleModels } from '@/composables/useVehicleModels'
+import { GATES, transformToWorld } from '@/data/scenePositions'
 import containersJson from '@/data/containers.json'
 import buildingsJson from '@/data/buildings.json'
 import warehousesJson from '@/data/warehouses.json'
@@ -22,6 +24,19 @@ import railwayJson from '@/data/railway.json'
 import storagePlatformsJson from '@/data/storagePlatforms.json'
 import roadsJson from '@/data/roads.json'
 import sidewalksJson from '@/data/sidewalks.json'
+
+// Premium color palette (from Hero3DView)
+const PREMIUM_COLORS = {
+  primary: 0x0077B6,     // Deep Blue
+  secondary: 0x00B4D8,   // Light Cyan
+  accent: 0x023E8A,      // Navy
+  light: 0xCAF0F8,       // Light Sky
+  ground: 0xE8F4F8,      // Pale Blue
+  background: 0xF0F7FA,  // Scene background
+  white: 0xFFFFFF,
+  gridCenter: 0xCCE5ED,
+  gridLines: 0xDDEEF4,
+}
 
 // Props
 interface Props {
@@ -46,7 +61,7 @@ const props = withDefaults(defineProps<Props>(), {
   height: '100%',
   showLayerPanel: true,
   showStats: true,
-  colorMode: 'status',
+  colorMode: 'visual',  // Default to visual mode for colorful display
   interactive: true,
 })
 
@@ -92,8 +107,13 @@ const {
   dispose: disposeYard,
 } = useDxfYard()
 
-// Container positions from JSON
-const containerPositions = ref<ContainerPosition[]>(containersJson as ContainerPosition[])
+// Container positions from DXF JSON with random stacking added on top
+const containerPositions = ref<ContainerPosition[]>(
+  addRandomStacking(containersJson as ContainerPosition[], {
+    maxTier: 4,       // Maximum stack height of 4
+    stackRate: 0.6,   // 60% chance to stack on existing container
+  })
+)
 const containerDataRef = computed(() => props.containerData ?? [])
 
 const {
@@ -183,6 +203,16 @@ const {
   dispose: disposeRoads,
 } = useRoads3D(roadSegments, sidewalkData)
 
+// Vehicle models composable
+const {
+  createTruckModel,
+  createCarModel,
+  createWagonModel,
+} = useVehicleModels()
+
+// Test vehicles group (for demonstration)
+const testVehiclesGroup = shallowRef<THREE.Group | null>(null)
+
 // State
 const isInitialized = ref(false)
 const showLayerPanelState = ref(props.showLayerPanel)
@@ -200,9 +230,10 @@ const selectedCount = computed(() => selectedIds.value.size)
 function initScene(): void {
   if (!canvasRef.value || isInitialized.value) return
 
-  // Create scene
+  // Create scene with premium background and fog
   scene.value = new THREE.Scene()
-  scene.value.background = new THREE.Color(0xf0f2f5)
+  scene.value.background = new THREE.Color(PREMIUM_COLORS.background)
+  scene.value.fog = new THREE.Fog(PREMIUM_COLORS.background, 300, 800)
 
   // Create orthographic camera
   const aspect = canvasRef.value.clientWidth / canvasRef.value.clientHeight
@@ -218,7 +249,7 @@ function initScene(): void {
   camera.value.position.set(0, 100, 0)
   camera.value.lookAt(0, 0, 0)
 
-  // Create renderer
+  // Create renderer with tone mapping for premium visuals
   renderer.value = new THREE.WebGLRenderer({
     canvas: canvasRef.value,
     antialias: true,
@@ -227,6 +258,8 @@ function initScene(): void {
   renderer.value.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.value.shadowMap.enabled = true
   renderer.value.shadowMap.type = THREE.PCFSoftShadowMap
+  renderer.value.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.value.toneMappingExposure = 1.2
 
   // Create controls
   controls.value = new OrbitControls(camera.value, renderer.value.domElement)
@@ -240,24 +273,41 @@ function initScene(): void {
   controls.value.maxZoom = 20
   controls.value.maxPolarAngle = Math.PI / 2.1 // Prevent going underground
 
-  // Add lights
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+  // Professional 4-light setup for premium visuals
+  // 1. Ambient light (base illumination)
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.7)
   scene.value.add(ambientLight)
 
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
-  directionalLight.position.set(50, 100, 50)
-  directionalLight.castShadow = true
-  directionalLight.shadow.mapSize.width = 2048
-  directionalLight.shadow.mapSize.height = 2048
-  directionalLight.shadow.camera.near = 0.5
-  directionalLight.shadow.camera.far = 500
-  scene.value.add(directionalLight)
+  // 2. Main directional light (key light with shadows)
+  const mainLight = new THREE.DirectionalLight(0xffffff, 1.2)
+  mainLight.position.set(80, 120, 60)
+  mainLight.castShadow = true
+  mainLight.shadow.mapSize.width = 2048
+  mainLight.shadow.mapSize.height = 2048
+  mainLight.shadow.camera.near = 10
+  mainLight.shadow.camera.far = 400
+  mainLight.shadow.camera.left = -100
+  mainLight.shadow.camera.right = 100
+  mainLight.shadow.camera.top = 100
+  mainLight.shadow.camera.bottom = -100
+  mainLight.shadow.bias = -0.0001
+  scene.value.add(mainLight)
 
-  // Add ground plane
+  // 3. Fill light (cyan accent from opposite side)
+  const fillLight = new THREE.DirectionalLight(PREMIUM_COLORS.secondary, 0.3)
+  fillLight.position.set(-50, 30, -50)
+  scene.value.add(fillLight)
+
+  // 4. Hemisphere light (natural sky/ground reflection)
+  const hemiLight = new THREE.HemisphereLight(0xffffff, PREMIUM_COLORS.ground, 0.6)
+  scene.value.add(hemiLight)
+
+  // Add ground plane with premium pale blue color
   const groundGeometry = new THREE.PlaneGeometry(1000, 1000)
   const groundMaterial = new THREE.MeshStandardMaterial({
-    color: 0xe8e8e8,
-    roughness: 0.8,
+    color: PREMIUM_COLORS.ground,
+    roughness: 0.9,
+    metalness: 0.1,
   })
   const ground = new THREE.Mesh(groundGeometry, groundMaterial)
   ground.rotation.x = -Math.PI / 2
@@ -266,8 +316,8 @@ function initScene(): void {
   ground.name = 'ground'
   scene.value.add(ground)
 
-  // Add grid helper
-  const gridHelper = new THREE.GridHelper(200, 100, 0xcccccc, 0xdddddd)
+  // Add grid helper with blue-tinted lines
+  const gridHelper = new THREE.GridHelper(200, 100, PREMIUM_COLORS.gridCenter, PREMIUM_COLORS.gridLines)
   gridHelper.name = 'grid'
   scene.value.add(gridHelper)
 
@@ -418,6 +468,11 @@ async function loadYard(): Promise<void> {
     }
   }
 
+  // Create test vehicles at gate positions
+  if (coordinateSystem.value) {
+    createTestVehicles()
+  }
+
   // Fit camera to content
   fitCameraToContent()
 
@@ -426,6 +481,71 @@ async function loadYard(): Promise<void> {
     entityCount: dxfStats.value?.entityCount.total ?? 0,
     containerCount: containerPositions.value.length,
   })
+}
+
+/**
+ * Create test vehicles at gate positions for visual verification
+ * Demonstrates truck, car, and wagon models
+ */
+function createTestVehicles(): void {
+  if (!scene.value || !coordinateSystem.value) return
+
+  // Clean up existing test vehicles
+  if (testVehiclesGroup.value) {
+    scene.value.remove(testVehiclesGroup.value)
+    testVehiclesGroup.value.traverse(child => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose()
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => m.dispose())
+        } else {
+          child.material.dispose()
+        }
+      }
+    })
+  }
+
+  testVehiclesGroup.value = new THREE.Group()
+  testVehiclesGroup.value.name = 'test-vehicles'
+
+  // Get main gate position
+  const mainGate = GATES['main']
+  if (mainGate) {
+    const worldPos = transformToWorld(mainGate.position, coordinateSystem.value)
+    const rotationRad = -mainGate.rotation * (Math.PI / 180)
+
+    // Create truck with 40ft chassis at main gate
+    const truck = createTruckModel({ withChassis: true, chassisSize: '40ft' })
+    truck.position.set(worldPos.x, 0, worldPos.z)
+    truck.rotation.y = rotationRad
+    truck.name = 'test-truck-main-gate'
+    testVehiclesGroup.value.add(truck)
+
+    // Create a car slightly behind the truck (in waiting area direction)
+    const carOffsetX = Math.cos(rotationRad + Math.PI) * 25
+    const carOffsetZ = Math.sin(rotationRad + Math.PI) * 25
+    const car = createCarModel({ color: 0xCC0000 })  // Red car
+    car.position.set(worldPos.x + carOffsetX, 0, worldPos.z - carOffsetZ)
+    car.rotation.y = rotationRad
+    car.name = 'test-car-behind-truck'
+    testVehiclesGroup.value.add(car)
+  }
+
+  // Get secondary gate position and add a wagon nearby
+  const secondaryGate = GATES['secondary']
+  if (secondaryGate) {
+    const worldPos = transformToWorld(secondaryGate.position, coordinateSystem.value)
+    const rotationRad = -secondaryGate.rotation * (Math.PI / 180)
+
+    // Create wagon at secondary gate (rail siding)
+    const wagon = createWagonModel()
+    wagon.position.set(worldPos.x, 0, worldPos.z)
+    wagon.rotation.y = rotationRad
+    wagon.name = 'test-wagon-secondary-gate'
+    testVehiclesGroup.value.add(wagon)
+  }
+
+  scene.value.add(testVehiclesGroup.value)
 }
 
 // Fit camera to show all content
@@ -610,6 +730,21 @@ function dispose(): void {
     animationId = null
   }
 
+  // Dispose test vehicles
+  if (testVehiclesGroup.value) {
+    testVehiclesGroup.value.traverse(child => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose()
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => m.dispose())
+        } else {
+          child.material.dispose()
+        }
+      }
+    })
+    testVehiclesGroup.value = null
+  }
+
   disposeYard()
   disposeContainers()
   disposeBuildings()
@@ -749,6 +884,7 @@ watch(() => props.dxfUrl, async () => {
       <a-segmented
         :value="currentColorMode"
         :options="[
+          { value: 'visual', label: 'Визуал' },
           { value: 'status', label: 'Статус' },
           { value: 'dwell', label: 'Срок' },
         ]"
@@ -801,17 +937,28 @@ watch(() => props.dxfUrl, async () => {
 
     <!-- Legend -->
     <div class="color-legend">
-      <div v-if="currentColorMode === 'status'" class="legend-items">
+      <div v-if="currentColorMode === 'visual'" class="legend-items">
         <div class="legend-item">
-          <span class="legend-color" :style="{ background: '#1890ff' }" />
+          <span class="legend-color" :style="{ background: '#0077B6' }" />
+          <span class="legend-color" :style="{ background: '#00B4D8' }" />
+          <span class="legend-color" :style="{ background: '#023E8A' }" />
+          <span class="legend-color" :style="{ background: '#48CAE4' }" />
+          <span class="legend-color" :style="{ background: '#90E0EF' }" />
+          <span class="legend-color" :style="{ background: '#F97316' }" />
+          <span style="margin-left: 4px;">Визуальный режим</span>
+        </div>
+      </div>
+      <div v-else-if="currentColorMode === 'status'" class="legend-items">
+        <div class="legend-item">
+          <span class="legend-color" :style="{ background: '#0077B6' }" />
           <span>Груженые</span>
         </div>
         <div class="legend-item">
-          <span class="legend-color" :style="{ background: '#fa8c16' }" />
+          <span class="legend-color" :style="{ background: '#F97316' }" />
           <span>Пустые</span>
         </div>
       </div>
-      <div v-if="currentColorMode === 'dwell'" class="legend-items">
+      <div v-else-if="currentColorMode === 'dwell'" class="legend-items">
         <div class="legend-item">
           <span class="legend-color" :style="{ background: '#52c41a' }" />
           <span>0-7 дней</span>
@@ -831,9 +978,15 @@ watch(() => props.dxfUrl, async () => {
 
 <style scoped>
 .yard-view-3d {
+  /* Premium color palette CSS variables */
+  --yard-bg: #F0F7FA;
+  --yard-ground: #E8F4F8;
+  --yard-primary: #0077B6;
+  --yard-secondary: #00B4D8;
+
   position: relative;
   width: 100%;
-  background: #f0f2f5;
+  background: var(--yard-bg);
   border-radius: 8px;
   overflow: hidden;
 }

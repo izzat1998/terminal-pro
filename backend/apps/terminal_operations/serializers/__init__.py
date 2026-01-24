@@ -23,6 +23,7 @@ from .containers import (
     ContainerEntryWithImagesSerializer,
     PlateRecognitionRequestSerializer,
     PlateRecognitionResponseSerializer,
+    VehicleDetectionResponseSerializer,
 )
 
 # Placement serializers
@@ -92,6 +93,7 @@ __all__ = [
     "ContainerEntryImportSerializer",
     "PlateRecognitionRequestSerializer",
     "PlateRecognitionResponseSerializer",
+    "VehicleDetectionResponseSerializer",
     # PreOrders
     "VehicleEntryNestedSerializer",
     "ContainerEntryNestedSerializer",

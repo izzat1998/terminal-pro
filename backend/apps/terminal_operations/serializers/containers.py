@@ -470,3 +470,41 @@ class PlateRecognitionResponseSerializer(serializers.Serializer):
     error_message = serializers.CharField(
         required=False, allow_null=True, help_text="Error message if recognition failed"
     )
+
+
+class VehicleDetectionResponseSerializer(serializers.Serializer):
+    """
+    Serializer for enhanced vehicle detection response.
+
+    Includes both plate recognition and vehicle type classification data.
+    Used by gate camera integration.
+    """
+
+    success = serializers.BooleanField(
+        help_text="Whether detection was successful"
+    )
+    plate_number = serializers.CharField(
+        required=False, allow_blank=True, help_text="Detected plate number (uppercase)"
+    )
+    plate_confidence = serializers.FloatField(
+        required=False, help_text="Plate recognition confidence score (0.0 - 1.0)"
+    )
+    vehicle_type = serializers.CharField(
+        required=False,
+        help_text="Detected vehicle type: TRUCK, CAR, WAGON, or UNKNOWN"
+    )
+    vehicle_type_confidence = serializers.FloatField(
+        required=False, help_text="Vehicle type confidence score (0.0 - 1.0)"
+    )
+    vehicle_make = serializers.CharField(
+        required=False, allow_null=True, help_text="Detected vehicle make (e.g., Toyota)"
+    )
+    vehicle_model = serializers.CharField(
+        required=False, allow_null=True, help_text="Detected vehicle model (e.g., Camry)"
+    )
+    vehicle_color = serializers.CharField(
+        required=False, allow_null=True, help_text="Detected vehicle color"
+    )
+    error_message = serializers.CharField(
+        required=False, allow_null=True, help_text="Error message if detection failed"
+    )

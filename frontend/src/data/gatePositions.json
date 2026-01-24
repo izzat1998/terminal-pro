@@ -1,0 +1,142 @@
+{
+  "meta": {
+    "description": "Gate camera positions and vehicle zones for 3D visualization",
+    "createdAt": "2026-01-24",
+    "coordinateSystem": "DXF (same as containers, buildings)"
+  },
+  "gates": {
+    "main": {
+      "id": "main",
+      "name": "Main Gate",
+      "nameRu": "Главные ворота",
+      "position": {
+        "x": 13024,
+        "y": 73274
+      },
+      "rotation": 65,
+      "direction": "inbound"
+    },
+    "secondary": {
+      "id": "secondary",
+      "name": "Secondary Gate",
+      "nameRu": "Вспомогательные ворота",
+      "position": {
+        "x": 12920,
+        "y": 73550
+      },
+      "rotation": 0,
+      "direction": "inbound"
+    }
+  },
+  "zones": {
+    "waiting": {
+      "id": "waiting",
+      "name": "Waiting Area",
+      "nameRu": "Зона ожидания",
+      "position": {
+        "x": 13000,
+        "y": 73400
+      },
+      "bounds": {
+        "width": 50,
+        "depth": 30
+      },
+      "capacity": 10
+    },
+    "parking_a": {
+      "id": "parking_a",
+      "name": "Parking Zone A",
+      "nameRu": "Парковка А",
+      "position": {
+        "x": 12950,
+        "y": 73450
+      },
+      "bounds": {
+        "width": 40,
+        "depth": 25
+      },
+      "capacity": 8
+    },
+    "parking_b": {
+      "id": "parking_b",
+      "name": "Parking Zone B",
+      "nameRu": "Парковка Б",
+      "position": {
+        "x": 12960,
+        "y": 73520
+      },
+      "bounds": {
+        "width": 40,
+        "depth": 25
+      },
+      "capacity": 8
+    }
+  },
+  "paths": {
+    "main_to_waiting": {
+      "name": "Main Gate to Waiting",
+      "waypoints": [
+        { "x": 13024, "y": 73274 },
+        { "x": 13040, "y": 73320 },
+        { "x": 13035, "y": 73360 },
+        { "x": 13015, "y": 73390 },
+        { "x": 13000, "y": 73400 }
+      ],
+      "duration": 5
+    },
+    "main_to_parking_a": {
+      "name": "Main Gate to Parking A",
+      "waypoints": [
+        { "x": 13024, "y": 73274 },
+        { "x": 13040, "y": 73320 },
+        { "x": 13020, "y": 73380 },
+        { "x": 12980, "y": 73420 },
+        { "x": 12950, "y": 73450 }
+      ],
+      "duration": 7
+    },
+    "waiting_to_exit": {
+      "name": "Waiting to Exit",
+      "waypoints": [
+        { "x": 13000, "y": 73400 },
+        { "x": 13020, "y": 73350 },
+        { "x": 13030, "y": 73300 },
+        { "x": 13024, "y": 73274 }
+      ],
+      "duration": 4
+    },
+    "main_to_parking_b": {
+      "name": "Main Gate to Parking B",
+      "waypoints": [
+        { "x": 13024, "y": 73274 },
+        { "x": 13040, "y": 73320 },
+        { "x": 13030, "y": 73400 },
+        { "x": 13010, "y": 73470 },
+        { "x": 12960, "y": 73520 }
+      ],
+      "duration": 8
+    },
+    "parking_a_to_exit": {
+      "name": "Parking A to Exit",
+      "waypoints": [
+        { "x": 12950, "y": 73450 },
+        { "x": 12980, "y": 73400 },
+        { "x": 13010, "y": 73350 },
+        { "x": 13030, "y": 73300 },
+        { "x": 13024, "y": 73274 }
+      ],
+      "duration": 5
+    },
+    "parking_b_to_exit": {
+      "name": "Parking B to Exit",
+      "waypoints": [
+        { "x": 12960, "y": 73520 },
+        { "x": 13000, "y": 73460 },
+        { "x": 13020, "y": 73380 },
+        { "x": 13030, "y": 73300 },
+        { "x": 13024, "y": 73274 }
+      ],
+      "duration": 6
+    }
+  }
+}

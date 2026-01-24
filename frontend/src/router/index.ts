@@ -52,12 +52,18 @@ const routes = [
     component: () => import('../views/UnauthorizedView.vue'),
     meta: { requiresAuth: true, title: 'Нет доступа - МТТ' },
   },
-  // Standalone test route (no auth required for development testing)
+  // Standalone test routes (no auth required for development testing)
   {
     path: '/yard-test-dev',
     name: 'YardTestDev',
     component: () => import('../views/YardTestView.vue'),
     meta: { requiresAuth: false, title: 'Тест 3D Площадки - МТТ' },
+  },
+  {
+    path: '/gate-test',
+    name: 'GateCameraTest',
+    component: () => import('../views/GateCameraTestView.vue'),
+    meta: { requiresAuth: false, title: 'Тест камеры ворот - МТТ' },
   },
   {
     path: '/app',

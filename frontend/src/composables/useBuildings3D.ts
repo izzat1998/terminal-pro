@@ -27,12 +27,24 @@ export interface Building3D extends BuildingPosition {
   isHovered: boolean
 }
 
-// Color schemes
+// Visual building color palette (creates variety like Hero3DView)
+export const VISUAL_BUILDING_PALETTE = [
+  0xE5E7EB,   // Light Gray (offices)
+  0xD1D5DB,   // Medium Gray
+  0x9CA3AF,   // Darker Gray (warehouses)
+  0x0077B6,   // Deep Blue (main buildings)
+  0x00B4D8,   // Light Cyan (facilities)
+  0xF97316,   // Orange (gates, special)
+  0xD4A574,   // Tan (storage)
+  0x6B7280,   // Slate (industrial)
+]
+
+// Functional color schemes
 export const BUILDING_COLORS = {
-  default: 0xbfbfbf,     // Light gray (matches DXF layer color)
-  hovered: 0x69c0ff,     // Light blue
+  default: 0xE5E7EB,     // Light gray (premium)
+  hovered: 0x48CAE4,     // Sky blue (premium)
   selected: 0x52c41a,    // Green
-  roof: 0xa8a8a8,        // Slightly darker for roof distinction
+  roof: 0xD1D5DB,        // Slightly darker for roof distinction
 }
 
 // Default building height in meters
@@ -86,6 +98,39 @@ export function useBuildings3D(
       isHovered: hoveredId.value === pos.id,
     }))
   })
+
+  /**
+   * Get visual color for building based on its characteristics
+   * Larger buildings get more prominent colors, smaller ones are neutral
+   */
+  function getBuildingVisualColor(building: BuildingPosition): number {
+    // Use label to determine building type if available
+    const label = building.label?.toLowerCase() ?? ''
+
+    // Special buildings get distinctive colors
+    if (label.includes('ворота') || label.includes('gate') || label.includes('кпп')) {
+      return 0x0077B6  // Deep Blue for gates
+    }
+    if (label.includes('офис') || label.includes('office') || label.includes('admin')) {
+      return 0xE5E7EB  // Light Gray for offices
+    }
+    if (label.includes('склад') || label.includes('warehouse') || label.includes('storage')) {
+      return 0xD4A574  // Tan for warehouses
+    }
+
+    // For unlabeled buildings, use area-based coloring
+    const area = building.area
+    if (area > 2000) {
+      // Large buildings - prominent colors
+      return VISUAL_BUILDING_PALETTE[building.id % 4]!  // First 4 neutral colors
+    } else if (area > 500) {
+      // Medium buildings
+      return VISUAL_BUILDING_PALETTE[3 + (building.id % 3)]!  // Blue/cyan range
+    } else {
+      // Small buildings - neutral colors
+      return VISUAL_BUILDING_PALETTE[building.id % VISUAL_BUILDING_PALETTE.length]!
+    }
+  }
 
   /**
    * Convert DXF coordinates to Three.js world coordinates
@@ -153,11 +198,14 @@ export function useBuildings3D(
     // we need buildings to stand up along +Y
     geometry.rotateX(-Math.PI / 2)
 
-    // Create material
+    // Pick color based on building characteristics for visual variety
+    const buildingColor = getBuildingVisualColor(building)
+
+    // Create material with premium PBR settings
     const material = new THREE.MeshStandardMaterial({
-      color: BUILDING_COLORS.default,
-      roughness: 0.8,
-      metalness: 0.1,
+      color: buildingColor,
+      roughness: 0.6,
+      metalness: 0.2,
       flatShading: false,
     })
 

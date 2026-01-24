@@ -31,6 +31,7 @@ from .serializers import (
     PlateRecognitionResponseSerializer,
     PreOrderListSerializer,
     PreOrderSerializer,
+    VehicleDetectionResponseSerializer,
 )
 from .services import (
     ContainerEntryExportService,
@@ -873,6 +874,67 @@ class PlateRecognizerAPIView(viewsets.GenericViewSet):
             "success": result.success,
             "plate_number": result.plate_number,
             "confidence": result.confidence,
+            "error_message": result.error_message,
+        }
+
+        return Response(
+            response_data,
+            status=status.HTTP_200_OK
+            if result.success
+            else status.HTTP_400_BAD_REQUEST,
+        )
+
+    @extend_schema(
+        summary="Detect vehicle and recognize plate",
+        request=PlateRecognitionRequestSerializer,
+        responses={
+            200: VehicleDetectionResponseSerializer,
+            400: OpenApiResponse(description="Invalid request or image"),
+            500: OpenApiResponse(description="Server error or API unavailable"),
+        },
+        description="""
+        Detect vehicle and recognize license plate from uploaded image.
+
+        Enhanced endpoint that returns both plate number AND vehicle type classification.
+        Use this for gate camera integration where vehicle type is needed.
+
+        Vehicle types returned:
+        - TRUCK: Large vehicles (trucks, buses, vans, trailers)
+        - CAR: Light vehicles (sedans, SUVs, pickups, motorcycles)
+        - WAGON: Rail wagons (not currently detected by PlateRecognizer)
+        - UNKNOWN: Unable to classify vehicle type
+
+        Supports various image formats (JPEG, PNG, BMP, GIF).
+        """,
+    )
+    @action(detail=False, methods=["post"], url_path="detect-vehicle")
+    def detect_vehicle(self, request):
+        """POST /api/terminal/plate-recognizer/detect-vehicle/"""
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {
+                    "success": False,
+                    "error_message": "Invalid request",
+                    "details": serializer.errors,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        image = serializer.validated_data["image"]
+        region = serializer.validated_data.get("region", "uz")
+
+        result = self.plate_service.detect_vehicle(image.read(), region)
+
+        response_data = {
+            "success": result.success,
+            "plate_number": result.plate_number,
+            "plate_confidence": result.plate_confidence,
+            "vehicle_type": result.vehicle_type,
+            "vehicle_type_confidence": result.vehicle_type_confidence,
+            "vehicle_make": result.vehicle_make,
+            "vehicle_model": result.vehicle_model,
+            "vehicle_color": result.vehicle_color,
             "error_message": result.error_message,
         }
 

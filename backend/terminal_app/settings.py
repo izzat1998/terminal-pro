@@ -53,12 +53,14 @@ CSRF_TRUSTED_ORIGINS = [
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",  # ASGI server - must be first for runserver to use ASGI
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "channels",  # WebSocket support
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
@@ -73,6 +75,7 @@ INSTALLED_APPS = [
     "apps.vehicles",
     "apps.customer_portal",
     "apps.billing",
+    "apps.gate",
 ]
 
 MIDDLEWARE = [
@@ -104,6 +107,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "terminal_app.wsgi.application"
+ASGI_APPLICATION = "terminal_app.asgi.application"
 
 
 # Database
@@ -309,6 +313,25 @@ if redis_url:
     # Use Redis for sessions
     SESSION_ENGINE = "django.contrib.sessions.backends.cache"
     SESSION_CACHE_ALIAS = "default"
+
+# Django Channels - WebSocket Layer Configuration
+# Uses Redis in production, in-memory for development
+if redis_url:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [redis_url],
+            },
+        },
+    }
+else:
+    # In-memory channel layer for local development (single-process only)
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }
 
 
 # Telegram Bot Configuration
