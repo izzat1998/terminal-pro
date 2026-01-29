@@ -378,13 +378,12 @@ export function useContainers3D(
     const defaultDims = CONTAINER_DIMENSIONS[mergedOpts.defaultContainerType]
     const geometry = new THREE.BoxGeometry(defaultDims.length, defaultDims.height, defaultDims.width)
 
-    // Create PBR material for premium metallic container look
-    // High metalness (0.85) + moderate roughness (0.35) = realistic steel containers
+    // Create PBR material for container look
+    // Lower metalness since environment map was removed - rely on diffuse lighting
     const material = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.35,        // Slightly smooth for reflections
-      metalness: 0.85,        // High metalness for steel look
-      envMapIntensity: 0.8,   // Environment reflection strength
+      roughness: 0.55,        // Moderate roughness for matte paint look
+      metalness: 0.25,        // Low metalness - painted metal, not bare steel
       transparent: false,
       flatShading: false,
     })
