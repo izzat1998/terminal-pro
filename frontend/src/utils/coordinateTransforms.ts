@@ -151,3 +151,76 @@ export function transformToWorld(
 
   return { x, y: 0, z }
 }
+
+/**
+ * Transform an array of DXF points to Three.js world coordinates.
+ *
+ * @param points - Array of DXF coordinate points
+ * @param options - Transformation options
+ * @returns Array of Vector3 in world space (filters out null results)
+ */
+export function dxfPointsToWorld(
+  points: Array<{ x: number; y: number }>,
+  options: CoordinateTransformOptions = {}
+): THREE.Vector3[] {
+  return points
+    .map(p => dxfToWorld(p.x, p.y, options))
+    .filter((v): v is THREE.Vector3 => v !== null)
+}
+
+/**
+ * Calculate direction vector at a specific index along a path.
+ * Handles edge cases for first, last, and middle points.
+ *
+ * @param points - Array of world-space points
+ * @param index - Current point index
+ * @returns Normalized direction vector
+ */
+export function getPathDirection(
+  points: THREE.Vector3[],
+  index: number
+): THREE.Vector3 {
+  const len = points.length
+
+  if (len < 2) {
+    return new THREE.Vector3(1, 0, 0)  // Default forward
+  }
+
+  let dir: THREE.Vector3
+
+  if (index === 0) {
+    // First point: direction to next
+    dir = new THREE.Vector3().subVectors(points[1]!, points[0]!)
+  } else if (index === len - 1) {
+    // Last point: direction from previous
+    dir = new THREE.Vector3().subVectors(points[len - 1]!, points[len - 2]!)
+  } else {
+    // Middle point: average of incoming and outgoing directions
+    const incoming = new THREE.Vector3().subVectors(points[index]!, points[index - 1]!)
+    const outgoing = new THREE.Vector3().subVectors(points[index + 1]!, points[index]!)
+    dir = incoming.add(outgoing)
+  }
+
+  return dir.normalize()
+}
+
+/**
+ * Calculate perpendicular (right) vector from a direction on the XZ plane.
+ *
+ * @param direction - Direction vector (should be normalized)
+ * @returns Perpendicular vector pointing "right" relative to direction
+ */
+export function getPerpendicularXZ(direction: THREE.Vector3): THREE.Vector3 {
+  return new THREE.Vector3(-direction.z, 0, direction.x).normalize()
+}
+
+/**
+ * Calculate rotation angle (radians) from a direction vector on the XZ plane.
+ * Returns the angle that would make an object face in the given direction.
+ *
+ * @param direction - Direction vector
+ * @returns Rotation angle in radians around Y axis
+ */
+export function getRotationFromDirection(direction: THREE.Vector3): number {
+  return Math.atan2(direction.x, direction.z)
+}

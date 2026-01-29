@@ -6,6 +6,10 @@
 import { ref, shallowRef, type Ref } from 'vue'
 import * as THREE from 'three'
 import type { DxfCoordinateSystem } from '@/types/dxf'
+import {
+  dxfToWorld as dxfToWorldUtil,
+  type CoordinateTransformOptions
+} from '@/utils/coordinateTransforms'
 
 // Road segment data from extraction
 export interface RoadSegment {
@@ -87,20 +91,18 @@ export function useRoads3D(
 
   /**
    * Convert DXF coordinates to Three.js world coordinates
+   * (Wrapper around central utility for convenience)
    */
   function dxfToWorld(
     dxfX: number,
     dxfY: number,
     opts: RoadOptions = options.value
   ): THREE.Vector3 {
-    const scale = opts.scale ?? 1
-    const centerX = opts.center?.x ?? 0
-    const centerY = opts.center?.y ?? 0
-
-    const x = (dxfX - centerX) * scale
-    const z = -(dxfY - centerY) * scale
-
-    return new THREE.Vector3(x, 0, z)
+    const transformOpts: CoordinateTransformOptions = {
+      scale: opts.scale,
+      center: opts.center,
+    }
+    return dxfToWorldUtil(dxfX, dxfY, transformOpts) ?? new THREE.Vector3(0, 0, 0)
   }
 
   /**

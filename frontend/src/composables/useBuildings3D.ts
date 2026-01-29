@@ -6,6 +6,10 @@
 import { ref, shallowRef, computed, type Ref } from 'vue'
 import * as THREE from 'three'
 import type { DxfCoordinateSystem } from '@/types/dxf'
+import {
+  dxfToWorld as dxfToWorldUtil,
+  type CoordinateTransformOptions
+} from '@/utils/coordinateTransforms'
 
 // Building footprint data from extraction
 export interface BuildingPosition {
@@ -134,25 +138,18 @@ export function useBuildings3D(
 
   /**
    * Convert DXF coordinates to Three.js world coordinates
+   * (Wrapper around central utility for convenience)
    */
   function dxfToWorld(
     dxfX: number,
     dxfY: number,
     opts: BuildingOptions = options.value
   ): THREE.Vector3 {
-    const scale = typeof opts.scale === 'number' && Number.isFinite(opts.scale) ? opts.scale : 1
-    const centerX = typeof opts.center.x === 'number' && Number.isFinite(opts.center.x) ? opts.center.x : 0
-    const centerY = typeof opts.center.y === 'number' && Number.isFinite(opts.center.y) ? opts.center.y : 0
-
-    const x = (dxfX - centerX) * scale
-    const z = -(dxfY - centerY) * scale
-
-    if (!Number.isFinite(x) || !Number.isFinite(z)) {
-      console.warn('⚠️ dxfToWorld produced NaN:', { dxfX, dxfY, opts, x, z })
-      return new THREE.Vector3(0, 0, 0)
+    const transformOpts: CoordinateTransformOptions = {
+      scale: opts.scale,
+      center: opts.center,
     }
-
-    return new THREE.Vector3(x, 0, z)
+    return dxfToWorldUtil(dxfX, dxfY, transformOpts) ?? new THREE.Vector3(0, 0, 0)
   }
 
   /**
