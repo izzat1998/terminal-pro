@@ -92,6 +92,14 @@ class ContainerEntrySerializer(serializers.ModelSerializer):
             "note",
             "dwell_time_days",
             "cargo_weight",
+            # Hazmat/IMO fields
+            "imo_class",
+            "is_hazmat",
+            # Priority field
+            "priority",
+            # Shipping information
+            "vessel_name",
+            "booking_number",
             "created_at",
             "updated_at",
         ]
@@ -122,6 +130,9 @@ class ContainerEntrySerializer(serializers.ModelSerializer):
         data["transport_type"] = instance.get_transport_type_display()
         if instance.exit_transport_type:
             data["exit_transport_type"] = instance.get_exit_transport_type_display()
+        if instance.imo_class:
+            data["imo_class"] = instance.get_imo_class_display()
+        data["priority"] = instance.get_priority_display()
 
         # ContainerOwner - return full nested object
         if instance.container_owner:
@@ -211,6 +222,18 @@ class ContainerEntrySerializer(serializers.ModelSerializer):
         """Accept both database values and Russian display names for exit transport type"""
         return self._validate_choice_field(
             value, ContainerEntry.EXIT_TRANSPORT_CHOICES, allow_empty=True
+        )
+
+    def validate_imo_class(self, value):
+        """Accept both database values and Russian display names for IMO class"""
+        return self._validate_choice_field(
+            value, ContainerEntry.IMO_CLASS_CHOICES, allow_empty=True
+        )
+
+    def validate_priority(self, value):
+        """Accept both database values and Russian display names for priority"""
+        return self._validate_choice_field(
+            value, ContainerEntry.PRIORITY_CHOICES, allow_empty=True
         )
 
     def validate_recorded_by(self, value):

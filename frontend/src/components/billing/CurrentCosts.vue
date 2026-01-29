@@ -443,7 +443,7 @@ fetchStorageCosts();
 
 .amount-usd {
   font-weight: 600;
-  color: #52c41a;
+  color: var(--ant-color-success, #52c41a);
 }
 
 .amount-uzs {

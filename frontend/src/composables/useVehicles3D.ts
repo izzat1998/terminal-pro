@@ -20,6 +20,13 @@ import {
   type PathDefinition,
 } from '@/data/scenePositions'
 import type { DxfCoordinateSystem } from '@/types/dxf'
+import { dxfToWorld as dxfToWorldUtil } from '@/utils/coordinateTransforms'
+
+/** Default vehicle speed in meters per second (~36 km/h) */
+const DEFAULT_VEHICLE_SPEED_MPS = 10
+
+/** Model rotation offset - vehicle model's forward is 90° off from world +Z */
+const MODEL_ROTATION_OFFSET = Math.PI / 2
 
 // Vehicle detection event from gate camera
 export interface VehicleDetection {
@@ -37,10 +44,12 @@ export interface ActiveVehicle {
   mesh: THREE.Group
   plateNumber: string
   vehicleType: VehicleType
-  state: 'entering' | 'parked' | 'exiting'
+  state: 'entering' | 'parked' | 'exiting' | 'fading'
   targetZone: string
   label: CSS2DObject | null
   animationId: number | null
+  /** Timestamp when vehicle was spawned */
+  spawnTime: number
 }
 
 /**
@@ -57,8 +66,38 @@ export function useVehicles3D(
 ) {
   const vehicles: ShallowRef<Map<string, ActiveVehicle>> = shallowRef(new Map())
   const labelRenderer: ShallowRef<CSS2DRenderer | null> = shallowRef(null)
+  // Track pending timeouts per vehicle for cleanup
+  const pendingTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 
   const { createVehicle, disposeVehicle } = useVehicleModels()
+
+  // ============================================================================
+  // Coordinate Conversion
+  // ============================================================================
+
+  /**
+   * Convert DXF coordinates to Three.js world coordinates
+   */
+  function dxfToWorld(dxfX: number, dxfY: number): THREE.Vector3 | null {
+    const coord = coordSystem.value
+    if (!coord) return null
+
+    return dxfToWorldUtil(dxfX, dxfY, { coordinateSystem: coord })
+  }
+
+  /**
+   * Calculate rotation angle to face from one position to another
+   */
+  function getRotationToFace(from: THREE.Vector3, to: THREE.Vector3): number {
+    const dx = to.x - from.x
+    const dz = to.z - from.z
+    // Add model offset: vehicle model's forward is 90° off from world +Z
+    return Math.atan2(dx, dz) + MODEL_ROTATION_OFFSET
+  }
+
+  // ============================================================================
+  // Label Renderer
+  // ============================================================================
 
   /**
    * Initialize CSS2D renderer for vehicle labels
@@ -94,30 +133,112 @@ export function useVehicles3D(
   }
 
   /**
-   * Create floating info label for a vehicle
+   * Create realistic license plate label for a vehicle
+   *
+   * Styled to look like a real license plate with:
+   * - Yellow/white background (Uzbekistan style)
+   * - Dark embossed text
+   * - Plate frame with status-colored border
+   * - Subtle 3D effect
    */
-  function createVehicleLabel(plateNumber: string): CSS2DObject {
+  function createVehicleLabel(
+    plateNumber: string,
+    state: 'entering' | 'parked' | 'exiting' | 'fading' = 'entering'
+  ): CSS2DObject {
+    // Status colors for the plate frame
+    const statusColors = {
+      entering: '#22c55e',  // Green - vehicle entering
+      parked: '#3b82f6',    // Blue - vehicle parked
+      exiting: '#f97316',   // Orange - vehicle exiting
+      fading: '#6b7280',    // Gray - vehicle fading out
+    }
+
+    const borderColor = statusColors[state]
+
     const labelDiv = document.createElement('div')
-    labelDiv.className = 'vehicle-label'
-    labelDiv.textContent = plateNumber
-    labelDiv.style.cssText = `
-      background: rgba(0, 0, 0, 0.8);
-      color: #00ff88;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      font-weight: 600;
-      white-space: nowrap;
-      text-shadow: 0 0 4px rgba(0, 255, 136, 0.5);
-      border: 1px solid rgba(0, 255, 136, 0.3);
+    labelDiv.className = 'vehicle-license-plate'
+    labelDiv.innerHTML = `
+      <div class="plate-frame">
+        <div class="plate-content">
+          <span class="plate-number">${plateNumber}</span>
+        </div>
+      </div>
     `
 
+    // Realistic license plate styling
+    labelDiv.style.cssText = `
+      pointer-events: none;
+      user-select: none;
+    `
+
+    // Add styles to the inner elements
+    const style = document.createElement('style')
+    style.textContent = `
+      .vehicle-license-plate .plate-frame {
+        background: linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%);
+        padding: 3px;
+        border-radius: 4px;
+        box-shadow:
+          0 2px 8px rgba(0, 0, 0, 0.4),
+          inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        border: 2px solid ${borderColor};
+      }
+
+      .vehicle-license-plate .plate-content {
+        background: linear-gradient(180deg, #fef9c3 0%, #fde047 50%, #facc15 100%);
+        padding: 4px 12px;
+        border-radius: 2px;
+        box-shadow:
+          inset 0 1px 2px rgba(255, 255, 255, 0.8),
+          inset 0 -1px 2px rgba(0, 0, 0, 0.1);
+        border: 1px solid #a16207;
+      }
+
+      .vehicle-license-plate .plate-number {
+        font-family: 'Arial Black', 'Helvetica Neue', sans-serif;
+        font-size: 14px;
+        font-weight: 900;
+        color: #1a1a1a;
+        letter-spacing: 1px;
+        text-shadow:
+          1px 1px 0 rgba(255, 255, 255, 0.3),
+          -1px -1px 0 rgba(0, 0, 0, 0.1);
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+    `
+
+    // Inject styles (only once per document)
+    if (!document.querySelector('#vehicle-plate-styles')) {
+      style.id = 'vehicle-plate-styles'
+      document.head.appendChild(style)
+    }
+
     const label = new CSS2DObject(labelDiv)
-    label.position.set(0, 5, 0) // Position above vehicle
+    label.position.set(0, 4, 0) // Position above vehicle
     label.center.set(0.5, 0)
 
     return label
+  }
+
+  /**
+   * Update the license plate border color based on vehicle state
+   */
+  function updateLabelState(
+    label: CSS2DObject,
+    state: 'entering' | 'parked' | 'exiting' | 'fading'
+  ): void {
+    const statusColors = {
+      entering: '#22c55e',
+      parked: '#3b82f6',
+      exiting: '#f97316',
+      fading: '#6b7280',
+    }
+
+    const frame = label.element.querySelector('.plate-frame') as HTMLElement
+    if (frame) {
+      frame.style.borderColor = statusColors[state]
+    }
   }
 
   /**
@@ -145,11 +266,12 @@ export function useVehicles3D(
       return null
     }
 
-    // Create vehicle model
+    // Create vehicle model with license plate
     const modelOptions: VehicleModelOptions = {
       withChassis: detection.vehicleType === 'TRUCK',
       chassisSize: '40ft',
       scale: 1.0,
+      plateNumber: detection.plateNumber,  // Add plate directly to 3D model
     }
     const mesh = createVehicle(detection.vehicleType, modelOptions)
     mesh.name = `vehicle-${detection.id}`
@@ -161,8 +283,11 @@ export function useVehicles3D(
     // Add to scene
     scene.add(mesh)
 
-    // Create label
-    const label = createVehicleLabel(detection.plateNumber)
+    // Determine initial state
+    const initialState = detection.direction === 'exiting' ? 'exiting' : 'entering'
+
+    // Create floating label with state-aware styling (in addition to 3D plates)
+    const label = createVehicleLabel(detection.plateNumber, initialState)
     mesh.add(label)
 
     // Create active vehicle record
@@ -171,10 +296,11 @@ export function useVehicles3D(
       mesh,
       plateNumber: detection.plateNumber,
       vehicleType: detection.vehicleType,
-      state: detection.direction === 'exiting' ? 'exiting' : 'entering',
+      state: initialState,
       targetZone: detection.targetZone ?? 'waiting',
       label,
       animationId: null,
+      spawnTime: Date.now(),
     }
 
     // Add to tracking Map
@@ -183,6 +309,218 @@ export function useVehicles3D(
     vehicles.value = newMap
 
     return activeVehicle
+  }
+
+  /**
+   * Spawn a vehicle at gate for brief display (entry visualization)
+   *
+   * Simpler version of spawnVehicle - just creates and positions the vehicle.
+   * Use with fadeOutVehicle() for the brief spawn + fade effect.
+   *
+   * @param detection - Vehicle detection data
+   * @param displayDuration - How long to display before auto-fade (ms), 0 = manual
+   * @returns The spawned vehicle or null if failed
+   */
+  function spawnEntryVehicle(
+    detection: VehicleDetection,
+    displayDuration: number = 0
+  ): ActiveVehicle | null {
+    const vehicle = spawnVehicle(detection)
+    if (!vehicle) return null
+
+    // Auto-fade after display duration if specified
+    if (displayDuration > 0) {
+      const timeoutId = setTimeout(() => {
+        pendingTimeouts.delete(vehicle.id)
+        fadeOutVehicle(vehicle.id, 1500) // 1.5s fade
+      }, displayDuration)
+      pendingTimeouts.set(vehicle.id, timeoutId)
+    }
+
+    return vehicle
+  }
+
+  /**
+   * Spawn a vehicle at arbitrary DXF coordinates
+   *
+   * @param detection - Vehicle detection data
+   * @param dxfX - DXF X coordinate
+   * @param dxfY - DXF Y coordinate
+   * @param targetDxf - Optional target position to face towards
+   * @returns The spawned vehicle or null if failed
+   */
+  function spawnVehicleAtPosition(
+    detection: VehicleDetection,
+    dxfX: number,
+    dxfY: number,
+    targetDxf?: { x: number; y: number }
+  ): ActiveVehicle | null {
+    if (import.meta.env.DEV) console.log('[useVehicles3D] spawnVehicleAtPosition called with DXF:', { dxfX, dxfY })
+
+    const coord = coordSystem.value
+    if (!coord) {
+      console.warn('[useVehicles3D] Coordinate system not ready')
+      return null
+    }
+
+    if (import.meta.env.DEV) console.log('[useVehicles3D] Coordinate system:', {
+      center: coord.center,
+      scale: coord.scale,
+    })
+
+    // Check if vehicle already exists
+    if (vehicles.value.has(detection.id)) {
+      console.warn(`[useVehicles3D] Vehicle ${detection.id} already exists`)
+      return vehicles.value.get(detection.id) || null
+    }
+
+    // Convert DXF to world coordinates
+    const worldPos = dxfToWorld(dxfX, dxfY)
+    if (!worldPos) {
+      console.warn('[useVehicles3D] Failed to convert coordinates')
+      return null
+    }
+
+    if (import.meta.env.DEV) console.log('[useVehicles3D] Converted to world position:', {
+      x: worldPos.x.toFixed(2),
+      y: worldPos.y.toFixed(2),
+      z: worldPos.z.toFixed(2),
+    })
+
+    // Create vehicle model with license plate
+    const modelOptions: VehicleModelOptions = {
+      withChassis: detection.vehicleType === 'TRUCK',
+      chassisSize: '40ft',
+      scale: 1.0,
+      plateNumber: detection.plateNumber,  // Add plate directly to 3D model
+    }
+    const mesh = createVehicle(detection.vehicleType, modelOptions)
+    mesh.name = `vehicle-${detection.id}`
+
+    // Position at specified coordinates
+    mesh.position.copy(worldPos)
+
+    // Calculate rotation to face target (or default forward)
+    if (targetDxf) {
+      const targetWorld = dxfToWorld(targetDxf.x, targetDxf.y)
+      if (targetWorld) {
+        mesh.rotation.y = getRotationToFace(worldPos, targetWorld)
+      }
+    }
+
+    // Add to scene
+    scene.add(mesh)
+
+    // Determine initial state
+    const initialState = detection.direction === 'exiting' ? 'exiting' : 'entering'
+
+    // Create floating label with state-aware styling (in addition to 3D plates)
+    const label = createVehicleLabel(detection.plateNumber, initialState)
+    mesh.add(label)
+
+    // Create active vehicle record
+    const activeVehicle: ActiveVehicle = {
+      id: detection.id,
+      mesh,
+      plateNumber: detection.plateNumber,
+      vehicleType: detection.vehicleType,
+      state: initialState,
+      targetZone: detection.targetZone ?? 'custom',
+      label,
+      animationId: null,
+      spawnTime: Date.now(),
+    }
+
+    // Add to tracking Map
+    const newMap = new Map(vehicles.value)
+    newMap.set(detection.id, activeVehicle)
+    vehicles.value = newMap
+
+    if (import.meta.env.DEV) console.log(`[useVehicles3D] Spawned vehicle at DXF (${dxfX}, ${dxfY}) → World (${worldPos.x.toFixed(1)}, ${worldPos.z.toFixed(1)})`)
+
+    return activeVehicle
+  }
+
+  /**
+   * Fade out and remove a vehicle with opacity animation
+   *
+   * Animates all mesh materials to transparent, then removes vehicle.
+   *
+   * @param vehicleId - ID of vehicle to fade out
+   * @param duration - Fade duration in milliseconds
+   * @returns Promise that resolves when fade completes
+   */
+  function fadeOutVehicle(vehicleId: string, duration: number = 1000): Promise<void> {
+    return new Promise((resolve) => {
+      const vehicle = vehicles.value.get(vehicleId)
+      if (!vehicle) {
+        resolve()
+        return
+      }
+
+      // Mark as fading to prevent double-fade
+      if (vehicle.state === 'fading') {
+        resolve()
+        return
+      }
+      // Cancel any running animation before starting fade
+      if (vehicle.animationId !== null) {
+        cancelAnimationFrame(vehicle.animationId)
+        vehicle.animationId = null
+      }
+
+      // Update state and label to fading appearance (gray border)
+      setVehicleState(vehicle, 'fading')
+
+      // Collect all materials for opacity animation
+      const materialsToFade: THREE.Material[] = []
+      vehicle.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          materials.forEach((mat) => {
+            if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
+              mat.transparent = true
+              materialsToFade.push(mat)
+            }
+          })
+        }
+      })
+
+      // Fade label if exists
+      const labelElement = vehicle.label?.element as HTMLElement | undefined
+
+      const startTime = performance.now()
+      // Store reference to avoid closure issues with TypeScript
+      const vehicleRef = vehicle
+
+      function animate(currentTime: number): void {
+        const elapsed = currentTime - startTime
+        const progress = Math.min(elapsed / duration, 1.0)
+        const opacity = 1 - progress
+
+        // Update material opacity
+        materialsToFade.forEach((mat) => {
+          if ('opacity' in mat) {
+            mat.opacity = opacity
+          }
+        })
+
+        // Update label opacity
+        if (labelElement) {
+          labelElement.style.opacity = String(opacity)
+        }
+
+        if (progress < 1.0) {
+          vehicleRef.animationId = requestAnimationFrame(animate)
+        } else {
+          // Fade complete - remove vehicle
+          removeVehicle(vehicleId)
+          resolve()
+        }
+      }
+
+      vehicleRef.animationId = requestAnimationFrame(animate)
+    })
   }
 
   /**
@@ -208,6 +546,12 @@ export function useVehicles3D(
       if (worldPath.waypoints.length < 2) {
         resolve()
         return
+      }
+
+      // Cancel any running animation before starting path animation
+      if (vehicle.animationId !== null) {
+        cancelAnimationFrame(vehicle.animationId)
+        vehicle.animationId = null
       }
 
       const { waypoints, duration } = worldPath
@@ -324,13 +668,173 @@ export function useVehicles3D(
 
     await animateVehicleAlongPath(vehicle, path)
 
-    // Update vehicle state
+    // Update vehicle state and label
     if (zoneId === 'exit' || vehicle.state === 'exiting') {
-      vehicle.state = 'exiting'
+      setVehicleState(vehicle, 'exiting')
     } else {
-      vehicle.state = 'parked'
+      setVehicleState(vehicle, 'parked')
       vehicle.targetZone = zoneId
     }
+  }
+
+  /**
+   * Update vehicle state and sync the license plate label appearance
+   */
+  function setVehicleState(
+    vehicle: ActiveVehicle,
+    newState: 'entering' | 'parked' | 'exiting' | 'fading'
+  ): void {
+    vehicle.state = newState
+    if (vehicle.label) {
+      updateLabelState(vehicle.label, newState)
+    }
+  }
+
+  /**
+   * Animate vehicle from current position to target DXF coordinates
+   *
+   * Simple linear interpolation with smooth rotation.
+   *
+   * @param vehicle - Vehicle to animate
+   * @param targetDxfX - Target DXF X coordinate
+   * @param targetDxfY - Target DXF Y coordinate
+   * @param duration - Animation duration in seconds (default: calculated from distance)
+   * @returns Promise that resolves when animation completes
+   */
+  function animateVehicleToPosition(
+    vehicle: ActiveVehicle,
+    targetDxfX: number,
+    targetDxfY: number,
+    duration?: number
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      const targetWorld = dxfToWorld(targetDxfX, targetDxfY)
+      if (!targetWorld) {
+        console.warn('[useVehicles3D] Failed to convert target coordinates')
+        resolve()
+        return
+      }
+
+      // Cancel any running animation before starting position animation
+      if (vehicle.animationId !== null) {
+        cancelAnimationFrame(vehicle.animationId)
+        vehicle.animationId = null
+      }
+
+      const startPos = vehicle.mesh.position.clone()
+      const endPos = targetWorld
+
+      // Calculate distance for default duration
+      const distance = startPos.distanceTo(endPos)
+      const speed = DEFAULT_VEHICLE_SPEED_MPS
+      const calculatedDuration = duration ?? distance / speed
+      const durationMs = calculatedDuration * 1000
+
+      // Calculate target rotation
+      const targetRotation = getRotationToFace(startPos, endPos)
+
+      const startTime = performance.now()
+      const vehicleRef = vehicle
+
+      if (import.meta.env.DEV) console.log(`[useVehicles3D] Animating to DXF (${targetDxfX}, ${targetDxfY}), distance: ${distance.toFixed(1)}m, duration: ${calculatedDuration.toFixed(1)}s`)
+
+      function animate(currentTime: number): void {
+        const elapsed = currentTime - startTime
+        const progress = Math.min(elapsed / durationMs, 1.0)
+
+        // Ease-in-out for smoother motion
+        const easedProgress = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2
+
+        // Interpolate position
+        vehicleRef.mesh.position.x = startPos.x + (endPos.x - startPos.x) * easedProgress
+        vehicleRef.mesh.position.z = startPos.z + (endPos.z - startPos.z) * easedProgress
+
+        // Smoothly interpolate rotation
+        const currentRotation = vehicleRef.mesh.rotation.y
+        const rotationDiff = targetRotation - currentRotation
+        const normalizedDiff = Math.atan2(Math.sin(rotationDiff), Math.cos(rotationDiff))
+        vehicleRef.mesh.rotation.y += normalizedDiff * 0.15
+
+        if (progress < 1.0) {
+          vehicleRef.animationId = requestAnimationFrame(animate)
+        } else {
+          // Ensure final position is exact
+          vehicleRef.mesh.position.copy(endPos)
+          vehicleRef.mesh.rotation.y = targetRotation
+          vehicleRef.animationId = null
+          if (import.meta.env.DEV) console.log('[useVehicles3D] Animation complete')
+          resolve()
+        }
+      }
+
+      vehicleRef.animationId = requestAnimationFrame(animate)
+    })
+  }
+
+  /**
+   * Animate vehicle forward in its current facing direction
+   *
+   * Simple animation that moves vehicle forward by specified distance.
+   *
+   * @param vehicle - Vehicle to animate
+   * @param distance - Distance to travel in meters
+   * @param speed - Speed in meters per second (default: 10 m/s = 36 km/h)
+   * @returns Promise that resolves when animation completes
+   */
+  function animateVehicleForward(
+    vehicle: ActiveVehicle,
+    distance: number,
+    speed: number = 10
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      // Cancel any running animation before starting forward animation
+      if (vehicle.animationId !== null) {
+        cancelAnimationFrame(vehicle.animationId)
+        vehicle.animationId = null
+      }
+
+      const startPos = vehicle.mesh.position.clone()
+      const rotation = vehicle.mesh.rotation.y
+
+      // Calculate end position based on current rotation
+      // In Three.js: rotation.y = 0 means facing +Z, rotation increases counter-clockwise
+      // Forward direction: sin(rotation) for X, cos(rotation) for Z
+      const endPos = new THREE.Vector3(
+        startPos.x + Math.sin(rotation) * distance,
+        startPos.y,
+        startPos.z + Math.cos(rotation) * distance
+      )
+
+      const durationMs = (distance / speed) * 1000
+      const startTime = performance.now()
+      const vehicleRef = vehicle
+
+      function animate(currentTime: number): void {
+        const elapsed = currentTime - startTime
+        const progress = Math.min(elapsed / durationMs, 1.0)
+
+        // Ease-in-out for smoother motion
+        const easedProgress = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2
+
+        // Interpolate position
+        vehicleRef.mesh.position.x = startPos.x + (endPos.x - startPos.x) * easedProgress
+        vehicleRef.mesh.position.z = startPos.z + (endPos.z - startPos.z) * easedProgress
+
+        if (progress < 1.0) {
+          vehicleRef.animationId = requestAnimationFrame(animate)
+        } else {
+          vehicleRef.mesh.position.copy(endPos)
+          vehicleRef.animationId = null
+          resolve()
+        }
+      }
+
+      vehicleRef.animationId = requestAnimationFrame(animate)
+    })
   }
 
   /**
@@ -348,6 +852,13 @@ export function useVehicles3D(
     if (vehicle.animationId !== null) {
       cancelAnimationFrame(vehicle.animationId)
       vehicle.animationId = null
+    }
+
+    // Cancel any pending timeout
+    const timeout = pendingTimeouts.get(vehicleId)
+    if (timeout !== undefined) {
+      clearTimeout(timeout)
+      pendingTimeouts.delete(vehicleId)
     }
 
     // Remove label from mesh and DOM
@@ -380,30 +891,10 @@ export function useVehicles3D(
   }
 
   /**
-   * Get vehicle by ID
-   */
-  function getVehicle(vehicleId: string): ActiveVehicle | undefined {
-    return vehicles.value.get(vehicleId)
-  }
-
-  /**
    * Get all vehicles
    */
   function getAllVehicles(): ActiveVehicle[] {
     return Array.from(vehicles.value.values())
-  }
-
-  /**
-   * Update vehicle state
-   */
-  function updateVehicleState(
-    vehicleId: string,
-    state: ActiveVehicle['state']
-  ): void {
-    const vehicle = vehicles.value.get(vehicleId)
-    if (vehicle) {
-      vehicle.state = state
-    }
   }
 
   /**
@@ -435,15 +926,22 @@ export function useVehicles3D(
 
     // Vehicle management
     spawnVehicle,
+    spawnEntryVehicle,
+    spawnVehicleAtPosition,
+    setVehicleState,
+    fadeOutVehicle,
     removeVehicle,
     removeAllVehicles,
-    getVehicle,
     getAllVehicles,
-    updateVehicleState,
 
     // Animation
     animateVehicleAlongPath,
     animateToZone,
+    animateVehicleToPosition,
+    animateVehicleForward,
+
+    // Coordinate conversion (for external use)
+    dxfToWorld,
 
     // Cleanup
     dispose,

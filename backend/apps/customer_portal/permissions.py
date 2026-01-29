@@ -5,6 +5,7 @@ These permissions ensure customers can only access their own data and
 their company's resources.
 """
 
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.permissions import BasePermission
 
 
@@ -56,7 +57,7 @@ class HasCompanyAccess(BasePermission):
         try:
             # Try to get company from profile first
             customer_company = request.user.customer_profile.company
-        except Exception:
+        except (AttributeError, ObjectDoesNotExist):
             # Fallback to legacy company field if profile doesn't exist
             if hasattr(request.user, "company"):
                 customer_company = request.user.company

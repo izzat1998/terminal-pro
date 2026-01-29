@@ -115,8 +115,8 @@ python manage.py seed_file_categories
 
 ## Architecture
 
-### Database Switching
-The project automatically switches between SQLite (local) and PostgreSQL (Docker) based on the `DATABASE_URL` environment variable. This is configured in `terminal_app/settings.py:94-110`.
+### Database
+Local development and production both use **PostgreSQL** via the `DATABASE_URL` environment variable. SQLite is only a fallback when `DATABASE_URL` is not set. Configured in `terminal_app/settings.py:113-132`.
 
 ### Service Layer Pattern
 Business logic lives in service classes (not views/models). All services inherit from `BaseService` (`apps/core/services/base_service.py`) which provides logging. Examples:

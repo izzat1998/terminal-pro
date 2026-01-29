@@ -210,12 +210,28 @@ class TariffRate(TimestampedModel):
         )
 
 
+class StatementStatus(models.TextChoices):
+    """Statement lifecycle statuses."""
+
+    DRAFT = "draft", "Черновик"
+    FINALIZED = "finalized", "Выставлен"
+    PAID = "paid", "Оплачен"
+    CANCELLED = "cancelled", "Отменён"
+
+
+class StatementType(models.TextChoices):
+    """Statement document types."""
+
+    INVOICE = "invoice", "Счёт"
+    CREDIT_NOTE = "credit_note", "Корректировка"
+
+
 class MonthlyStatement(TimestampedModel):
     """
-    Persisted monthly billing statement for a company.
+    Monthly billing statement for a company.
 
-    Statements are generated on-demand and cached for historical reference.
-    Each statement contains line items for containers billed in that period.
+    Lifecycle: draft → finalized → paid (with optional credit notes for corrections).
+    Invoice numbers are assigned only on finalization.
     """
 
     company = models.ForeignKey(
@@ -236,14 +252,97 @@ class MonthlyStatement(TimestampedModel):
         help_text="Snapshot of billing method used at generation time",
     )
 
-    # Cached totals
+    # Document identity
+    statement_type = models.CharField(
+        max_length=15,
+        choices=StatementType.choices,
+        default=StatementType.INVOICE,
+        verbose_name="Тип документа",
+    )
+    invoice_number = models.CharField(
+        max_length=30,
+        null=True,
+        blank=True,
+        unique=True,
+        verbose_name="Номер документа",
+        help_text="Assigned on finalization, format: MTT-YYYY-NNNN or MTT-CR-YYYY-NNNN",
+    )
+    original_statement = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="credit_notes",
+        verbose_name="Исходный документ",
+        help_text="For credit notes: references the original statement being corrected",
+    )
+
+    # Lifecycle status
+    status = models.CharField(
+        max_length=15,
+        choices=StatementStatus.choices,
+        default=StatementStatus.DRAFT,
+        verbose_name="Статус",
+    )
+    finalized_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Дата утверждения",
+    )
+    finalized_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="finalized_statements",
+        verbose_name="Утвердил",
+    )
+    paid_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Дата оплаты",
+    )
+    paid_marked_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="marked_paid_statements",
+        verbose_name="Отметил оплату",
+    )
+
+    # Storage totals
     total_containers = models.PositiveIntegerField(default=0, verbose_name="Всего контейнеров")
     total_billable_days = models.PositiveIntegerField(default=0, verbose_name="Оплачиваемых дней")
+    total_storage_usd = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Хранение USD"
+    )
+    total_storage_uzs = models.DecimalField(
+        max_digits=15, decimal_places=2, default=Decimal("0.00"), verbose_name="Хранение UZS"
+    )
+
+    # Services totals
+    total_services_usd = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Услуги USD"
+    )
+    total_services_uzs = models.DecimalField(
+        max_digits=15, decimal_places=2, default=Decimal("0.00"), verbose_name="Услуги UZS"
+    )
+
+    # Grand totals (storage + services)
     total_usd = models.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Итого USD"
     )
     total_uzs = models.DecimalField(
         max_digits=15, decimal_places=2, default=Decimal("0.00"), verbose_name="Итого UZS"
+    )
+
+    # Pending containers snapshot (for exit_month billing — informational only)
+    pending_containers_data = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Контейнеры на терминале",
+        help_text="JSON snapshot of containers still on terminal at generation time",
     )
 
     # Metadata
@@ -262,18 +361,23 @@ class MonthlyStatement(TimestampedModel):
         verbose_name_plural = "Ежемесячные выписки"
         ordering = ["-year", "-month"]
         constraints = [
+            # Only one invoice (non-credit-note) per company per month
             models.UniqueConstraint(
                 fields=["company", "year", "month"],
-                name="unique_statement_per_company_month",
+                condition=models.Q(statement_type="invoice"),
+                name="unique_invoice_per_company_month",
             ),
         ]
         indexes = [
             models.Index(fields=["company", "year", "month"], name="statement_company_period_idx"),
             models.Index(fields=["year", "month"], name="statement_period_idx"),
+            models.Index(fields=["status"], name="statement_status_idx"),
+            models.Index(fields=["invoice_number"], name="statement_invoice_num_idx"),
         ]
 
     def __str__(self):
-        return f"{self.company.name} - {self.month:02d}/{self.year}"
+        prefix = self.invoice_number or f"DRAFT-{self.id}"
+        return f"{prefix} | {self.company.name} - {self.month:02d}/{self.year}"
 
     @property
     def month_name(self) -> str:
@@ -288,6 +392,21 @@ class MonthlyStatement(TimestampedModel):
     def billing_method_display(self) -> str:
         """Return display name for billing method."""
         return "Раздельный расчёт" if self.billing_method == "split" else "По месяцу выхода"
+
+    @property
+    def status_display(self) -> str:
+        """Return display name for status."""
+        return dict(StatementStatus.choices).get(self.status, self.status)
+
+    @property
+    def statement_type_display(self) -> str:
+        """Return display name for statement type."""
+        return dict(StatementType.choices).get(self.statement_type, self.statement_type)
+
+    @property
+    def is_editable(self) -> bool:
+        """Only drafts can be regenerated or modified."""
+        return self.status == StatementStatus.DRAFT
 
 
 class StatementLineItem(TimestampedModel):
@@ -368,6 +487,47 @@ class StatementLineItem(TimestampedModel):
     def container_status_display(self) -> str:
         """Return display name for container status."""
         return "Груженый" if self.container_status == "laden" else "Порожний"
+
+
+class StatementServiceItem(TimestampedModel):
+    """
+    Additional charge entry within a statement.
+
+    Stores a snapshot of an AdditionalCharge so the statement
+    remains accurate even if charge data is later modified.
+    """
+
+    statement = models.ForeignKey(
+        MonthlyStatement,
+        on_delete=models.CASCADE,
+        related_name="service_items",
+        verbose_name="Выписка",
+    )
+    additional_charge = models.ForeignKey(
+        "billing.AdditionalCharge",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="statement_service_items",
+        verbose_name="Начисление",
+    )
+
+    # Snapshot data
+    container_number = models.CharField(max_length=20, verbose_name="Номер контейнера")
+    description = models.CharField(max_length=255, verbose_name="Описание услуги")
+    charge_date = models.DateField(verbose_name="Дата начисления")
+    amount_usd = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Сумма USD")
+    amount_uzs = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Сумма UZS")
+
+    class Meta:
+        verbose_name = "Позиция услуг"
+        verbose_name_plural = "Позиции услуг"
+        ordering = ["charge_date", "container_number"]
+        indexes = [
+            models.Index(fields=["statement", "charge_date"], name="svcitem_stmt_date_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.description} - {self.container_number} ({self.statement})"
 
 
 class ExpenseType(TimestampedModel):

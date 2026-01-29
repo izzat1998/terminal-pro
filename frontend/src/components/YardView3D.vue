@@ -8,15 +8,23 @@ import { ref, shallowRef, onMounted, onUnmounted, computed, watch, nextTick } fr
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { useDxfYard, type YardLayerInfo } from '@/composables/useDxfYard'
-import { useContainers3D, addRandomStacking, type ContainerPosition, type ContainerData, type ColorMode } from '@/composables/useContainers3D'
+import { disposeObject3D } from '@/utils/threeUtils'
+import { useContainers3D, type ContainerPosition, type ContainerData } from '@/composables/useContainers3D'
+import { useContainerLabels3D } from '@/composables/useContainerLabels3D'
+import { useYardSettings, type ColorMode } from '@/composables/useYardSettings'
+import YardSettingsDrawer from '@/components/yard/YardSettingsDrawer.vue'
+import ContainerTooltip from '@/components/yard/ContainerTooltip.vue'
 import { useBuildings3D, type BuildingPosition } from '@/composables/useBuildings3D'
 import { useFences3D, type FenceSegment } from '@/composables/useFences3D'
 import { useRailway3D, type RailwayTrack } from '@/composables/useRailway3D'
 import { usePlatforms3D, type PlatformData } from '@/composables/usePlatforms3D'
 import { useRoads3D, type RoadSegment, type SidewalkData } from '@/composables/useRoads3D'
 import { useVehicleModels } from '@/composables/useVehicleModels'
+import { useEnvironment3D } from '@/composables/useEnvironment3D'
+import { usePostProcessing } from '@/composables/usePostProcessing'
+import { useMaterials3D } from '@/composables/useMaterials3D'
+import { detectOptimalQuality, getQualityPreset, type QualityLevel } from '@/utils/qualityPresets'
 import { GATES, transformToWorld } from '@/data/scenePositions'
-import containersJson from '@/data/containers.json'
 import buildingsJson from '@/data/buildings.json'
 import warehousesJson from '@/data/warehouses.json'
 import fencesJson from '@/data/fences.json'
@@ -45,6 +53,8 @@ interface Props {
   dxfContent?: string
   /** Container data from backend */
   containerData?: ContainerData[]
+  /** Container positions (overrides built-in JSON when provided) */
+  containerPositions?: ContainerPosition[]
   /** Height of the viewer */
   height?: string | number
   /** Show layer control panel */
@@ -55,6 +65,8 @@ interface Props {
   colorMode?: ColorMode
   /** Enable container interaction */
   interactive?: boolean
+  /** Show test vehicles at gates (for demo, disable when using live detection) */
+  showTestVehicles?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -63,6 +75,7 @@ const props = withDefaults(defineProps<Props>(), {
   showStats: true,
   colorMode: 'visual',  // Default to visual mode for colorful display
   interactive: true,
+  showTestVehicles: true,  // Set to false when using live gate detection
 })
 
 const emit = defineEmits<{
@@ -86,6 +99,7 @@ const mouse = new THREE.Vector2()
 
 // Animation
 let animationId: number | null = null
+let raycastPending = false  // RAF gate for mousemove raycasting
 
 // Camera state for view presets
 const currentFrustumSize = ref(1000)
@@ -107,17 +121,29 @@ const {
   dispose: disposeYard,
 } = useDxfYard()
 
-// Container positions from DXF JSON with random stacking added on top
+// Container positions: use prop if provided, otherwise empty (parent must supply data)
 const containerPositions = ref<ContainerPosition[]>(
-  addRandomStacking(containersJson as ContainerPosition[], {
-    maxTier: 4,       // Maximum stack height of 4
-    stackRate: 0.6,   // 60% chance to stack on existing container
-  })
+  props.containerPositions && props.containerPositions.length > 0
+    ? props.containerPositions
+    : []
 )
 const containerDataRef = computed(() => props.containerData ?? [])
 
+// Watch for prop-driven position updates (e.g., from API)
+// When positions arrive after initial mount, rebuild container meshes
+watch(() => props.containerPositions, (newPositions) => {
+  if (newPositions && newPositions.length > 0) {
+    containerPositions.value = newPositions
+    // Rebuild meshes if scene is already initialized but containers weren't rendered yet
+    if (isInitialized.value && coordinateSystem.value && !containerGroup.value) {
+      rebuildContainerMeshes()
+    }
+  }
+})
+
 const {
   containerGroup,
+  containers,
   selectedIds,
   createContainerMeshes,
   setColorMode,
@@ -125,8 +151,20 @@ const {
   clearSelection,
   setHovered,
   getContainerAtIntersection,
+  findContainersByNumber,
+  highlightContainer,
+  stopHighlight,
   dispose: disposeContainers,
 } = useContainers3D(containerPositions, containerDataRef)
+
+// Container labels composable
+const {
+  labelsGroup: containerLabelsGroup,
+  createLabels: createContainerLabels,
+  updateVisibility: updateContainerLabelVisibility,
+  setVisibility: setContainerLabelsVisibility,
+  dispose: disposeContainerLabels,
+} = useContainerLabels3D(containers, containerPositions, containerDataRef)
 
 // Building positions from JSON
 const buildingPositions = ref<BuildingPosition[]>(
@@ -210,13 +248,182 @@ const {
   createWagonModel,
 } = useVehicleModels()
 
+// Visual quality composables
+const {
+  loadEnvironment,
+  dispose: disposeEnvironment,
+} = useEnvironment3D()
+
+const {
+  initComposer,
+  setQuality: setPostProcessingQuality,
+  resize: resizePostProcessing,
+  render: renderPostProcessing,
+  isInitialized: isPostProcessingInitialized,
+  dispose: disposePostProcessing,
+} = usePostProcessing()
+
+const {
+  setEnvironmentMap,
+  dispose: disposeMaterials,
+} = useMaterials3D()
+
+// Quality level (auto-detected or user-selected)
+const qualityLevel = ref<QualityLevel>('medium')
+
 // Test vehicles group (for demonstration)
 const testVehiclesGroup = shallowRef<THREE.Group | null>(null)
 
 // State
 const isInitialized = ref(false)
-const showLayerPanelState = ref(props.showLayerPanel)
-const currentColorMode = ref<ColorMode>(props.colorMode)
+const isSettingsOpen = ref(false)
+
+// Tooltip state
+const tooltipX = ref(0)
+const tooltipY = ref(0)
+const hoveredContainerData = ref<ContainerData | null>(null)
+let tooltipDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// ============ Container Search ============
+const searchQuery = ref('')
+const searchOpen = ref(false)
+const searchInputRef = ref<HTMLInputElement>()
+let flyAnimationId: number | null = null
+
+const searchResults = computed(() => {
+  if (!searchQuery.value || searchQuery.value.length < 2) return []
+  return findContainersByNumber(searchQuery.value).slice(0, 8)
+})
+
+const selectedSearchIndex = ref(0)
+
+function openSearch(): void {
+  searchOpen.value = true
+  nextTick(() => searchInputRef.value?.focus())
+}
+
+function closeSearch(): void {
+  searchOpen.value = false
+  searchQuery.value = ''
+  selectedSearchIndex.value = 0
+  stopHighlight()
+}
+
+function handleSearchKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') {
+    closeSearch()
+    return
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    selectedSearchIndex.value = Math.min(selectedSearchIndex.value + 1, searchResults.value.length - 1)
+    return
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    selectedSearchIndex.value = Math.max(selectedSearchIndex.value - 1, 0)
+    return
+  }
+  if (e.key === 'Enter' && searchResults.value.length > 0) {
+    e.preventDefault()
+    const result = searchResults.value[selectedSearchIndex.value]
+    if (result) flyToSearchResult(result)
+    return
+  }
+}
+
+function flyToSearchResult(result: { container: { id: number; data?: { container_number: string; status: string; container_type: string; dwell_days?: number } }; position: THREE.Vector3; index: number }): void {
+  // Highlight container (shows pulsing green — integrated into updateColors)
+  highlightContainer(result.index)
+
+  // Fly camera to position
+  flyToPosition(result.position, 6)
+
+  // Show selected container number in search input
+  searchQuery.value = result.container.data?.container_number ?? ''
+}
+
+/**
+ * Smoothly animate camera to a world position with easeOutCubic easing.
+ * For orthographic camera: pans target and adjusts zoom, keeping top-down orientation stable.
+ */
+function flyToPosition(targetPos: THREE.Vector3, zoomLevel: number = 5, duration: number = 800): void {
+  if (!camera.value || !controls.value) return
+
+  // Cancel previous fly animation
+  if (flyAnimationId !== null) {
+    cancelAnimationFrame(flyAnimationId)
+    flyAnimationId = null
+  }
+
+  // Snapshot start state (clone everything upfront)
+  const startTarget = controls.value.target.clone()
+  const startCamPos = camera.value.position.clone()
+  const startZoom = camera.value.zoom
+
+  // End state: camera directly above the target position
+  const endTarget = new THREE.Vector3(targetPos.x, 0, targetPos.z)
+  const endCamPos = new THREE.Vector3(targetPos.x, startCamPos.y, targetPos.z)
+
+  const startTime = performance.now()
+
+  function easeOutCubic(t: number): number {
+    return 1 - Math.pow(1 - t, 3)
+  }
+
+  function animateFly(): void {
+    const elapsed = performance.now() - startTime
+    const progress = Math.min(elapsed / duration, 1)
+    const eased = easeOutCubic(progress)
+
+    if (!camera.value || !controls.value) return
+
+    // Interpolate all values from frozen start to frozen end
+    controls.value.target.lerpVectors(startTarget, endTarget, eased)
+    camera.value.position.lerpVectors(startCamPos, endCamPos, eased)
+    camera.value.zoom = startZoom + (zoomLevel - startZoom) * eased
+    camera.value.updateProjectionMatrix()
+    controls.value.update()
+
+    if (progress < 1) {
+      flyAnimationId = requestAnimationFrame(animateFly)
+    } else {
+      flyAnimationId = null
+    }
+  }
+
+  animateFly()
+}
+
+// Global keyboard shortcut for search
+function handleGlobalKeydown(e: KeyboardEvent): void {
+  // Ctrl+F or Cmd+F to open search
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    // Only intercept if we're focused on the yard view
+    if (containerRef.value?.contains(document.activeElement) || document.activeElement === document.body) {
+      e.preventDefault()
+      openSearch()
+    }
+  }
+  // "/" to open search (like GitHub)
+  if (e.key === '/' && !searchOpen.value) {
+    const target = e.target as HTMLElement
+    if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+      e.preventDefault()
+      openSearch()
+    }
+  }
+}
+
+// Yard settings (centralized)
+const {
+  layers: settingsLayers,
+  labels: settingsLabels,
+  display: settingsDisplay,
+} = useYardSettings()
+
+// Color mode from settings (reactive)
+const currentColorMode = computed(() => settingsDisplay.value.colorMode)
 
 // Computed
 const heightStyle = computed(() =>
@@ -230,13 +437,20 @@ const selectedCount = computed(() => selectedIds.value.size)
 function initScene(): void {
   if (!canvasRef.value || isInitialized.value) return
 
-  // Create scene with premium background and fog
+  // Auto-detect optimal quality level
+  qualityLevel.value = detectOptimalQuality()
+  const qualityPreset = getQualityPreset(qualityLevel.value)
+
+  // Create scene with premium background
   scene.value = new THREE.Scene()
   scene.value.background = new THREE.Color(PREMIUM_COLORS.background)
-  scene.value.fog = new THREE.Fog(PREMIUM_COLORS.background, 300, 800)
 
-  // Create orthographic camera
-  const aspect = canvasRef.value.clientWidth / canvasRef.value.clientHeight
+  // Fog disabled - creates too much haze on large yards
+  scene.value.fog = null
+
+  // Create orthographic camera (guard against zero height)
+  const canvasHeight = canvasRef.value.clientHeight || 1
+  const aspect = canvasRef.value.clientWidth / canvasHeight
   const frustumSize = 100
   camera.value = new THREE.OrthographicCamera(
     -frustumSize * aspect / 2,
@@ -249,17 +463,22 @@ function initScene(): void {
   camera.value.position.set(0, 100, 0)
   camera.value.lookAt(0, 0, 0)
 
-  // Create renderer with tone mapping for premium visuals
+  // Create renderer with quality-based settings
   renderer.value = new THREE.WebGLRenderer({
     canvas: canvasRef.value,
-    antialias: true,
+    antialias: qualityPreset.antialias,
   })
   renderer.value.setSize(canvasRef.value.clientWidth, canvasRef.value.clientHeight)
-  renderer.value.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  renderer.value.shadowMap.enabled = true
+  renderer.value.setPixelRatio(qualityPreset.pixelRatio)
+  renderer.value.shadowMap.enabled = qualityPreset.shadows
   renderer.value.shadowMap.type = THREE.PCFSoftShadowMap
-  renderer.value.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.value.toneMappingExposure = 1.2
+  if (qualityPreset.toneMapping) {
+    renderer.value.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.value.toneMappingExposure = qualityPreset.toneMappingExposure
+  }
+
+  // Set correct color space for accurate color reproduction
+  renderer.value.outputColorSpace = THREE.SRGBColorSpace
 
   // Create controls
   controls.value = new OrbitControls(camera.value, renderer.value.domElement)
@@ -273,6 +492,7 @@ function initScene(): void {
   controls.value.maxZoom = 20
   controls.value.maxPolarAngle = Math.PI / 2.1 // Prevent going underground
 
+
   // Professional 4-light setup for premium visuals
   // 1. Ambient light (base illumination)
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.7)
@@ -281,9 +501,9 @@ function initScene(): void {
   // 2. Main directional light (key light with shadows)
   const mainLight = new THREE.DirectionalLight(0xffffff, 1.2)
   mainLight.position.set(80, 120, 60)
-  mainLight.castShadow = true
-  mainLight.shadow.mapSize.width = 2048
-  mainLight.shadow.mapSize.height = 2048
+  mainLight.castShadow = qualityPreset.shadows
+  mainLight.shadow.mapSize.width = qualityPreset.shadowMapSize
+  mainLight.shadow.mapSize.height = qualityPreset.shadowMapSize
   mainLight.shadow.camera.near = 10
   mainLight.shadow.camera.far = 400
   mainLight.shadow.camera.left = -100
@@ -321,6 +541,29 @@ function initScene(): void {
   gridHelper.name = 'grid'
   scene.value.add(gridHelper)
 
+  // Initialize environment map for reflections
+  loadEnvironment(renderer.value, scene.value, {
+    intensity: qualityPreset.envMapIntensity,
+  }).then((envTexture) => {
+    if (envTexture) {
+      setEnvironmentMap(envTexture)
+    }
+  })
+
+  // Initialize post-processing pipeline
+  initComposer(renderer.value, scene.value, camera.value, {
+    ssao: qualityPreset.ssao,
+    ssaoRadius: qualityPreset.ssaoRadius,
+    bloom: qualityPreset.bloom,
+    bloomThreshold: qualityPreset.bloomThreshold,
+    bloomStrength: qualityPreset.bloomStrength,
+    bloomRadius: qualityPreset.bloomRadius,
+    vignette: qualityPreset.vignette,
+    vignetteOffset: qualityPreset.vignetteOffset,
+    vignetteDarkness: qualityPreset.vignetteDarkness,
+    colorGrading: qualityPreset.colorGrading,
+  })
+
   isInitialized.value = true
   animate()
 }
@@ -331,7 +574,18 @@ function animate(): void {
 
   animationId = requestAnimationFrame(animate)
   controls.value.update()
-  renderer.value.render(scene.value, camera.value)
+
+  // Update container label visibility based on camera position
+  if (settingsLabels.value.containers && containerLabelsGroup.value) {
+    updateContainerLabelVisibility(camera.value)
+  }
+
+  // Use post-processing if available, otherwise direct render
+  if (isPostProcessingInitialized()) {
+    renderPostProcessing()
+  } else {
+    renderer.value.render(scene.value, camera.value)
+  }
 }
 
 // Load DXF and containers
@@ -367,25 +621,57 @@ async function loadYard(): Promise<void> {
              origY <= dxfBounds.max.y + padding
     })
 
+    // Get current quality preset for edge line settings
+    const qualityPreset = getQualityPreset(qualityLevel.value)
+
     const containersGroup = createContainerMeshes({
       scale,
       center: coordinateSystem.value.center,
       colorMode: currentColorMode.value,
       coordinateSystem: coordinateSystem.value,
+      showEdgeLines: qualityPreset.containerEdges,
+      edgeLineOpacity: qualityPreset.containerEdgeOpacity,
     })
 
     if (containersGroup && scene.value) {
       scene.value.add(containersGroup)
     }
+
+    // Create container labels (if enabled in settings)
+    if (settingsLabels.value.containers) {
+      const labelsGroup = createContainerLabels({
+        scale,
+        coordinateSystem: coordinateSystem.value,
+        visible: true,
+      })
+      if (labelsGroup && scene.value) {
+        scene.value.add(labelsGroup)
+      }
+    }
   } else if (containerPositions.value.length > 0) {
     // Fallback: no DXF loaded, place containers at origin
+    const qualityPresetFallback = getQualityPreset(qualityLevel.value)
     const containersGroup = createContainerMeshes({
       scale,
       center: { x: 0, y: 0 },
       colorMode: currentColorMode.value,
+      showEdgeLines: qualityPresetFallback.containerEdges,
+      edgeLineOpacity: qualityPresetFallback.containerEdgeOpacity,
     })
     if (containersGroup && scene.value) {
       scene.value.add(containersGroup)
+    }
+
+    // Create container labels (fallback)
+    if (settingsLabels.value.containers) {
+      const labelsGroup = createContainerLabels({
+        scale,
+        center: { x: 0, y: 0 },
+        visible: true,
+      })
+      if (labelsGroup && scene.value) {
+        scene.value.add(labelsGroup)
+      }
     }
   }
 
@@ -468,8 +754,8 @@ async function loadYard(): Promise<void> {
     }
   }
 
-  // Create test vehicles at gate positions
-  if (coordinateSystem.value) {
+  // Create test vehicles at gate positions (optional, for demo purposes)
+  if (coordinateSystem.value && props.showTestVehicles) {
     createTestVehicles()
   }
 
@@ -484,6 +770,56 @@ async function loadYard(): Promise<void> {
 }
 
 /**
+ * Rebuild container meshes when positions arrive after initial load.
+ * Called by the containerPositions watcher when API data lands.
+ */
+function rebuildContainerMeshes(): void {
+  if (!scene.value || !coordinateSystem.value) return
+
+  const scale = coordinateSystem.value.scale ?? 1.0
+
+  // Filter to DXF bounds
+  const dxfBounds = coordinateSystem.value.bounds
+  const padding = 100
+  containerPositions.value = containerPositions.value.filter(pos => {
+    const origX = pos._original?.x ?? pos.x
+    const origY = pos._original?.y ?? pos.y
+    return origX >= dxfBounds.min.x - padding &&
+           origX <= dxfBounds.max.x + padding &&
+           origY >= dxfBounds.min.y - padding &&
+           origY <= dxfBounds.max.y + padding
+  })
+
+  const qualityPreset = getQualityPreset(qualityLevel.value)
+
+  const containersGroup = createContainerMeshes({
+    scale,
+    center: coordinateSystem.value.center,
+    colorMode: currentColorMode.value,
+    coordinateSystem: coordinateSystem.value,
+    showEdgeLines: qualityPreset.containerEdges,
+    edgeLineOpacity: qualityPreset.containerEdgeOpacity,
+  })
+
+  if (containersGroup && scene.value) {
+    scene.value.add(containersGroup)
+  }
+
+  if (settingsLabels.value.containers) {
+    const labelsGroup = createContainerLabels({
+      scale,
+      coordinateSystem: coordinateSystem.value,
+      visible: true,
+    })
+    if (labelsGroup && scene.value) {
+      scene.value.add(labelsGroup)
+    }
+  }
+
+  fitCameraToContent()
+}
+
+/**
  * Create test vehicles at gate positions for visual verification
  * Demonstrates truck, car, and wagon models
  */
@@ -493,16 +829,7 @@ function createTestVehicles(): void {
   // Clean up existing test vehicles
   if (testVehiclesGroup.value) {
     scene.value.remove(testVehiclesGroup.value)
-    testVehiclesGroup.value.traverse(child => {
-      if (child instanceof THREE.Mesh) {
-        child.geometry.dispose()
-        if (Array.isArray(child.material)) {
-          child.material.forEach(m => m.dispose())
-        } else {
-          child.material.dispose()
-        }
-      }
-    })
+    disposeObject3D(testVehiclesGroup.value)
   }
 
   testVehiclesGroup.value = new THREE.Group()
@@ -626,6 +953,47 @@ function setIsometricView(): void {
   controls.value.update()
 }
 
+// Handle quality level change
+function handleQualityChange(level: QualityLevel): void {
+  if (level === qualityLevel.value) return
+
+  qualityLevel.value = level
+  const preset = getQualityPreset(level)
+
+  // Update post-processing
+  setPostProcessingQuality(preset)
+
+  // Update renderer settings
+  if (renderer.value) {
+    renderer.value.setPixelRatio(preset.pixelRatio)
+    renderer.value.shadowMap.enabled = preset.shadows
+    if (preset.toneMapping) {
+      renderer.value.toneMapping = THREE.ACESFilmicToneMapping
+      renderer.value.toneMappingExposure = preset.toneMappingExposure
+    }
+  }
+
+  // Fog disabled - keep scene clear
+  if (scene.value) {
+    scene.value.fog = null
+  }
+
+  if (import.meta.env.DEV) console.log(`Quality changed to: ${level}`)
+}
+
+// Collect raycast targets (only interactive meshes, not entire scene)
+function getRaycastTargets(): THREE.Object3D[] {
+  const targets: THREE.Object3D[] = []
+  if (containerGroup.value) targets.push(containerGroup.value)
+  // Building groups are added to scene directly — gather them by name
+  scene.value?.children.forEach(child => {
+    if (child.name === 'buildings' || child.name === 'warehouses') {
+      targets.push(child)
+    }
+  })
+  return targets
+}
+
 // Handle mouse events for container/building interaction
 function onMouseMove(event: MouseEvent): void {
   if (!props.interactive || !canvasRef.value || !camera.value) return
@@ -634,9 +1002,25 @@ function onMouseMove(event: MouseEvent): void {
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
   mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
 
+  // Update tooltip position immediately for smooth tracking
+  tooltipX.value = event.clientX
+  tooltipY.value = event.clientY
+
+  // Throttle raycasting to one per animation frame
+  if (raycastPending) return
+  raycastPending = true
+  requestAnimationFrame(() => {
+    raycastPending = false
+    performRaycast(event)
+  })
+}
+
+function performRaycast(_event: MouseEvent): void {
+  if (!canvasRef.value || !camera.value) return
+
   raycaster.setFromCamera(mouse, camera.value)
 
-  const intersects = raycaster.intersectObjects(scene.value?.children ?? [], true)
+  const intersects = raycaster.intersectObjects(getRaycastTargets(), true)
 
   let hoveredContainer = null
   let hoveredBuilding = null
@@ -659,15 +1043,27 @@ function onMouseMove(event: MouseEvent): void {
   setHovered(hoveredContainer?.id ?? null)
   setBuildingHovered(hoveredBuilding?.id ?? null)
 
+  // Debounced tooltip update to prevent flickering
+  if (tooltipDebounceTimer) {
+    clearTimeout(tooltipDebounceTimer)
+  }
+
   if (hoveredContainer) {
     canvasRef.value.style.cursor = 'pointer'
     emit('containerHover', hoveredContainer)
+
+    // Show tooltip with container data (debounced)
+    tooltipDebounceTimer = setTimeout(() => {
+      hoveredContainerData.value = hoveredContainer?.data ?? null
+    }, 50)
   } else if (hoveredBuilding) {
     canvasRef.value.style.cursor = 'pointer'
-    emit('containerHover', null)  // Clear container hover
+    emit('containerHover', null)
+    hoveredContainerData.value = null
   } else {
     canvasRef.value.style.cursor = 'default'
     emit('containerHover', null)
+    hoveredContainerData.value = null
   }
 }
 
@@ -680,7 +1076,7 @@ function onClick(event: MouseEvent): void {
 
   raycaster.setFromCamera(mouse, camera.value)
 
-  const intersects = raycaster.intersectObjects(scene.value?.children ?? [], true)
+  const intersects = raycaster.intersectObjects(getRaycastTargets(), true)
 
   for (const intersect of intersects) {
     const container = getContainerAtIntersection(intersect)
@@ -701,7 +1097,7 @@ function handleResize(): void {
   if (!canvasRef.value || !camera.value || !renderer.value) return
 
   const width = canvasRef.value.clientWidth
-  const height = canvasRef.value.clientHeight
+  const height = canvasRef.value.clientHeight || 1
   const aspect = width / height
 
   const frustumSize = (camera.value.right - camera.value.left) / camera.value.zoom
@@ -710,17 +1106,15 @@ function handleResize(): void {
   camera.value.updateProjectionMatrix()
 
   renderer.value.setSize(width, height)
+
+  // Resize post-processing with correct pixel ratio for sharp rendering
+  const pixelRatio = renderer.value.getPixelRatio()
+  resizePostProcessing(width, height, pixelRatio)
 }
 
 // Layer visibility toggle
 function toggleLayer(layer: YardLayerInfo): void {
   setLayerVisibility(layer.name, !layer.visible)
-}
-
-// Color mode change
-function onColorModeChange(mode: ColorMode): void {
-  currentColorMode.value = mode
-  setColorMode(mode)
 }
 
 // Dispose
@@ -732,33 +1126,73 @@ function dispose(): void {
 
   // Dispose test vehicles
   if (testVehiclesGroup.value) {
-    testVehiclesGroup.value.traverse(child => {
-      if (child instanceof THREE.Mesh) {
-        child.geometry.dispose()
-        if (Array.isArray(child.material)) {
-          child.material.forEach(m => m.dispose())
-        } else {
-          child.material.dispose()
-        }
-      }
-    })
+    disposeObject3D(testVehiclesGroup.value)
     testVehiclesGroup.value = null
   }
 
   disposeYard()
   disposeContainers()
+  disposeContainerLabels()
   disposeBuildings()
   disposeWarehouses()
   disposeFences()
   disposeRailway()
   disposePlatforms()
   disposeRoads()
+
+  // Dispose visual quality composables
+  disposePostProcessing()
+  disposeEnvironment()
+  disposeMaterials()
+
   controls.value?.dispose()
   renderer.value?.dispose()
-  scene.value?.clear()
+
+  // Recursively dispose all remaining geometries and materials in the scene
+  if (scene.value) {
+    scene.value.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry?.dispose()
+        const materials = Array.isArray(obj.material) ? obj.material : [obj.material]
+        for (const mat of materials) {
+          if (mat && typeof mat.dispose === 'function') mat.dispose()
+        }
+      }
+    })
+    scene.value.clear()
+  }
 
   isInitialized.value = false
 }
+
+// Watch settings and sync with composables
+watch(() => settingsLayers.value.fences, (visible) => {
+  if (fencesVisible.value !== visible) toggleFences()
+})
+
+watch(() => settingsLayers.value.railway, (visible) => {
+  if (railwayVisible.value !== visible) toggleRailway()
+})
+
+watch(() => settingsLayers.value.platforms, (visible) => {
+  if (platformsVisible.value !== visible) togglePlatforms()
+})
+
+watch(() => settingsLayers.value.roads, (visible) => {
+  if (roadsVisible.value !== visible) toggleRoadsAndSidewalks()
+})
+
+watch(() => settingsLabels.value.buildings, (visible) => {
+  if (buildingLabelsVisible.value !== visible) toggleBuildingLabels()
+})
+
+watch(() => settingsLabels.value.containers, (visible) => {
+  setContainerLabelsVisibility(visible)
+})
+
+watch(() => settingsDisplay.value.colorMode, (mode) => {
+  setColorMode(mode)  // Update container meshes
+})
 
 // Lifecycle
 onMounted(async () => {
@@ -773,22 +1207,34 @@ onMounted(async () => {
   }
 
   window.addEventListener('resize', handleResize)
+  window.addEventListener('keydown', handleGlobalKeydown)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('keydown', handleGlobalKeydown)
+  if (flyAnimationId !== null) cancelAnimationFrame(flyAnimationId)
+  if (tooltipDebounceTimer) clearTimeout(tooltipDebounceTimer)
+  stopHighlight()
   dispose()
 })
 
 // Watch for prop changes
-watch(() => props.colorMode, (mode) => {
-  onColorModeChange(mode)
-})
-
 watch(() => props.dxfUrl, async () => {
   if (isInitialized.value) {
     await loadYard()
   }
+})
+
+// Expose internals for debug system integration
+defineExpose({
+  scene,
+  camera,
+  containerRef,
+  coordinateSystem,
+  fitCameraToContent,
+  openSearch,
+  flyToPosition,
 })
 </script>
 
@@ -802,6 +1248,63 @@ watch(() => props.dxfUrl, async () => {
       @click="onClick"
     />
 
+    <!-- Container Search Command Bar -->
+    <Transition name="search-bar">
+      <div v-if="searchOpen" class="search-command-bar">
+        <div class="search-input-wrapper">
+          <span class="search-icon">🔍</span>
+          <input
+            ref="searchInputRef"
+            v-model="searchQuery"
+            type="text"
+            class="search-input"
+            placeholder="Поиск контейнера... (например MSCU1234567)"
+            autocomplete="off"
+            spellcheck="false"
+            @keydown="handleSearchKeydown"
+            @blur="() => { if (!searchQuery) closeSearch() }"
+          />
+          <kbd v-if="!searchQuery" class="search-hint">ESC для закрытия</kbd>
+          <button v-if="searchQuery" class="search-clear" @click="closeSearch">✕</button>
+        </div>
+
+        <!-- Search Results Dropdown -->
+        <div v-if="searchResults.length > 0" class="search-results">
+          <div
+            v-for="(result, i) in searchResults"
+            :key="result.container.id"
+            class="search-result-item"
+            :class="{ active: i === selectedSearchIndex }"
+            @mouseenter="selectedSearchIndex = i"
+            @click="flyToSearchResult(result)"
+          >
+            <span class="result-number">{{ result.container.data?.container_number ?? `#${result.container.id}` }}</span>
+            <span class="result-meta">
+              <span class="result-type">{{ result.container.data?.container_type ?? '—' }}</span>
+              <span class="result-status" :class="result.container.data?.status?.toLowerCase()">
+                {{ result.container.data?.status === 'LADEN' ? 'Груженый' : 'Пустой' }}
+              </span>
+              <span v-if="result.container.data?.dwell_days" class="result-dwell">
+                {{ result.container.data.dwell_days }}д
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <!-- No results -->
+        <div v-else-if="searchQuery.length >= 2" class="search-results">
+          <div class="search-no-results">Контейнер не найден</div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Search trigger hint (when closed) -->
+    <div v-if="!searchOpen" class="search-trigger" @click="openSearch">
+      <span class="search-icon-small">🔍</span>
+      <span class="search-trigger-text">Поиск контейнера</span>
+      <kbd class="search-kbd">/</kbd>
+    </div>
+
     <!-- Loading overlay -->
     <div v-if="dxfLoading" class="yard-overlay">
       <a-spin size="large" />
@@ -813,9 +1316,15 @@ watch(() => props.dxfUrl, async () => {
       <a-result status="error" :title="dxfError" />
     </div>
 
-    <!-- Camera controls -->
+    <!-- Controls -->
     <div class="yard-controls">
       <a-space direction="vertical" size="small">
+        <a-tooltip title="Настройки" placement="left">
+          <a-button shape="circle" @click="isSettingsOpen = true">
+            <template #icon><span>⚙️</span></template>
+          </a-button>
+        </a-tooltip>
+        <a-divider style="margin: 4px 0; min-width: 32px;" />
         <a-tooltip title="Вид сверху" placement="left">
           <a-button shape="circle" @click="setTopView">
             <template #icon><span>⬆</span></template>
@@ -831,69 +1340,25 @@ watch(() => props.dxfUrl, async () => {
             <template #icon><span>⊞</span></template>
           </a-button>
         </a-tooltip>
-        <a-tooltip :title="buildingLabelsVisible ? 'Скрыть названия зданий' : 'Показать названия зданий'" placement="left">
-          <a-button
-            shape="circle"
-            :type="buildingLabelsVisible ? 'primary' : 'default'"
-            @click="toggleBuildingLabels()"
-          >
-            <template #icon><span>🏷</span></template>
-          </a-button>
-        </a-tooltip>
-        <a-tooltip :title="fencesVisible ? 'Скрыть ограждения' : 'Показать ограждения'" placement="left">
-          <a-button
-            shape="circle"
-            :type="fencesVisible ? 'primary' : 'default'"
-            @click="toggleFences()"
-          >
-            <template #icon><span>🚧</span></template>
-          </a-button>
-        </a-tooltip>
-        <a-tooltip :title="railwayVisible ? 'Скрыть ж/д пути' : 'Показать ж/д пути'" placement="left">
-          <a-button
-            shape="circle"
-            :type="railwayVisible ? 'primary' : 'default'"
-            @click="toggleRailway()"
-          >
-            <template #icon><span>🚂</span></template>
-          </a-button>
-        </a-tooltip>
-        <a-tooltip :title="platformsVisible ? 'Скрыть площадки' : 'Показать площадки'" placement="left">
-          <a-button
-            shape="circle"
-            :type="platformsVisible ? 'primary' : 'default'"
-            @click="togglePlatforms()"
-          >
-            <template #icon><span>📦</span></template>
-          </a-button>
-        </a-tooltip>
-        <a-tooltip :title="roadsVisible ? 'Скрыть дороги' : 'Показать дороги'" placement="left">
-          <a-button
-            shape="circle"
-            :type="roadsVisible ? 'primary' : 'default'"
-            @click="toggleRoadsAndSidewalks()"
-          >
-            <template #icon><span>🛣️</span></template>
-          </a-button>
-        </a-tooltip>
       </a-space>
     </div>
 
-    <!-- Color mode selector -->
-    <div class="color-mode-selector">
-      <a-segmented
-        :value="currentColorMode"
-        :options="[
-          { value: 'visual', label: 'Визуал' },
-          { value: 'status', label: 'Статус' },
-          { value: 'dwell', label: 'Срок' },
-        ]"
-        @change="(val: ColorMode) => onColorModeChange(val)"
-      />
-    </div>
+    <!-- Settings Drawer -->
+    <YardSettingsDrawer
+      v-model:visible="isSettingsOpen"
+      :dxf-layers="layers"
+      :quality-level="qualityLevel"
+      @camera-top="setTopView"
+      @camera-isometric="setIsometricView"
+      @camera-fit="fitCameraToContent"
+      @dxf-layer-toggle="toggleLayer"
+      @dxf-show-all="showAllLayers"
+      @dxf-hide-all="hideAllLayers"
+      @quality-change="handleQualityChange"
+    />
 
     <!-- Stats panel -->
-    <div v-if="showStats && dxfStats" class="yard-stats">
+    <div v-if="settingsDisplay.showStats && dxfStats" class="yard-stats">
       <div class="stat">
         <span class="label">Объектов:</span>
         <span class="value">{{ dxfStats.entityCount.total.toLocaleString() }}</span>
@@ -912,28 +1377,13 @@ watch(() => props.dxfUrl, async () => {
       </div>
     </div>
 
-    <!-- Layer panel -->
-    <div v-if="showLayerPanelState && layers.length > 0" class="layer-panel">
-      <div class="layer-panel-header">
-        <span>Слои</span>
-        <a-space size="small">
-          <a-button size="small" @click="showAllLayers">Все</a-button>
-          <a-button size="small" @click="hideAllLayers">Нет</a-button>
-        </a-space>
-      </div>
-      <div class="layer-list">
-        <div
-          v-for="layer in layers"
-          :key="layer.name"
-          class="layer-item"
-          @click="toggleLayer(layer)"
-        >
-          <a-checkbox :checked="layer.visible" />
-          <span class="layer-name">{{ layer.name }}</span>
-          <span class="layer-count">{{ layer.objectCount }}</span>
-        </div>
-      </div>
-    </div>
+    <!-- Container Tooltip -->
+    <ContainerTooltip
+      :container="hoveredContainerData"
+      :x="tooltipX"
+      :y="tooltipY"
+      :visible="hoveredContainerData !== null"
+    />
 
     <!-- Legend -->
     <div class="color-legend">
@@ -958,19 +1408,74 @@ watch(() => props.dxfUrl, async () => {
           <span>Пустые</span>
         </div>
       </div>
-      <div v-else-if="currentColorMode === 'dwell'" class="legend-items">
+      <div v-else-if="currentColorMode === 'dwell'" class="legend-items dwell-legend">
         <div class="legend-item">
-          <span class="legend-color" :style="{ background: '#52c41a' }" />
-          <span>0-7 дней</span>
+          <span class="legend-color" :style="{ background: '#22C55E' }" />
+          <span>0-3д</span>
         </div>
         <div class="legend-item">
-          <span class="legend-color" :style="{ background: '#faad14' }" />
-          <span>7-14 дней</span>
+          <span class="legend-color" :style="{ background: '#3B82F6' }" />
+          <span>4-7д</span>
         </div>
         <div class="legend-item">
-          <span class="legend-color" :style="{ background: '#f5222d' }" />
-          <span>14+ дней</span>
+          <span class="legend-color" :style="{ background: '#F59E0B' }" />
+          <span>8-14д</span>
         </div>
+        <div class="legend-item">
+          <span class="legend-color" :style="{ background: '#F97316' }" />
+          <span>15-21д</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-color" :style="{ background: '#EF4444' }" />
+          <span>22+д</span>
+        </div>
+      </div>
+      <div v-else-if="currentColorMode === 'hazmat'" class="legend-items hazmat-legend">
+        <div class="legend-row">
+          <div class="legend-item">
+            <span class="legend-color" :style="{ background: '#F97316' }" />
+            <span>1</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" :style="{ background: '#22C55E' }" />
+            <span>2</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" :style="{ background: '#EF4444' }" />
+            <span>3</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" :style="{ background: '#DC2626' }" />
+            <span>4</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" :style="{ background: '#FACC15' }" />
+            <span>5</span>
+          </div>
+        </div>
+        <div class="legend-row">
+          <div class="legend-item">
+            <span class="legend-color bordered" :style="{ background: '#F8FAFC' }" />
+            <span>6</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" :style="{ background: '#FDE047' }" />
+            <span>7</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" :style="{ background: '#1F2937' }" />
+            <span>8</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color bordered" :style="{ background: '#E5E7EB' }" />
+            <span>9</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-color" :style="{ background: '#6B7280' }" />
+            <span>—</span>
+          </div>
+        </div>
+        <div class="legend-label">IMO классы</div>
       </div>
     </div>
   </div>
@@ -1028,14 +1533,6 @@ watch(() => props.dxfUrl, async () => {
   z-index: 5;
 }
 
-.color-mode-selector {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 5;
-}
-
 .yard-stats {
   position: absolute;
   bottom: 16px;
@@ -1072,60 +1569,6 @@ watch(() => props.dxfUrl, async () => {
   font-weight: 500;
 }
 
-.layer-panel {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  width: 220px;
-  max-height: 400px;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  z-index: 5;
-  overflow: hidden;
-}
-
-.layer-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
-  font-weight: 500;
-}
-
-.layer-list {
-  max-height: 300px;
-  overflow-y: auto;
-  padding: 8px 0;
-}
-
-.layer-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.layer-item:hover {
-  background: #f5f5f5;
-}
-
-.layer-name {
-  flex: 1;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.layer-count {
-  font-size: 11px;
-  color: #999;
-}
-
 .color-legend {
   position: absolute;
   bottom: 16px;
@@ -1153,5 +1596,261 @@ watch(() => props.dxfUrl, async () => {
   width: 12px;
   height: 12px;
   border-radius: 2px;
+}
+
+/* 5-tier dwell legend fits more items compactly */
+.dwell-legend {
+  gap: 10px;
+}
+
+.dwell-legend .legend-item {
+  gap: 4px;
+}
+
+/* IMO hazmat legend - two rows of 5 classes each */
+.hazmat-legend {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hazmat-legend .legend-row {
+  display: flex;
+  gap: 8px;
+}
+
+.hazmat-legend .legend-item {
+  gap: 3px;
+  font-size: 11px;
+}
+
+.hazmat-legend .legend-label {
+  font-size: 10px;
+  color: #888;
+  text-align: center;
+  margin-top: 2px;
+}
+
+.hazmat-legend .legend-color.bordered {
+  border: 1px solid #ccc;
+}
+
+/* ============ Search Command Bar ============ */
+.search-command-bar {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  width: min(520px, calc(100% - 32px));
+}
+
+.search-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(12px);
+  border: 1px solid #d9d9d9;
+  border-radius: 10px;
+  padding: 10px 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 119, 182, 0.08);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.search-input-wrapper:focus-within {
+  border-color: var(--yard-primary, #0077B6);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12), 0 0 0 2px rgba(0, 119, 182, 0.15);
+}
+
+.search-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  letter-spacing: 0.5px;
+  background: transparent;
+  color: #1a1a1a;
+}
+
+.search-input::placeholder {
+  color: #aaa;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: 0;
+}
+
+.search-hint {
+  font-size: 11px;
+  color: #999;
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #e5e5e5;
+  white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.search-clear {
+  border: none;
+  background: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.search-clear:hover {
+  color: #333;
+  background: #f0f0f0;
+}
+
+/* Results dropdown */
+.search-results {
+  margin-top: 4px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(12px);
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.search-result-item:last-child {
+  border-bottom: none;
+}
+
+.search-result-item:hover,
+.search-result-item.active {
+  background: #f0f7fa;
+}
+
+.result-number {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-weight: 600;
+  font-size: 14px;
+  color: #1a1a1a;
+  letter-spacing: 0.5px;
+}
+
+.result-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #888;
+}
+
+.result-type {
+  background: #f0f0f0;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.result-status {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.result-status.laden {
+  background: rgba(0, 119, 182, 0.1);
+  color: #0077B6;
+}
+
+.result-status.empty {
+  background: rgba(249, 115, 22, 0.1);
+  color: #F97316;
+}
+
+.result-dwell {
+  color: #aaa;
+}
+
+.search-no-results {
+  padding: 16px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+}
+
+/* Search trigger button (when search is closed) */
+.search-trigger {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.search-trigger:hover {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: var(--yard-primary, #0077B6);
+  box-shadow: 0 2px 12px rgba(0, 119, 182, 0.1);
+}
+
+.search-icon-small {
+  font-size: 13px;
+}
+
+.search-trigger-text {
+  font-size: 13px;
+  color: #888;
+}
+
+.search-kbd {
+  font-size: 11px;
+  color: #aaa;
+  background: #f5f5f5;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid #e0e0e0;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Search bar transitions */
+.search-bar-enter-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.search-bar-leave-active {
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+
+.search-bar-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
+}
+
+.search-bar-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-4px);
 }
 </style>

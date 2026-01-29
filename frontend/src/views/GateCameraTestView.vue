@@ -12,12 +12,12 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import GateCameraPanel from '@/components/gate/GateCameraPanel.vue'
 import { useVehicles3D, type VehicleDetection } from '@/composables/useVehicles3D'
 import { useDxfYard } from '@/composables/useDxfYard'
-import { useContainers3D, addRandomStacking, type ContainerPosition } from '@/composables/useContainers3D'
+import { useContainers3D, type ContainerPosition } from '@/composables/useContainers3D'
 import { useBuildings3D, type BuildingPosition } from '@/composables/useBuildings3D'
 import { PATHS, ZONES, GATES, transformToWorld } from '@/data/scenePositions'
 import type { VehicleDetectionResult } from '@/composables/useGateDetection'
-import containersJson from '@/data/containers.json'
 import buildingsJson from '@/data/buildings.json'
+import { getYardSlots, type YardSlot } from '@/services/yardService'
 
 // Premium color palette
 const PREMIUM_COLORS = {
@@ -58,13 +58,8 @@ const {
   dispose: disposeYard,
 } = useDxfYard()
 
-// Container positions from JSON
-const containerPositions = ref<ContainerPosition[]>(
-  addRandomStacking(containersJson as ContainerPosition[], {
-    maxTier: 3,
-    stackRate: 0.5,
-  })
-)
+// Container positions (fetched from API)
+const containerPositions = ref<ContainerPosition[]>([])
 const containerDataRef = computed(() => [])
 
 const {
@@ -206,10 +201,37 @@ function animate(): void {
   renderer.value.render(scene.value, camera.value)
 }
 
+// Fetch container positions from API
+async function fetchContainerPositions(): Promise<void> {
+  try {
+    const slots = await getYardSlots()
+    containerPositions.value = slots
+      .filter((s: YardSlot) => s.dxf_x !== null && s.dxf_y !== null)
+      .map((s: YardSlot) => ({
+        id: s.id,
+        x: 0,
+        y: 0,
+        rotation: s.rotation,
+        blockName: s.container_size === '20ft' ? '20ft' : '40ft',
+        layer: 'Т-Контейнеры',
+        tier: s.tier,
+        _original: {
+          x: s.dxf_x!,
+          y: s.dxf_y!,
+        },
+      }))
+  } catch (e) {
+    console.error('[GateCameraTestView] Failed to fetch yard data:', e)
+  }
+}
+
 // Load yard assets
 async function loadYard(): Promise<void> {
   if (!scene.value) return
   isLoading.value = true
+
+  // Fetch container positions from API
+  await fetchContainerPositions()
 
   // Load DXF infrastructure
   const dxfGroup = await loadFromUrl('/yard.dxf')

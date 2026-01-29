@@ -5,7 +5,8 @@
     "extractedAt": "2026-01-23T11:34:13.885Z",
     "count": 3,
     "totalLength": 896.7074318146465,
-    "totalArea": 11021.904159069061
+    "totalArea": 11021.904159069061,
+    "semanticIdsAdded": "2026-01-24T16:00:33.208Z"
   },
   "bounds": {
     "minX": 12893.60949118117,
@@ -40,7 +41,8 @@
       },
       "length": 115.68415531277535,
       "area": 0,
-      "closed": false
+      "closed": false,
+      "semanticId": "SWLK-A20"
     },
     {
       "id": 2,
@@ -80,7 +82,8 @@
       },
       "length": 706.9177101107671,
       "area": 10922.32027131319,
-      "closed": true
+      "closed": true,
+      "semanticId": "SWLK-F18"
     },
     {
       "id": 3,
@@ -120,7 +123,8 @@
       },
       "length": 74.10556639110406,
       "area": 99.58388775587082,
-      "closed": true
+      "closed": true,
+      "semanticId": "SWLK-D24"
     }
   ]
 }

@@ -1727,21 +1727,21 @@ onMounted(() => {
 
 /* Active state for clickable stat cards */
 .stat-card-active {
-  border-color: #1677ff !important;
-  background: #f0f7ff !important;
+  border-color: var(--ant-color-primary, #1677ff) !important;
+  background: var(--ant-color-primary-bg, #f0f7ff) !important;
 }
 
 .stat-card-active.stat-card-secondary {
-  background: #f0f7ff !important;
+  background: var(--ant-color-primary-bg, #f0f7ff) !important;
 }
 
 .stat-card-cost {
-  border-color: #b7eb8f !important;
+  border-color: var(--ant-green-3, #b7eb8f) !important;
   background: linear-gradient(135deg, #f6ffed 0%, #fff 100%) !important;
 }
 
 .stat-card-cost:hover {
-  border-color: #52c41a !important;
+  border-color: var(--ant-color-success, #52c41a) !important;
 }
 
 /* Main Table Card */
@@ -1760,12 +1760,12 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #1677ff;
+  color: var(--ant-color-primary, #1677ff);
   cursor: pointer;
 }
 
 .company-link:hover {
-  color: #4096ff;
+  color: var(--ant-color-primary-hover, #4096ff);
   text-decoration: underline;
 }
 
@@ -1788,14 +1788,14 @@ onMounted(() => {
 
 /* Storage cost value styles */
 .storage-cost-value {
-  color: #52c41a;
+  color: var(--ant-color-success, #52c41a);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .storage-cost-value:hover {
-  color: #73d13d;
+  color: var(--ant-green-5, #73d13d);
   text-decoration: underline;
 }
 
@@ -1808,8 +1808,8 @@ onMounted(() => {
 }
 
 .container-number-cell:hover {
-  background-color: #f0f7ff;
-  color: #1677ff;
+  background-color: var(--ant-blue-1, #f0f7ff);
+  color: var(--ant-color-primary, #1677ff);
 }
 
 /* Expenses card in expanded row */
@@ -1875,7 +1875,7 @@ onMounted(() => {
 .expense-usd {
   font-size: 13px;
   font-weight: 600;
-  color: #52c41a;
+  color: var(--ant-color-success, #52c41a);
 }
 
 .expenses-total {
@@ -1897,7 +1897,7 @@ onMounted(() => {
 }
 
 .total-amount.usd {
-  color: #52c41a;
+  color: var(--ant-color-success, #52c41a);
   font-weight: 600;
 }
 
@@ -1914,13 +1914,13 @@ onMounted(() => {
 }
 
 .additional-charges-value.has-charges {
-  color: #fa8c16;
+  color: var(--ant-color-warning, #fa8c16);
   font-weight: 600;
 }
 
 /* Total cost column */
 .total-cost-value {
   font-weight: 600;
-  color: #1677ff;
+  color: var(--ant-color-primary, #1677ff);
 }
 </style>

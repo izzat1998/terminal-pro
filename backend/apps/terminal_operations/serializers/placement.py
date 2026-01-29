@@ -179,6 +179,69 @@ class PlacementAvailableRequestSerializer(serializers.Serializer):
     )
 
 
+class YardSlotContainerEntrySerializer(serializers.Serializer):
+    """Lightweight serializer for yard slot occupant data (3D rendering)."""
+
+    id = serializers.IntegerField()
+    container_number = serializers.CharField()
+    iso_type = serializers.CharField()
+    status = serializers.CharField()
+    is_hazmat = serializers.BooleanField()
+    imo_class = serializers.CharField(allow_null=True)
+    priority = serializers.CharField()
+    company_name = serializers.CharField(allow_null=True)
+    dwell_time_days = serializers.IntegerField()
+    entry_time = serializers.DateTimeField()
+    cargo_name = serializers.CharField()
+
+
+class YardSlotSerializer(serializers.ModelSerializer):
+    """
+    Yard slot with DXF coordinates and optional occupant data.
+    Used by the unified 3D yard view.
+    """
+
+    from ..models import ContainerPosition
+
+    container_entry = serializers.SerializerMethodField()
+
+    class Meta:
+        from ..models import ContainerPosition
+
+        model = ContainerPosition
+        fields = [
+            "id",
+            "zone",
+            "row",
+            "bay",
+            "tier",
+            "sub_slot",
+            "dxf_x",
+            "dxf_y",
+            "rotation",
+            "container_size",
+            "container_entry",
+        ]
+
+    def get_container_entry(self, obj):
+        if not obj.container_entry:
+            return None
+        entry = obj.container_entry
+        return {
+            "id": entry.id,
+            "container_number": entry.container.container_number,
+            "iso_type": entry.container.iso_type,
+            "status": entry.status,
+            "is_hazmat": entry.is_hazmat,
+            "imo_class": entry.imo_class,
+            "priority": entry.priority,
+            "company_name": entry.company.name if entry.company else (entry.client_name or None),
+            "dwell_time_days": entry.dwell_time_days,
+            "entry_time": entry.entry_time,
+            "cargo_name": entry.cargo_name,
+        }
+
+
 class UnplacedContainerSerializer(serializers.Serializer):
     """
     Serializer for containers without assigned positions.

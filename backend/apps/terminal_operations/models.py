@@ -180,6 +180,57 @@ class ContainerEntry(TimestampedModel):
         help_text="Вес груза в тоннах",
     )
 
+    # IMO Hazmat Classification (International Maritime Dangerous Goods Code)
+    IMO_CLASS_CHOICES = [
+        ("1", "Класс 1: Взрывчатые вещества"),
+        ("2", "Класс 2: Газы"),
+        ("3", "Класс 3: Легковоспламеняющиеся жидкости"),
+        ("4", "Класс 4: Легковоспламеняющиеся твёрдые вещества"),
+        ("5", "Класс 5: Окисляющие вещества"),
+        ("6", "Класс 6: Токсичные вещества"),
+        ("7", "Класс 7: Радиоактивные материалы"),
+        ("8", "Класс 8: Коррозионные вещества"),
+        ("9", "Класс 9: Прочие опасные вещества"),
+    ]
+    imo_class = models.CharField(
+        max_length=2,
+        choices=IMO_CLASS_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Класс опасности по классификации IMO (1-9)",
+    )
+    is_hazmat = models.BooleanField(
+        default=False,
+        help_text="Контейнер содержит опасные грузы",
+    )
+
+    # Container Priority for operations
+    PRIORITY_CHOICES = [
+        ("NORMAL", "Обычный"),
+        ("HIGH", "Высокий"),
+        ("URGENT", "Срочный"),
+    ]
+    priority = models.CharField(
+        max_length=10,
+        choices=PRIORITY_CHOICES,
+        default="NORMAL",
+        help_text="Приоритет обработки контейнера",
+    )
+
+    # Shipping/Booking Information
+    vessel_name = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Название судна",
+    )
+    booking_number = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        help_text="Номер букинга/заказа",
+    )
+
     class Meta:
         ordering = ["-entry_time"]
         verbose_name = "Въезд контейнера"
@@ -391,8 +442,9 @@ class PreOrder(TimestampedModel):
 
 class ContainerPosition(TimestampedModel):
     """
-    3D position for container placement in terminal yard.
-    One-to-one relationship with ContainerEntry for physical location tracking.
+    Physical container slot in the terminal yard.
+    Stores both logical grid coordinates (zone/row/bay/tier) and
+    physical DXF coordinates (dxf_x/dxf_y/rotation) for 3D rendering.
 
     Coordinate Format: Zone-Row-Bay-Tier-Slot (e.g., A-R03-B15-T2-A)
     - Zone: A-E (5 zones)
@@ -426,11 +478,21 @@ class ContainerPosition(TimestampedModel):
         ("B", "Slot B (Right/Back)"),
     ]
 
+    # Container size choices
+    CONTAINER_SIZE_CHOICES = [
+        ("20ft", "20ft"),
+        ("40ft", "40ft"),
+        ("45ft", "45ft"),
+    ]
+
+    # Occupant — nullable so empty slots can exist
     container_entry = models.OneToOneField(
         ContainerEntry,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="position",
-        help_text="Связанная запись въезда контейнера",
+        help_text="Контейнер, занимающий эту позицию (null = пустой слот)",
     )
 
     zone = models.CharField(
@@ -460,6 +522,28 @@ class ContainerPosition(TimestampedModel):
         choices=SUB_SLOT_CHOICES,
         default="A",
         help_text="Позиция внутри отсека: A (левая) или B (правая). 40ft контейнеры всегда занимают слот A.",
+    )
+
+    # Physical position (DXF coordinates for 3D rendering)
+    dxf_x = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Координата X из DXF-чертежа (для 3D отображения)",
+    )
+    dxf_y = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Координата Y из DXF-чертежа (для 3D отображения)",
+    )
+    rotation = models.FloatField(
+        default=0,
+        help_text="Угол поворота в градусах (против часовой от оси X)",
+    )
+    container_size = models.CharField(
+        max_length=10,
+        choices=CONTAINER_SIZE_CHOICES,
+        default="40ft",
+        help_text="Размер контейнерного слота",
     )
 
     auto_assigned = models.BooleanField(

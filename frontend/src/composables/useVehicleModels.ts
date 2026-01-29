@@ -15,6 +15,12 @@ import * as THREE from 'three'
 // Vehicle types supported by the gate camera system
 export type VehicleType = 'TRUCK' | 'CAR' | 'WAGON' | 'UNKNOWN'
 
+// License plate dimensions (real-world: ~52cm × 11cm for EU standard)
+const PLATE_DIMS = {
+  width: 0.52,
+  height: 0.11,
+}
+
 // Color palette matching the premium yard theme
 export const VEHICLE_COLORS = {
   truckPrimary: 0x0077B6,    // Deep blue (matches yard theme)
@@ -38,6 +44,8 @@ export interface VehicleModelOptions {
   chassisSize?: '20ft' | '40ft'
   /** Scale factor (default 1.0 = real-world meters) */
   scale?: number
+  /** License plate number to display on the vehicle */
+  plateNumber?: string
 }
 
 /**
@@ -45,6 +53,99 @@ export interface VehicleModelOptions {
  * Returns factory functions for each vehicle type
  */
 export function useVehicleModels() {
+  /**
+   * Create a 3D license plate mesh with the plate number rendered as texture
+   *
+   * Uses canvas to render realistic plate with:
+   * - Yellow background (Uzbekistan/EU style)
+   * - Dark embossed text
+   * - Subtle border
+   *
+   * @param plateNumber - The license plate text to display
+   * @param facingBack - If true, plate faces +X (rear), otherwise -X (front)
+   * @returns THREE.Mesh with the license plate
+   */
+  function createLicensePlate(plateNumber: string, facingBack = false): THREE.Mesh {
+    // Create canvas for plate texture
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')!
+
+    // High resolution for crisp text (will be scaled down)
+    canvas.width = 512
+    canvas.height = 128
+
+    // Draw plate background - yellow gradient
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height)
+    gradient.addColorStop(0, '#fef9c3')    // Light yellow top
+    gradient.addColorStop(0.5, '#fde047')  // Bright yellow middle
+    gradient.addColorStop(1, '#facc15')    // Darker yellow bottom
+
+    // Plate background with rounded corners
+    const radius = 12
+    ctx.fillStyle = gradient
+    ctx.beginPath()
+    ctx.roundRect(4, 4, canvas.width - 8, canvas.height - 8, radius)
+    ctx.fill()
+
+    // Plate border
+    ctx.strokeStyle = '#a16207'
+    ctx.lineWidth = 4
+    ctx.stroke()
+
+    // Outer frame (dark)
+    ctx.strokeStyle = '#374151'
+    ctx.lineWidth = 8
+    ctx.beginPath()
+    ctx.roundRect(0, 0, canvas.width, canvas.height, radius + 4)
+    ctx.stroke()
+
+    // Draw plate number text
+    ctx.fillStyle = '#1a1a1a'
+    ctx.font = 'bold 72px Arial Black, Arial, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    // Text shadow for embossed effect
+    ctx.shadowColor = 'rgba(255, 255, 255, 0.5)'
+    ctx.shadowOffsetX = 2
+    ctx.shadowOffsetY = 2
+    ctx.shadowBlur = 0
+
+    ctx.fillText(plateNumber.toUpperCase(), canvas.width / 2, canvas.height / 2 + 4)
+
+    // Reset shadow and add dark outline
+    ctx.shadowColor = 'transparent'
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)'
+    ctx.lineWidth = 1
+    ctx.strokeText(plateNumber.toUpperCase(), canvas.width / 2, canvas.height / 2 + 4)
+
+    // Create texture from canvas
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.minFilter = THREE.LinearFilter
+    texture.magFilter = THREE.LinearFilter
+    texture.anisotropy = 4
+
+    // Create plate mesh
+    const geometry = new THREE.PlaneGeometry(PLATE_DIMS.width, PLATE_DIMS.height)
+    const material = new THREE.MeshStandardMaterial({
+      map: texture,
+      roughness: 0.3,
+      metalness: 0.1,
+    })
+
+    const plate = new THREE.Mesh(geometry, material)
+    plate.name = facingBack ? 'license-plate-rear' : 'license-plate-front'
+
+    // Rotate to face the correct direction
+    if (facingBack) {
+      plate.rotation.y = 0  // Face +X (rear of vehicle)
+    } else {
+      plate.rotation.y = Math.PI  // Face -X (front of vehicle)
+    }
+
+    return plate
+  }
+
   /**
    * Create a low-poly truck tractor (cab) model
    * Dimensions: 6.0m length × 2.55m width × 3.8m height
@@ -55,6 +156,7 @@ export function useVehicleModels() {
       withChassis = false,
       chassisSize = '40ft',
       scale = 1.0,
+      plateNumber,
     } = options
 
     const truck = new THREE.Group()
@@ -160,6 +262,19 @@ export function useVehicleModels() {
     exhaust.position.set(1.0, 3.5, 1.3)
     truck.add(exhaust)
 
+    // License plates (if plate number provided)
+    if (plateNumber) {
+      // Front plate - on the grille
+      const frontPlate = createLicensePlate(plateNumber, false)
+      frontPlate.position.set(-3.15, 0.9, 0)  // Front of truck, below grille
+      truck.add(frontPlate)
+
+      // Rear plate - on the back of the cab
+      const rearPlate = createLicensePlate(plateNumber, true)
+      rearPlate.position.set(3.0, 0.9, 0)  // Back of truck
+      truck.add(rearPlate)
+    }
+
     // Optionally add chassis
     if (withChassis) {
       const chassis = createChassisModel({ size: chassisSize })
@@ -250,6 +365,7 @@ export function useVehicleModels() {
     const {
       color = VEHICLE_COLORS.carColors[Math.floor(Math.random() * VEHICLE_COLORS.carColors.length)],
       scale = 1.0,
+      plateNumber,
     } = options
 
     const car = new THREE.Group()
@@ -330,6 +446,19 @@ export function useVehicleModels() {
     const hlR = new THREE.Mesh(headlightGeom, headlightMaterial)
     hlR.position.set(-2.25, 0.7, -0.6)
     car.add(hlR)
+
+    // License plates (if plate number provided)
+    if (plateNumber) {
+      // Front plate - below headlights
+      const frontPlate = createLicensePlate(plateNumber, false)
+      frontPlate.position.set(-2.26, 0.45, 0)  // Front bumper area
+      car.add(frontPlate)
+
+      // Rear plate - on the back
+      const rearPlate = createLicensePlate(plateNumber, true)
+      rearPlate.position.set(2.26, 0.45, 0)  // Rear bumper area
+      car.add(rearPlate)
+    }
 
     car.scale.setScalar(scale)
 
@@ -479,6 +608,7 @@ export function useVehicleModels() {
     createCarModel,
     createWagonModel,
     createVehicle,
+    createLicensePlate,
     disposeVehicle,
     VEHICLE_COLORS,
   }

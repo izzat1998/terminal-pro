@@ -77,7 +77,7 @@
   // ========================================
   // Theme & Appearance
   // ========================================
-  "workbench.colorTheme": "Abyss",
+  "workbench.colorTheme": "Monokai Pro",
 
   // ========================================
   // Font Settings (JetBrains Mono)

@@ -7,6 +7,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     AdditionalChargeViewSet,
+    BulkGenerateDraftsView,
     BulkStorageCostView,
     CustomerAdditionalChargeView,
     CustomerStorageCostView,
@@ -34,6 +35,11 @@ urlpatterns = [
         "storage-costs/calculate/",
         BulkStorageCostView.as_view(),
         name="bulk-storage-cost",
+    ),
+    path(
+        "generate-all-drafts/",
+        BulkGenerateDraftsView.as_view(),
+        name="bulk-generate-drafts",
     ),
 ]
 

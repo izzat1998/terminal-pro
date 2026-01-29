@@ -1,12 +1,12 @@
 <template>
   <div class="expense-types">
     <!-- Header with add button -->
-    <div class="header-actions">
+    <a-space style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
       <a-button type="primary" @click="openAddModal">
         <template #icon><PlusOutlined /></template>
         Добавить тип расхода
       </a-button>
-    </div>
+    </a-space>
 
     <a-empty v-if="!loading && expenseTypes.length === 0" description="Типы расходов не найдены" />
 
@@ -243,15 +243,9 @@ onMounted(fetchExpenseTypes);
   padding: 8px 0;
 }
 
-.header-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 16px;
-}
-
 .amount-usd {
   font-weight: 600;
-  color: #52c41a;
+  color: var(--ant-color-success, #52c41a);
 }
 
 .amount-uzs {

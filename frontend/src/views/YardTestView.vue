@@ -1,32 +1,36 @@
 <script setup lang="ts">
 /**
- * Yard Test View
- * Test page for the YardView3D component with debug mode integration
+ * Yard Operations View
+ * Professional terminal operations center with 3D yard visualization
  *
  * Features:
  * - 3D yard visualization with DXF-based infrastructure
  * - Interactive gate camera with vehicle detection
  * - Vehicle spawning and animation to parking zones
- * - Debug mode with grid overlay and element inspection
- *
- * Debug Mode:
- * - Press 'D' to toggle debug mode
- * - URL param: ?debug=true
+ * - Real-time statistics and monitoring
+ * - Debug mode for development (Press D)
  */
 
-import { ref, shallowRef, onMounted, onUnmounted, watch } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, watch, computed } from 'vue'
 import type * as THREE from 'three'
 import YardView3D from '@/components/YardView3D.vue'
+import { isInputElement } from '@/utils/keyboardUtils'
+
 import YardGridOverlay from '@/components/yard/YardGridOverlay.vue'
 import YardDebugTooltip from '@/components/yard/YardDebugTooltip.vue'
+import YardDrawOverlay from '@/components/yard/YardDrawOverlay.vue'
 import GateCamera3D from '@/components/yard/GateCamera3D.vue'
 import GateCameraWidget from '@/components/yard/GateCameraWidget.vue'
+import VehicleStatsOverlay from '@/components/yard/VehicleStatsOverlay.vue'
+import GateStatsHeader from '@/components/yard/GateStatsHeader.vue'
 import { useYardDebug } from '@/composables/useYardDebug'
+import { useYardDraw } from '@/composables/useYardDraw'
 import { useVehicles3D, type VehicleDetection } from '@/composables/useVehicles3D'
-import { PATHS, ZONES } from '@/data/scenePositions'
 import type { ContainerPosition, ContainerData } from '@/composables/useContainers3D'
 import type { DxfCoordinateSystem } from '@/types/dxf'
+import { getYardSlots, type YardSlot } from '@/services/yardService'
 import type { VehicleDetectionResult } from '@/composables/useGateDetection'
+import type { VehicleType } from '@/composables/useVehicleModels'
 
 // YardView3D ref for accessing exposed properties
 const yardViewRef = ref<InstanceType<typeof YardView3D>>()
@@ -43,9 +47,87 @@ const coordinateSystem = shallowRef<DxfCoordinateSystem | null>(null)
 // Debug mode
 const { isDebugMode, debugSettings, initDebugMode, disposeDebugMode } = useYardDebug()
 
+// Draw mode for coordinate capture
+const {
+  isDrawMode,
+  points: drawPoints,
+  initDrawMode,
+  disposeDrawMode,
+} = useYardDraw({
+  scene,
+  camera,
+  container: containerRef,
+  coordinateSystem,
+})
+
+// Test vehicle movement using drawn points
+async function testVehicleWithPoints(): Promise<void> {
+  if (!vehicles3D) {
+    console.warn('[YardTestView] Vehicles3D not initialized')
+    return
+  }
+
+  const points = drawPoints.value
+  if (points.length < 2) {
+    console.warn('[YardTestView] Need at least 2 points to test vehicle movement')
+    return
+  }
+
+  const startPoint = points[0]
+  const endPoint = points[1]
+
+  if (!startPoint || !endPoint) return
+
+  console.log('[YardTestView] Testing vehicle movement')
+  console.log('[YardTestView] Start point:', startPoint)
+  console.log('[YardTestView] End point:', endPoint)
+  console.log(`[YardTestView] DXF: (${startPoint.dxf.x}, ${startPoint.dxf.y}) → (${endPoint.dxf.x}, ${endPoint.dxf.y})`)
+
+  // Create vehicle detection
+  const vehicleId = generateVehicleId()
+  const detection = {
+    id: vehicleId,
+    plateNumber: 'TEST-001',
+    vehicleType: 'TRUCK' as const,
+    direction: 'entering' as const,
+  }
+
+  // Spawn at first point, facing second point
+  const vehicle = vehicles3D.spawnVehicleAtPosition(
+    detection,
+    startPoint.dxf.x,
+    startPoint.dxf.y,
+    { x: endPoint.dxf.x, y: endPoint.dxf.y }
+  )
+
+  if (!vehicle) {
+    console.error('[YardTestView] Failed to spawn vehicle')
+    return
+  }
+
+  activeVehicleCount.value = vehicles3D.getAllVehicles().length
+
+  // Wait a moment, then animate to second point
+  await new Promise(r => setTimeout(r, 500))
+
+  await vehicles3D.animateVehicleToPosition(vehicle, endPoint.dxf.x, endPoint.dxf.y)
+
+  // Fade out after reaching destination
+  await new Promise(r => setTimeout(r, 1000))
+  await vehicles3D.fadeOutVehicle(vehicleId, 1500)
+
+  activeVehicleCount.value = vehicles3D.getAllVehicles().length
+  console.log('[YardTestView] Test complete')
+}
+
+// Expose test function to console
+if (import.meta.env.DEV) {
+  (window as Window & { testVehicle?: () => void }).testVehicle = testVehicleWithPoints
+}
+
 // Gate camera widget state
 const isWidgetOpen = ref(false)
-const widgetPosition = ref({ x: 100, y: 100 })
+const isCameraWidgetVisible = ref(true)  // Always visible by default (docked)
 
 // Vehicles3D composable (initialized after scene is ready)
 let vehicles3D: ReturnType<typeof useVehicles3D> | null = null
@@ -59,14 +141,90 @@ function generateVehicleId(): string {
 // Active vehicle count for display
 const activeVehicleCount = ref(0)
 
-// Mock container data for testing
-const mockContainerData = ref<ContainerData[]>([
-  { id: 1, container_number: 'HDMU6565958', status: 'LADEN', container_type: '40GP', dwell_days: 5 },
-  { id: 2, container_number: 'TCLU7894521', status: 'EMPTY', container_type: '40GP', dwell_days: 12 },
-  { id: 3, container_number: 'MSKU9876543', status: 'LADEN', container_type: '40GP', dwell_days: 3 },
-  { id: 4, container_number: 'TEMU1234567', status: 'LADEN', container_type: '40GP', dwell_days: 18 },
-  { id: 5, container_number: 'CSQU4567890', status: 'EMPTY', container_type: '40GP', dwell_days: 7 },
-])
+// Vehicle entry statistics
+interface VehicleEntryRecord {
+  id: string
+  plateNumber: string
+  vehicleType: VehicleType
+  timestamp: number
+}
+const vehicleEntries = ref<VehicleEntryRecord[]>([])
+
+// Current time for header
+const currentTime = ref(new Date())
+setInterval(() => {
+  currentTime.value = new Date()
+}, 1000)
+
+const formattedTime = computed(() => {
+  return currentTime.value.toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+})
+
+const formattedDate = computed(() => {
+  return currentTime.value.toLocaleDateString('ru-RU', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
+})
+
+// ============ API Data Loading ============
+
+const containerData = ref<ContainerData[]>([])
+const slotPositions = ref<ContainerPosition[]>([])
+
+/** Map API yard slots to ContainerData[] for the 3D renderer */
+function mapSlotsToContainerData(slots: YardSlot[]): ContainerData[] {
+  return slots
+    .filter((s): s is YardSlot & { container_entry: NonNullable<YardSlot['container_entry']> } =>
+      s.container_entry !== null
+    )
+    .map((s) => ({
+      id: s.id,
+      container_number: s.container_entry.container_number,
+      status: s.container_entry.status === 'LADEN' ? 'LADEN' : 'EMPTY',
+      container_type: s.container_entry.iso_type?.startsWith('4') ? '40GP' : '20GP',
+      dwell_days: s.container_entry.dwell_time_days,
+      company_name: s.container_entry.company_name ?? undefined,
+      is_hazmat: s.container_entry.is_hazmat,
+      imo_class: s.container_entry.imo_class ?? undefined,
+      priority: s.container_entry.priority as ContainerData['priority'],
+      entry_time: s.container_entry.entry_time,
+    } as ContainerData))
+}
+
+/** Map API yard slots to ContainerPosition[] for 3D positioning */
+function mapSlotsToPositions(slots: YardSlot[]): ContainerPosition[] {
+  return slots
+    .filter((s) => s.dxf_x !== null && s.dxf_y !== null)
+    .map((s) => ({
+      id: s.id,
+      x: 0,
+      y: 0,
+      rotation: s.rotation,
+      blockName: s.container_size === '20ft' ? '20ft' : '40ft',
+      layer: 'Т-Контейнеры',
+      tier: s.tier,
+      _original: {
+        x: s.dxf_x!,
+        y: s.dxf_y!,
+      },
+    }))
+}
+
+async function fetchYardData(): Promise<void> {
+  try {
+    const slots = await getYardSlots()
+    slotPositions.value = mapSlotsToPositions(slots)
+    containerData.value = mapSlotsToContainerData(slots)
+  } catch (e) {
+    console.error('[YardTestView] Failed to fetch yard data:', e)
+  }
+}
 
 // Container event handlers
 function onContainerClick(container: ContainerPosition & { data?: ContainerData }): void {
@@ -106,16 +264,33 @@ function onError(message: string): void {
 }
 
 // Gate camera event handlers
-function onCameraClick(screenPosition: { x: number; y: number }): void {
-  widgetPosition.value = screenPosition
-  isWidgetOpen.value = true
+function onCameraClick(): void {
+  // Toggle camera widget visibility when 3D camera is clicked
+  isCameraWidgetVisible.value = !isCameraWidgetVisible.value
+  isWidgetOpen.value = isCameraWidgetVisible.value
 }
 
 function onWidgetClose(): void {
+  isCameraWidgetVisible.value = false
   isWidgetOpen.value = false
 }
 
-// Vehicle detection handler
+// Gate entry path coordinates (DXF)
+const GATE_ENTRY_PATH = {
+  spawn: { x: 12867, y: 73398 },  // Where vehicle appears
+  end: { x: 12904, y: 73388 },    // Where vehicle drives to
+}
+
+// Custom detection zone for gate camera (DXF coordinates)
+// This rectangle defines the area where vehicle detection triggers
+const GATE_DETECTION_ZONE = [
+  { x: 12860, y: 73390 },
+  { x: 12865, y: 73407 },
+  { x: 12871, y: 73402 },
+  { x: 12870, y: 73392 },
+]
+
+// Vehicle detection handler - spawn at coordinates, animate to end, then fade
 async function onVehicleDetected(result: VehicleDetectionResult): Promise<void> {
   if (!vehicles3D || !coordinateSystem.value) {
     console.warn('Vehicles3D not initialized')
@@ -136,8 +311,24 @@ async function onVehicleDetected(result: VehicleDetectionResult): Promise<void> 
     direction: 'entering',
   }
 
-  // Spawn vehicle at gate
-  const vehicle = vehicles3D.spawnVehicle(detection)
+  // Add to statistics
+  vehicleEntries.value = [
+    ...vehicleEntries.value,
+    {
+      id: vehicleId,
+      plateNumber: result.plateNumber,
+      vehicleType: result.vehicleType,
+      timestamp: Date.now(),
+    },
+  ]
+
+  // Spawn vehicle at entry point, facing the end point
+  const vehicle = vehicles3D.spawnVehicleAtPosition(
+    detection,
+    GATE_ENTRY_PATH.spawn.x,
+    GATE_ENTRY_PATH.spawn.y,
+    GATE_ENTRY_PATH.end
+  )
   if (!vehicle) {
     console.error('Failed to spawn vehicle')
     return
@@ -145,24 +336,19 @@ async function onVehicleDetected(result: VehicleDetectionResult): Promise<void> 
 
   activeVehicleCount.value = vehicles3D.getAllVehicles().length
 
-  // Pick a random parking zone
-  const zoneIds = Object.keys(ZONES)
-  const targetZone = zoneIds[Math.floor(Math.random() * zoneIds.length)]
-  const pathId = `main_to_${targetZone}`
-  const path = PATHS[pathId]
+  // Wait a moment, then animate to end position
+  await new Promise(r => setTimeout(r, 500))
+  await vehicles3D.animateVehicleToPosition(
+    vehicle,
+    GATE_ENTRY_PATH.end.x,
+    GATE_ENTRY_PATH.end.y
+  )
 
-  if (path) {
-    // Animate vehicle along path
-    await vehicles3D.animateVehicleAlongPath(vehicle, path)
-  }
+  // Brief pause, then fade out
+  await new Promise(r => setTimeout(r, 500))
+  await vehicles3D.fadeOutVehicle(vehicleId, 1500)
 
-  // Remove vehicle after 30 seconds (for demo)
-  setTimeout(() => {
-    if (vehicles3D) {
-      vehicles3D.removeVehicle(vehicleId)
-      activeVehicleCount.value = vehicles3D.getAllVehicles().length
-    }
-  }, 30000)
+  activeVehicleCount.value = vehicles3D.getAllVehicles().length
 }
 
 // Watch for YardView3D to be ready
@@ -175,190 +361,701 @@ watch(yardViewRef, (ref) => {
   }
 }, { immediate: true })
 
+// Keyboard handler for test vehicle (T key)
+function handleTestKeydown(event: KeyboardEvent): void {
+  // Ignore if typing in input
+  if (isInputElement(event)) return
+
+  // T key: Test vehicle with drawn points
+  if (event.key.toLowerCase() === 't' && isDrawMode.value && drawPoints.value.length >= 2) {
+    testVehicleWithPoints()
+  }
+}
+
 // Lifecycle
-onMounted(() => {
+onMounted(async () => {
   initDebugMode()
+  initDrawMode()
+  window.addEventListener('keydown', handleTestKeydown)
+  await fetchYardData()
 })
 
 onUnmounted(() => {
   disposeDebugMode()
+  disposeDrawMode()
+  window.removeEventListener('keydown', handleTestKeydown)
   vehicles3D?.dispose()
 })
 </script>
 
 <template>
-  <div class="yard-test-page">
-    <div class="page-header">
-      <h1>3D Yard Visualization Test</h1>
-      <p>
-        Testing DXF-based terminal rendering with interactive containers
-        <span v-if="isDebugMode" class="debug-badge">DEBUG MODE (Press D to toggle)</span>
-      </p>
-    </div>
+  <div class="ops-center">
+    <!-- Top Navigation Bar -->
+    <header class="ops-header">
+      <div class="header-left">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="1" y="6" width="22" height="12" rx="2"/>
+              <path d="M1 10h22"/>
+              <path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">MTT Terminal</span>
+            <span class="brand-sub">Operations Center</span>
+          </div>
+        </div>
+      </div>
 
-    <div class="yard-container">
-      <YardView3D
-        ref="yardViewRef"
-        dxf-url="/yard.dxf"
-        :container-data="mockContainerData"
-        height="calc(100vh - 150px)"
-        :show-layer-panel="true"
-        :show-stats="true"
-        color-mode="status"
-        :interactive="true"
-        @container-click="onContainerClick"
-        @container-hover="onContainerHover"
-        @loaded="onLoaded"
-        @error="onError"
-      />
+      <div class="header-center">
+        <GateStatsHeader
+          :entries="vehicleEntries"
+          :is-active="activeVehicleCount > 0"
+        />
+      </div>
 
-      <!-- 3D Gate Camera (clickable) -->
-      <GateCamera3D
-        v-if="scene && camera && coordinateSystem && containerRef"
-        ref="gateCameraRef"
-        :scene="scene"
-        :camera="camera"
-        :coordinate-system="coordinateSystem"
-        :container="containerRef"
-        :is-widget-open="isWidgetOpen"
-        gate-id="main"
-        @click="onCameraClick"
-      />
+      <div class="header-right">
+        <div class="header-time">
+          <span class="time-value">{{ formattedTime }}</span>
+          <span class="time-date">{{ formattedDate }}</span>
+        </div>
 
-      <!-- Gate Camera Widget (floating panel) -->
+        <div v-if="isDebugMode" class="debug-pill">
+          <span class="debug-dot"></span>
+          <span>DEV</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="ops-main">
+      <!-- 3D Yard Visualization -->
+      <div class="yard-viewport">
+        <YardView3D
+          ref="yardViewRef"
+          dxf-url="/yard.dxf"
+          :container-data="containerData"
+          :container-positions="slotPositions"
+          height="100%"
+          :show-layer-panel="true"
+          :show-stats="true"
+          color-mode="status"
+          :interactive="true"
+          :show-test-vehicles="false"
+          @container-click="onContainerClick"
+          @container-hover="onContainerHover"
+          @loaded="onLoaded"
+          @error="onError"
+        />
+
+        <!-- 3D Gate Camera (clickable) -->
+        <GateCamera3D
+          v-if="scene && camera && coordinateSystem && containerRef"
+          ref="gateCameraRef"
+          :scene="scene"
+          :camera="camera"
+          :coordinate-system="coordinateSystem"
+          :container="containerRef"
+          :is-widget-open="isWidgetOpen"
+          :detection-zone-vertices="GATE_DETECTION_ZONE"
+          gate-id="main"
+          @click="onCameraClick"
+        />
+
+        <!-- Debug Grid Overlay -->
+        <YardGridOverlay
+          v-if="isDebugMode && debugSettings.showGrid && coordinateSystem && scene"
+          :coordinate-system="coordinateSystem"
+          :scene="scene"
+          :visible="true"
+        />
+
+        <!-- Debug Tooltip -->
+        <YardDebugTooltip
+          v-if="isDebugMode"
+          :scene="scene"
+          :camera="camera"
+          :container="containerRef"
+          :coordinate-system="coordinateSystem"
+          :enabled="debugSettings.showLabels"
+        />
+
+        <!-- Draw Mode Overlay -->
+        <YardDrawOverlay
+          v-if="isDebugMode && scene"
+          :scene="scene"
+          :points="drawPoints"
+          :active="isDrawMode"
+        />
+
+        <!-- Active Vehicle Badge -->
+        <Transition name="badge-pop">
+          <div v-if="activeVehicleCount > 0" class="active-vehicle-badge">
+            <span class="badge-pulse"></span>
+            <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 17H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1"/>
+              <path d="M19 17h1a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2h-1"/>
+              <path d="M5 9V7a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/>
+              <rect x="5" y="9" width="14" height="8" rx="2"/>
+              <circle cx="8" cy="17" r="2"/>
+              <circle cx="16" cy="17" r="2"/>
+            </svg>
+            <span class="badge-count">{{ activeVehicleCount }}</span>
+            <span class="badge-label">на воротах</span>
+          </div>
+        </Transition>
+
+        <!-- Vehicle Stats Panel -->
+        <VehicleStatsOverlay
+          :entries="vehicleEntries"
+          :visible="vehicleEntries.length > 0"
+        />
+      </div>
+
+      <!-- Gate Camera Widget (docked) -->
       <GateCameraWidget
-        :visible="isWidgetOpen"
-        :position="widgetPosition"
+        :visible="isCameraWidgetVisible"
+        docked="bottom-left"
         initial-source="mock"
+        gate-id="Въезд А"
         @close="onWidgetClose"
         @vehicle-detected="onVehicleDetected"
       />
+    </main>
 
-      <!-- Vehicle Count Indicator -->
-      <div v-if="activeVehicleCount > 0" class="vehicle-indicator">
-        <span class="vehicle-icon">🚛</span>
-        <span class="vehicle-count">{{ activeVehicleCount }}</span>
-      </div>
-
-      <!-- Debug Grid Overlay (lines only) -->
-      <YardGridOverlay
-        v-if="isDebugMode && debugSettings.showGrid && coordinateSystem && scene"
-        :coordinate-system="coordinateSystem"
-        :scene="scene"
-        :visible="true"
-      />
-
-      <!-- Debug Tooltip (cursor-based) -->
-      <YardDebugTooltip
-        v-if="isDebugMode"
-        :scene="scene"
-        :camera="camera"
-        :container="containerRef"
-        :coordinate-system="coordinateSystem"
-        :enabled="debugSettings.showLabels"
-      />
-
-      <!-- Debug Mode Indicator -->
-      <div v-if="isDebugMode" class="debug-indicator">
-        <div class="debug-controls">
-          <a-checkbox v-model:checked="debugSettings.showGrid">Grid</a-checkbox>
-          <a-checkbox v-model:checked="debugSettings.showLabels">Tooltip</a-checkbox>
-          <a-checkbox v-model:checked="debugSettings.showCoordinates">Coords</a-checkbox>
+    <!-- Debug Panel (only in debug mode) -->
+    <Transition name="panel-slide">
+      <aside v-if="isDebugMode" class="debug-panel">
+        <div class="debug-panel-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+          <span>Инструменты разработчика</span>
         </div>
-        <div v-if="debugSettings.showCoordinates && coordinateSystem" class="coord-display">
-          Yard: {{ coordinateSystem.bounds?.width.toFixed(0) }}m × {{ coordinateSystem.bounds?.height.toFixed(0) }}m
+
+        <div class="debug-section">
+          <div class="debug-section-title">Отображение</div>
+          <label class="debug-toggle">
+            <input type="checkbox" v-model="debugSettings.showGrid" />
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Сетка координат</span>
+          </label>
+          <label class="debug-toggle">
+            <input type="checkbox" v-model="debugSettings.showLabels" />
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Подсказки</span>
+          </label>
+          <label class="debug-toggle">
+            <input type="checkbox" v-model="debugSettings.showCoordinates" />
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Координаты</span>
+          </label>
         </div>
-      </div>
-    </div>
+
+        <div v-if="debugSettings.showCoordinates && coordinateSystem" class="debug-section">
+          <div class="debug-section-title">Размеры площадки</div>
+          <div class="debug-info">
+            <span class="info-label">Ширина:</span>
+            <span class="info-value">{{ coordinateSystem.bounds?.width.toFixed(0) }}м</span>
+          </div>
+          <div class="debug-info">
+            <span class="info-label">Высота:</span>
+            <span class="info-value">{{ coordinateSystem.bounds?.height.toFixed(0) }}м</span>
+          </div>
+        </div>
+
+        <div v-if="isDrawMode" class="debug-section draw-mode-section">
+          <div class="debug-section-title">
+            <span class="draw-dot"></span>
+            Режим рисования
+          </div>
+          <div class="draw-point-count">
+            <span class="count-value">{{ drawPoints.length }}</span>
+            <span class="count-label">точек</span>
+          </div>
+          <div class="draw-shortcuts">
+            <kbd>M</kbd> переключить
+            <kbd>C</kbd> очистить
+            <kbd>Z</kbd> отменить
+            <kbd>Enter</kbd> экспорт
+          </div>
+          <div v-if="drawPoints.length >= 2" class="draw-test-action">
+            <kbd>T</kbd> Тест движения
+          </div>
+        </div>
+
+        <div class="debug-footer">
+          <kbd>D</kbd> скрыть панель
+        </div>
+      </aside>
+    </Transition>
   </div>
 </template>
 
 <style scoped>
-.yard-test-page {
-  padding: 16px;
+/* ============================================
+   OPERATIONS CENTER - Light Professional Theme
+   ============================================ */
+
+/* Design System Tokens - Using MTT Global Variables */
+.ops-center {
+  /* Map to existing MTT design tokens from style.css */
+  --color-bg: var(--color-bg-page, #f8fafc);
+  --color-surface: var(--color-bg-card, #ffffff);
+  --color-surface-elevated: var(--color-bg-card, #ffffff);
+  --color-border: var(--color-border, #e2e8f0);
+  --color-border-subtle: var(--color-border-light, #f1f5f9);
+
+  --color-text-primary: var(--color-text, #1e293b);
+  --color-text-secondary: var(--color-text-secondary, #64748b);
+  --color-text-muted: var(--color-text-muted, #94a3b8);
+
+  --color-accent: var(--color-primary, #3b82f6);
+  --color-accent-hover: var(--color-primary-hover, #2563eb);
+  --color-accent-light: var(--color-primary-light, #dbeafe);
+  --color-success: var(--color-success, #10b981);
+  --color-success-light: var(--color-success-light, #d1fae5);
+  --color-warning: var(--color-warning, #f59e0b);
+  --color-warning-light: var(--color-warning-light, #fef3c7);
+  --color-error: var(--color-danger, #ef4444);
+
+  --shadow-sm: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.06));
+  --shadow-md: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.08));
+  --shadow-lg: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.08));
+
+  --radius-sm: var(--radius-sm, 4px);
+  --radius-md: var(--radius-md, 6px);
+  --radius-lg: var(--radius-lg, 8px);
+  --radius-xl: 16px;
+
+  --font-sans: var(--font-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  display: flex;
+  flex-direction: column;
   height: 100vh;
+  background: var(--color-bg);
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+
+/* ============ HEADER ============ */
+.ops-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 20px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  z-index: 100;
+}
+
+.header-left,
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  max-width: 800px;
+  margin: 0 24px;
+}
+
+/* Brand */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, var(--color-accent) 0%, #1d4ed8 100%);
+  border-radius: var(--radius-md);
+  color: white;
+}
+
+.brand-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.brand-text {
   display: flex;
   flex-direction: column;
 }
 
-.page-header {
-  margin-bottom: 16px;
+.brand-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
 }
 
-.page-header h1 {
-  margin: 0 0 4px 0;
-  font-size: 20px;
-}
-
-.page-header p {
-  margin: 0;
-  color: #666;
-  font-size: 14px;
-}
-
-.debug-badge {
-  display: inline-block;
-  margin-left: 12px;
-  padding: 2px 8px;
-  background: #ff4d4f;
-  color: white;
+.brand-sub {
   font-size: 11px;
-  font-weight: 600;
-  border-radius: 4px;
+  font-weight: 500;
+  color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
-.yard-container {
-  flex: 1;
-  min-height: 0;
-  position: relative;
+/* Time Display */
+.header-time {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 6px 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
 }
 
-.debug-indicator {
+.time-value {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.time-date {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* Debug Pill */
+.debug-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--color-warning-light);
+  border: 1px solid #fcd34d;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-warning);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.debug-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--color-warning);
+  border-radius: 50%;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ============ MAIN CONTENT ============ */
+.ops-main {
+  flex: 1;
+  display: flex;
+  position: relative;
+  min-height: 0;
+  padding: 16px;
+  gap: 16px;
+}
+
+.yard-viewport {
+  flex: 1;
+  position: relative;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+/* Active Vehicle Badge */
+.active-vehicle-badge {
+  position: absolute;
+  top: 16px;
+  left: 240px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--color-surface);
+  border: 2px solid var(--color-success);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg), 0 0 0 4px var(--color-success-light);
+  z-index: 50;
+}
+
+.badge-pulse {
+  position: absolute;
+  inset: -4px;
+  border: 2px solid var(--color-success);
+  border-radius: calc(var(--radius-lg) + 4px);
+  animation: pulse-ring 2s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.15); opacity: 0; }
+}
+
+.badge-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--color-success);
+}
+
+.badge-count {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-success);
+  font-variant-numeric: tabular-nums;
+}
+
+.badge-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* Badge Transition */
+.badge-pop-enter-active,
+.badge-pop-leave-active {
+  transition: all var(--transition-base);
+}
+
+.badge-pop-enter-from,
+.badge-pop-leave-to {
+  opacity: 0;
+  transform: scale(0.9) translateY(-8px);
+}
+
+/* ============ DEBUG PANEL ============ */
+.debug-panel {
   position: absolute;
   bottom: 16px;
   right: 16px;
-  background: rgba(255, 255, 255, 0.95);
-  padding: 12px 16px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  width: 280px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   z-index: 100;
+  overflow: hidden;
 }
 
-.debug-controls {
+.debug-panel-header {
   display: flex;
-  gap: 16px;
-  margin-bottom: 8px;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
-.coord-display {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: #666;
+.debug-panel-header svg {
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-muted);
 }
 
-.vehicle-indicator {
-  position: absolute;
-  top: 16px;
-  left: 16px;
+.debug-section {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.debug-section:last-of-type {
+  border-bottom: none;
+}
+
+.debug-section-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.95);
-  padding: 8px 16px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  z-index: 100;
-}
-
-.vehicle-icon {
-  font-size: 20px;
-}
-
-.vehicle-count {
+  font-size: 11px;
   font-weight: 600;
-  font-size: 16px;
-  color: #1890ff;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+/* Toggle Switches */
+.debug-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.debug-toggle:last-child {
+  margin-bottom: 0;
+}
+
+.debug-toggle input {
+  display: none;
+}
+
+.toggle-slider {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--color-border);
+  border-radius: 10px;
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast);
+}
+
+.debug-toggle input:checked + .toggle-slider {
+  background: var(--color-accent);
+}
+
+.debug-toggle input:checked + .toggle-slider::after {
+  transform: translateX(16px);
+}
+
+.toggle-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* Debug Info */
+.debug-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.info-label {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.info-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+/* Draw Mode Section */
+.draw-mode-section {
+  background: linear-gradient(to bottom, rgba(239, 68, 68, 0.05), transparent);
+}
+
+.draw-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--color-error);
+  border-radius: 50%;
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+
+.draw-point-count {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.count-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-error);
+}
+
+.count-label {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.draw-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.draw-test-action {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  font-size: 12px;
+  color: var(--color-success);
+  font-weight: 500;
+}
+
+kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.debug-footer {
+  padding: 10px 16px;
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* Panel Transition */
+.panel-slide-enter-active,
+.panel-slide-leave-active {
+  transition: all var(--transition-slow);
+}
+
+.panel-slide-enter-from,
+.panel-slide-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
 }
 </style>

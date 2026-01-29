@@ -23,6 +23,7 @@ from .serializers import (
     BulkStorageCostRequestSerializer,
     BulkStorageCostResponseSerializer,
     ExpenseTypeSerializer,
+    MonthlyStatementListSerializer,
     MonthlyStatementSerializer,
     StorageCostResultSerializer,
     TariffCreateSerializer,
@@ -31,6 +32,28 @@ from .serializers import (
 )
 from .services import StatementExportService, StorageCostService
 from .services.statement_service import MonthlyStatementService
+
+
+def _get_customer_company(user):
+    """
+    Resolve the company for a customer user.
+
+    Returns the company or None if not associated.
+    """
+    if hasattr(user, "customer_profile") and user.customer_profile.company:
+        return user.customer_profile.company
+    if getattr(user, "company", None):
+        return user.company
+    return None
+
+
+NO_COMPANY_RESPONSE = {
+    "success": False,
+    "error": {
+        "code": "NO_COMPANY",
+        "message": "Пользователь не привязан к компании",
+    },
+}
 
 
 class TariffViewSet(viewsets.ModelViewSet):
@@ -109,15 +132,7 @@ class TariffViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """Delete a tariff."""
-        instance = self.get_object()
-
-        # Prevent deletion if tariff might have been used in calculations
-        # In the future, we could check for actual StorageCharge records
-        if not instance.is_active and instance.effective_to:
-            # Allow deletion of expired tariffs
-            pass
-
-        instance.delete()
+        self.get_object().delete()
         return Response(
             {"success": True, "message": "Тариф удален"},
             status=status.HTTP_200_OK,
@@ -163,6 +178,44 @@ class TariffViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset().filter(company__isnull=True)
         serializer = TariffSerializer(queryset, many=True)
         return Response({"success": True, "data": serializer.data})
+
+
+class BulkGenerateDraftsView(APIView):
+    """
+    Generate draft statements for all companies with activity in a given month.
+
+    POST /api/billing/generate-all-drafts/
+    Body: {"year": 2026, "month": 1}
+    """
+
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        year = request.data.get("year")
+        month = request.data.get("month")
+
+        if not year or not month:
+            return Response(
+                {"success": False, "error": {"code": "MISSING_PARAMS", "message": "Укажите year и month"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        year, month = int(year), int(month)
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        service = MonthlyStatementService()
+        statements = service.generate_all_drafts(year, month, request.user)
+
+        serializer = MonthlyStatementListSerializer(statements, many=True)
+        return Response({
+            "success": True,
+            "data": serializer.data,
+            "message": f"Сформировано {len(statements)} черновиков",
+        })
 
 
 class StorageCostView(APIView):
@@ -300,24 +353,9 @@ class CustomerBulkStorageCostView(APIView):
 
     def post(self, request):
         """Calculate storage costs for customer's containers."""
-        user = request.user
-
-        # Get customer's company
-        if hasattr(user, "customer_profile") and user.customer_profile.company:
-            company = user.customer_profile.company
-        elif user.company:
-            company = user.company
-        else:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "NO_COMPANY",
-                        "message": "Пользователь не привязан к компании",
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        company = _get_customer_company(request.user)
+        if not company:
+            return Response(NO_COMPANY_RESPONSE, status=status.HTTP_400_BAD_REQUEST)
 
         container_entry_ids = request.data.get("container_entry_ids", [])
         as_of_date_str = request.data.get("as_of_date")
@@ -350,8 +388,8 @@ class CustomerBulkStorageCostView(APIView):
             "results": [StorageCostResultSerializer(r).data for r in results],
             "summary": {
                 "total_containers": len(results),
-                "total_usd": str(total_usd),
-                "total_uzs": str(total_uzs),
+                "total_usd": str(total_usd or 0),
+                "total_uzs": str(total_uzs or 0),
                 "total_billable_days": total_billable,
             },
         }
@@ -378,24 +416,9 @@ class CustomerStorageCostView(APIView):
 
     def get(self, request):
         """Get storage costs for customer's company containers."""
-        user = request.user
-
-        # Get customer's company
-        if hasattr(user, "customer_profile") and user.customer_profile.company:
-            company = user.customer_profile.company
-        elif user.company:
-            company = user.company
-        else:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "NO_COMPANY",
-                        "message": "Пользователь не привязан к компании",
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        company = _get_customer_company(request.user)
+        if not company:
+            return Response(NO_COMPANY_RESPONSE, status=status.HTTP_400_BAD_REQUEST)
 
         # Build base queryset
         entries = ContainerEntry.objects.filter(
@@ -428,8 +451,10 @@ class CustomerStorageCostView(APIView):
         total_count = entries.count()
 
         # Pagination
-        page = int(request.query_params.get("page", 1))
-        page_size = int(request.query_params.get("page_size", 20))
+        from apps.core.utils import safe_int_param
+
+        page = safe_int_param(request.query_params.get("page"), 1, min_val=1)
+        page_size = safe_int_param(request.query_params.get("page_size"), 20, min_val=1, max_val=100)
         offset = (page - 1) * page_size
         paginated_entries = entries[offset : offset + page_size]
 
@@ -459,24 +484,21 @@ class CustomerStorageCostView(APIView):
                 }
             )
 
-        # Calculate summary for ALL matching entries (not just paginated)
-        # For performance, we calculate summary from paginated results if page 1
-        # In production, you might want to cache this or use aggregations
-        all_cost_results = service.calculate_bulk_costs(entries) if total_count <= 500 else cost_results
-
-        total_usd = sum(r.total_usd for r in all_cost_results)
-        total_uzs = sum(r.total_uzs for r in all_cost_results)
-        total_billable_days = sum(r.billable_days for r in all_cost_results)
+        # Summary from the current page only — avoids O(N) recalculation
+        page_total_usd = sum(r.total_usd for r in cost_results)
+        page_total_uzs = sum(r.total_uzs for r in cost_results)
+        page_billable_days = sum(r.billable_days for r in cost_results)
 
         return Response(
             {
                 "results": results,
                 "count": total_count,
                 "summary": {
-                    "total_containers": len(all_cost_results) if total_count <= 500 else total_count,
-                    "total_billable_days": total_billable_days,
-                    "total_usd": str(total_usd),
-                    "total_uzs": str(total_uzs),
+                    "total_containers": total_count,
+                    "total_billable_days": page_billable_days,
+                    "total_usd": str(page_total_usd),
+                    "total_uzs": str(page_total_uzs),
+                    "is_page_summary": True,
                 },
             }
         )
@@ -543,14 +565,16 @@ class CustomerStatementListView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        year = request.query_params.get("year")
+        from apps.core.utils import safe_int_param
+
+        year = safe_int_param(request.query_params.get("year"), None)
         service = MonthlyStatementService()
         statements = service.list_statements(
             company=profile.company,
-            year=int(year) if year else None,
+            year=year,
         )
 
-        serializer = MonthlyStatementSerializer(statements, many=True)
+        serializer = MonthlyStatementListSerializer(statements, many=True)
         return Response({"success": True, "data": serializer.data})
 
 
@@ -791,17 +815,9 @@ class CustomerAdditionalChargeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = request.user
-
-        if hasattr(user, "customer_profile") and user.customer_profile.company:
-            company = user.customer_profile.company
-        elif user.company:
-            company = user.company
-        else:
-            return Response(
-                {"success": False, "error": {"code": "NO_COMPANY", "message": "Пользователь не привязан к компании"}},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        company = _get_customer_company(request.user)
+        if not company:
+            return Response(NO_COMPANY_RESPONSE, status=status.HTTP_400_BAD_REQUEST)
 
         queryset = AdditionalCharge.objects.filter(
             container_entry__company=company

@@ -4,7 +4,8 @@
     "layer": "Т-площадка хранения",
     "extractedAt": "2026-01-23T11:26:52.371Z",
     "count": 2,
-    "totalArea": 9324.562108933926
+    "totalArea": 9324.562108933926,
+    "semanticIdsAdded": "2026-01-24T16:00:33.208Z"
   },
   "bounds": {
     "minX": 12993.99351524338,
@@ -81,7 +82,8 @@
         "maxY": 73342.7365793996
       },
       "area": 7551.548855960369,
-      "elevation": 0
+      "elevation": 0,
+      "semanticId": "PLAT-G22"
     },
     {
       "id": 2,
@@ -151,7 +153,8 @@
         "maxY": 73288.45644845006
       },
       "area": 1773.0132529735565,
-      "elevation": 0
+      "elevation": 0,
+      "semanticId": "PLAT-F22"
     }
   ]
 }

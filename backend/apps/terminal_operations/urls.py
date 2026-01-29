@@ -10,6 +10,7 @@ from .views import (
     PreOrderViewSet,
     TerminalVehicleViewSet,
     WorkOrderViewSet,
+    YardSlotViewSet,
 )
 
 
@@ -24,6 +25,7 @@ router.register(r"preorders", PreOrderViewSet, basename="preorder")
 router.register(r"placement", PlacementViewSet, basename="placement")
 router.register(r"work-orders", WorkOrderViewSet, basename="work-order")
 router.register(r"terminal-vehicles", TerminalVehicleViewSet, basename="terminal-vehicle")
+router.register(r"yard", YardSlotViewSet, basename="yard-slot")
 
 urlpatterns = [
     path("", include(router.urls)),

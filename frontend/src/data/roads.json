@@ -4,7 +4,8 @@
     "layer": "Т-Дороги",
     "extractedAt": "2026-01-23T11:34:13.798Z",
     "count": 46,
-    "totalLength": 1763.5366101812515
+    "totalLength": 1763.5366101812515,
+    "semanticIdsAdded": "2026-01-24T16:00:33.203Z"
   },
   "bounds": {
     "minX": 12908.651845596227,
@@ -34,7 +35,8 @@
         "minY": 73274.26973476156,
         "maxY": 73481.71230642108
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-H16"
     },
     {
       "id": 2,
@@ -57,7 +59,8 @@
         "minY": 73299.06775490107,
         "maxY": 73484.50152277519
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-H15"
     },
     {
       "id": 3,
@@ -80,7 +83,8 @@
         "minY": 73646.7979645053,
         "maxY": 73658.48764096125
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-F2"
     },
     {
       "id": 4,
@@ -103,7 +107,8 @@
         "minY": 73274.26973476136,
         "maxY": 73286.01411915684
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-E20"
     },
     {
       "id": 5,
@@ -126,7 +131,8 @@
         "minY": 73616.9049505864,
         "maxY": 73627.68766351775
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-E3"
     },
     {
       "id": 6,
@@ -149,7 +155,8 @@
         "minY": 73642.63559838738,
         "maxY": 73651.33889146073
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-F2-A"
     },
     {
       "id": 7,
@@ -172,7 +179,8 @@
         "minY": 73286.01411915684,
         "maxY": 73325.81105460235
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-D19"
     },
     {
       "id": 8,
@@ -207,7 +215,8 @@
         "minY": 73655.215590949,
         "maxY": 73671.64883012287
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-C1"
     },
     {
       "id": 9,
@@ -242,7 +251,8 @@
         "minY": 73656.99535469376,
         "maxY": 73673.42859386763
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-B1"
     },
     {
       "id": 10,
@@ -277,7 +287,8 @@
         "minY": 73621.56343277384,
         "maxY": 73638.04261531323
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-G3"
     },
     {
       "id": 11,
@@ -312,7 +323,8 @@
         "minY": 73658.77511843854,
         "maxY": 73675.20835761241
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-B1-A"
     },
     {
       "id": 12,
@@ -347,7 +359,8 @@
         "minY": 73628.11174118404,
         "maxY": 73644.5909237234
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-E3-A"
     },
     {
       "id": 13,
@@ -382,7 +395,8 @@
         "minY": 73629.20312591906,
         "maxY": 73645.68230845845
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-E3-B"
     },
     {
       "id": 14,
@@ -417,7 +431,8 @@
         "minY": 73654.3257090766,
         "maxY": 73670.75894825047
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-C1-A"
     },
     {
       "id": 15,
@@ -452,7 +467,8 @@
         "minY": 73625.92897171396,
         "maxY": 73642.40815425335
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-F3"
     },
     {
       "id": 16,
@@ -487,7 +503,8 @@
         "minY": 73656.10547282138,
         "maxY": 73672.53871199525
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-C1-B"
     },
     {
       "id": 17,
@@ -522,7 +539,8 @@
         "minY": 73623.7462022439,
         "maxY": 73640.22538478329
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-F3-A"
     },
     {
       "id": 18,
@@ -557,7 +575,8 @@
         "minY": 73657.88523656616,
         "maxY": 73674.31847574003
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-B1-B"
     },
     {
       "id": 19,
@@ -592,7 +611,8 @@
         "minY": 73620.47204803882,
         "maxY": 73636.95123057818
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-G3-A"
     },
     {
       "id": 20,
@@ -627,7 +647,8 @@
         "minY": 73659.66500031095,
         "maxY": 73676.0982394848
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-B1-C"
     },
     {
       "id": 21,
@@ -662,7 +683,8 @@
         "minY": 73627.020356449,
         "maxY": 73643.49953898837
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-E3-C"
     },
     {
       "id": 22,
@@ -697,7 +719,8 @@
         "minY": 73630.2945106541,
         "maxY": 73646.77369319346
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-E3-D"
     },
     {
       "id": 23,
@@ -732,7 +755,8 @@
         "minY": 73622.65481750888,
         "maxY": 73639.13400004825
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-F3-B"
     },
     {
       "id": 24,
@@ -767,7 +791,8 @@
         "minY": 73624.83758697895,
         "maxY": 73641.31676951831
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-F3-C"
     },
     {
       "id": 25,
@@ -790,7 +815,8 @@
         "minY": 73611.23702946816,
         "maxY": 73619.96598320412
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-E4"
     },
     {
       "id": 26,
@@ -813,7 +839,8 @@
         "minY": 73647.01011898469,
         "maxY": 73651.82304304106
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-B2"
     },
     {
       "id": 27,
@@ -896,7 +923,8 @@
         "minY": 73660.13001659377,
         "maxY": 73678.39336113069
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-D1"
     },
     {
       "id": 28,
@@ -979,7 +1007,8 @@
         "minY": 73671.14535993499,
         "maxY": 73682.76336840302
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-B1-D"
     },
     {
       "id": 29,
@@ -1062,7 +1091,8 @@
         "minY": 73289.61475507791,
         "maxY": 73307.42563741494
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-E20-A"
     },
     {
       "id": 30,
@@ -1145,7 +1175,8 @@
         "minY": 73646.72916024193,
         "maxY": 73658.18471172794
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-C2"
     },
     {
       "id": 31,
@@ -1228,7 +1259,8 @@
         "minY": 73287.32250281518,
         "maxY": 73299.06775490091
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-F20"
     },
     {
       "id": 32,
@@ -1251,7 +1283,8 @@
         "minY": 73678.39336113063,
         "maxY": 73682.48235924817
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-C1-C"
     },
     {
       "id": 33,
@@ -1334,7 +1367,8 @@
         "minY": 73658.48764096125,
         "maxY": 73673.20396818385
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-D1-A"
     },
     {
       "id": 34,
@@ -1417,7 +1451,8 @@
         "minY": 73616.44942120922,
         "maxY": 73626.3158650403
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-G4"
     },
     {
       "id": 35,
@@ -1500,7 +1535,8 @@
         "minY": 73629.05585333082,
         "maxY": 73643.40651881965
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-B3"
     },
     {
       "id": 36,
@@ -1523,7 +1559,8 @@
         "minY": 73630.66179159035,
         "maxY": 73649.18204838678
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-D3"
     },
     {
       "id": 37,
@@ -1606,7 +1643,8 @@
         "minY": 73651.76381669228,
         "maxY": 73666.16212483966
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-A2"
     },
     {
       "id": 38,
@@ -1689,7 +1727,8 @@
         "minY": 73635.00984308914,
         "maxY": 73644.27451271194
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-A2-A"
     },
     {
       "id": 39,
@@ -1772,7 +1811,8 @@
         "minY": 73628.73649225612,
         "maxY": 73642.63559838734
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-G3-B"
     },
     {
       "id": 40,
@@ -1855,7 +1895,8 @@
         "minY": 73642.64155585511,
         "maxY": 73651.80596343122
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-D2"
     },
     {
       "id": 41,
@@ -1938,7 +1979,8 @@
         "minY": 73619.9659832041,
         "maxY": 73630.58379443918
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-D3-A"
     },
     {
       "id": 42,
@@ -1961,7 +2003,8 @@
         "minY": 73307.40283352003,
         "maxY": 73324.2182809861
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-E19"
     },
     {
       "id": 43,
@@ -2044,7 +2087,8 @@
         "minY": 73630.58379443936,
         "maxY": 73638.43340853826
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-C3"
     },
     {
       "id": 44,
@@ -2067,7 +2111,8 @@
         "minY": 73673.20396818385,
         "maxY": 73684.7097865348
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-D1-B"
     },
     {
       "id": 45,
@@ -2090,7 +2135,8 @@
         "minY": 73287.44002959137,
         "maxY": 73289.54172244517
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-E20-B"
     },
     {
       "id": 46,
@@ -2173,7 +2219,8 @@
         "minY": 73633.93776210539,
         "maxY": 73638.64634615122
       },
-      "closed": false
+      "closed": false,
+      "semanticId": "ROAD-SEG-C3-A"
     }
   ]
 }

@@ -1,0 +1,374 @@
+{
+  "meta": {
+    "version": "1.0",
+    "gridSize": 20,
+    "origin": "top-left",
+    "bounds": {
+      "dxf": {
+        "minX": 12900,
+        "maxX": 13140,
+        "minY": 73180,
+        "maxY": 73680
+      },
+      "grid": {
+        "columns": 12,
+        "rows": 25
+      },
+      "note": "Bounds cover the terminal area where elements are located, not the full DXF (4046m × 1668m)"
+    },
+    "fullDxfBounds": {
+      "minX": 9210.67,
+      "maxX": 13256.61,
+      "minY": 72161.79,
+      "maxY": 73830.06,
+      "note": "Full DXF extents from $EXTMIN/$EXTMAX - use coordinateSystem from YardView3D for debug overlay"
+    },
+    "updatedAt": "2026-01-24"
+  },
+  "elements": {
+    "BLD-WAREHOUSE-G8": {
+      "type": "building",
+      "name": "Warehouse",
+      "nameRu": "Склад",
+      "grid": "G8",
+      "dxf": { "x": 13037.27, "y": 73539.34 },
+      "dimensions": { "width": 46, "depth": 29, "height": 8 },
+      "rotation": -14,
+      "layer": "(007) Здания",
+      "sourceId": 6,
+      "label": "КН"
+    },
+    "BLD-CHECKPOINT-A7": {
+      "type": "building",
+      "name": "Checkpoint",
+      "nameRu": "КПП",
+      "grid": "A7",
+      "dxf": { "x": 12919.42, "y": 73550.43 },
+      "dimensions": { "width": 4.4, "depth": 6.7, "height": 4 },
+      "rotation": 0,
+      "layer": "(007) Здания",
+      "sourceId": 11,
+      "label": "КН"
+    },
+    "BLD-OFFICE-C14": {
+      "type": "building",
+      "name": "Office",
+      "nameRu": "Офис",
+      "grid": "C14",
+      "dxf": { "x": 12957.02, "y": 73410.64 },
+      "dimensions": { "width": 28, "depth": 24, "height": 6 },
+      "rotation": -14,
+      "layer": "(007) Здания",
+      "sourceId": 10,
+      "label": "КН"
+    },
+    "BLD-CONTROL-D15": {
+      "type": "building",
+      "name": "Control Booth",
+      "nameRu": "КН",
+      "grid": "D15",
+      "dxf": { "x": 12968.06, "y": 73393.49 },
+      "dimensions": { "width": 1.5, "depth": 1.5, "height": 3 },
+      "rotation": -14,
+      "layer": "(007) Здания",
+      "sourceId": 9,
+      "label": "КН"
+    },
+    "BLD-TECHNICAL-L12": {
+      "type": "building",
+      "name": "Technical",
+      "nameRu": "Техническое здание",
+      "grid": "L12",
+      "dxf": { "x": 13122.23, "y": 73459.04 },
+      "dimensions": { "width": 17, "depth": 30, "height": 5 },
+      "rotation": -14,
+      "layer": "(007) Здания",
+      "sourceId": 13,
+      "label": "КН"
+    },
+    "BLD-SMALL1-K10": {
+      "type": "building",
+      "name": "Small Building 1",
+      "nameRu": "Малое здание 1",
+      "grid": "K10",
+      "dxf": { "x": 13103.07, "y": 73496.91 },
+      "dimensions": { "width": 10, "depth": 15, "height": 4 },
+      "rotation": 0,
+      "layer": "(007) Здания",
+      "sourceId": 2,
+      "label": "КН"
+    },
+    "BLD-GUARDHOUSE-E8": {
+      "type": "building",
+      "name": "Guard House",
+      "nameRu": "Охрана",
+      "grid": "E8",
+      "dxf": { "x": 12981.68, "y": 73529.08 },
+      "dimensions": { "width": 19, "depth": 13, "height": 4 },
+      "rotation": -14,
+      "layer": "(007) Здания",
+      "sourceId": 12,
+      "label": "КН"
+    },
+    "BLD-BOOTH1-F9": {
+      "type": "building",
+      "name": "Booth 1",
+      "nameRu": "Будка 1",
+      "grid": "F9",
+      "dxf": { "x": 13014.38, "y": 73518.45 },
+      "dimensions": { "width": 1.2, "depth": 1.3, "height": 2.5 },
+      "rotation": 0,
+      "layer": "(007) Здания",
+      "sourceId": 7,
+      "label": "КН"
+    },
+    "BLD-BOOTH2-F9": {
+      "type": "building",
+      "name": "Booth 2",
+      "nameRu": "Будка 2",
+      "grid": "F9",
+      "dxf": { "x": 13014.02, "y": 73517.64 },
+      "dimensions": { "width": 1.1, "depth": 1.2, "height": 2.5 },
+      "rotation": 0,
+      "layer": "(007) Здания",
+      "sourceId": 8,
+      "label": "КН"
+    },
+    "BLD-BOOTH3-F8": {
+      "type": "building",
+      "name": "Booth 3",
+      "nameRu": "Будка 3",
+      "grid": "F8",
+      "dxf": { "x": 13017.74, "y": 73534.72 },
+      "dimensions": { "width": 1.2, "depth": 1.1, "height": 2.5 },
+      "rotation": 0,
+      "layer": "(007) Здания",
+      "sourceId": 5,
+      "label": "КН"
+    },
+    "BLD-SMALL2-I9": {
+      "type": "building",
+      "name": "Small Building 2",
+      "nameRu": "Малое здание 2",
+      "grid": "I9",
+      "dxf": { "x": 13077.54, "y": 73519.62 },
+      "dimensions": { "width": 1.1, "depth": 1.1, "height": 2.5 },
+      "rotation": 0,
+      "layer": "(007) Здания",
+      "sourceId": 3,
+      "label": "Т"
+    },
+    "BLD-SMALL3-I9": {
+      "type": "building",
+      "name": "Small Building 3",
+      "nameRu": "Малое здание 3",
+      "grid": "I9",
+      "dxf": { "x": 13074.69, "y": 73506.89 },
+      "dimensions": { "width": 0.9, "depth": 1.2, "height": 2.5 },
+      "rotation": 0,
+      "layer": "(007) Здания",
+      "sourceId": 4,
+      "label": "КН"
+    },
+    "BLD-ENTRANCE-H25": {
+      "type": "building",
+      "name": "Entrance Building",
+      "nameRu": "Здание 1",
+      "grid": "H25",
+      "dxf": { "x": 13048.87, "y": 73197.27 },
+      "dimensions": { "width": 4.3, "depth": 6, "height": 4 },
+      "rotation": 0,
+      "layer": "(007) Здания",
+      "sourceId": 1,
+      "label": "Здание 1"
+    },
+    "BLD-MARKER-E1": {
+      "type": "building",
+      "name": "Marker Building",
+      "nameRu": "Здание 14",
+      "grid": "E1",
+      "dxf": { "x": 12980.26, "y": 73671.51 },
+      "dimensions": { "width": 0.6, "depth": 0.5, "height": 2 },
+      "rotation": 0,
+      "layer": "(007) Здания",
+      "sourceId": 14,
+      "label": "Здание 14"
+    },
+    "GATE-MAIN-G21": {
+      "type": "gate",
+      "name": "Main Gate",
+      "nameRu": "Главные ворота",
+      "grid": "G21",
+      "dxf": { "x": 13024, "y": 73274 },
+      "rotation": 65,
+      "direction": "inbound",
+      "layer": "GATES"
+    },
+    "GATE-SECONDARY-B7": {
+      "type": "gate",
+      "name": "Secondary Gate",
+      "nameRu": "Вспомогательные ворота",
+      "grid": "B7",
+      "dxf": { "x": 12920, "y": 73550 },
+      "rotation": 0,
+      "direction": "inbound",
+      "layer": "GATES"
+    },
+    "ZONE-WAITING-F15": {
+      "type": "zone",
+      "name": "Waiting Area",
+      "nameRu": "Зона ожидания",
+      "grid": "F15",
+      "dxf": { "x": 13000, "y": 73400 },
+      "dimensions": { "width": 50, "depth": 30 },
+      "capacity": 10,
+      "layer": "ZONES"
+    },
+    "ZONE-PARKING-A-C12": {
+      "type": "zone",
+      "name": "Parking Zone A",
+      "nameRu": "Парковка А",
+      "grid": "C12",
+      "dxf": { "x": 12950, "y": 73450 },
+      "dimensions": { "width": 40, "depth": 25 },
+      "capacity": 8,
+      "layer": "ZONES"
+    },
+    "ZONE-PARKING-B-D9": {
+      "type": "zone",
+      "name": "Parking Zone B",
+      "nameRu": "Парковка Б",
+      "grid": "D9",
+      "dxf": { "x": 12960, "y": 73520 },
+      "dimensions": { "width": 40, "depth": 25 },
+      "capacity": 8,
+      "layer": "ZONES"
+    },
+    "FENCE-PERIM-WEST": {
+      "type": "fence",
+      "name": "West Perimeter Fence",
+      "nameRu": "Западное ограждение",
+      "grid": ["A4", "A5", "A6", "B6", "C6", "D6", "E5", "F4", "G3", "H2", "I1", "J1", "K1"],
+      "dxf": {
+        "start": { "x": 12913.87, "y": 73654.54 },
+        "end": { "x": 13099.60, "y": 73558.62 }
+      },
+      "length": 601.5,
+      "height": 2.5,
+      "layer": "(040) Ограда",
+      "sourceSegment": "FENCE-SEG-F1"
+    },
+    "FENCE-PERIM-EAST": {
+      "type": "fence",
+      "name": "East Perimeter Fence",
+      "nameRu": "Восточное ограждение",
+      "grid": ["J20", "K18", "K16", "L14", "L12", "M10", "M8"],
+      "dxf": {
+        "start": { "x": 13163.07, "y": 73522.70 },
+        "end": { "x": 13068.78, "y": 73191.11 }
+      },
+      "length": 344.7,
+      "height": 2.5,
+      "layer": "(040) Ограда",
+      "sourceSegment": "FENCE-SEG-J20"
+    },
+    "FENCE-PERIM-SOUTH": {
+      "type": "fence",
+      "name": "South Perimeter Fence",
+      "nameRu": "Южное ограждение",
+      "grid": ["D23", "C22", "B21", "A20", "A19", "A18", "A17"],
+      "dxf": {
+        "start": { "x": 13040.10, "y": 73180.14 },
+        "end": { "x": 12911.51, "y": 73339.17 }
+      },
+      "length": 283.3,
+      "height": 2.5,
+      "layer": "(040) Ограда",
+      "sourceSegment": "FENCE-SEG-D23"
+    },
+    "FENCE-INNER-NW": {
+      "type": "fence",
+      "name": "Inner NW Section",
+      "nameRu": "Внутренняя секция СЗ",
+      "grid": ["A4", "A5", "A6"],
+      "dxf": {
+        "start": { "x": 12901.38, "y": 73568.31 },
+        "end": { "x": 12911.95, "y": 73645.88 }
+      },
+      "length": 126.0,
+      "height": 2.5,
+      "layer": "(040) Ограда",
+      "sourceSegment": "FENCE-SEG-A4"
+    },
+    "FENCE-INNER-SW": {
+      "type": "fence",
+      "name": "Inner SW Section",
+      "nameRu": "Внутренняя секция ЮЗ",
+      "grid": ["A16", "A17"],
+      "dxf": {
+        "start": { "x": 12912.56, "y": 73345.71 },
+        "end": { "x": 12854.51, "y": 73369.75 }
+      },
+      "length": 112.5,
+      "height": 2.5,
+      "layer": "(040) Ограда",
+      "sourceSegment": "FENCE-SEG-A16"
+    },
+    "FENCE-CORNER-NE": {
+      "type": "fence",
+      "name": "NE Corner Fence",
+      "nameRu": "Угловое ограждение СВ",
+      "grid": ["M8", "L7", "K6"],
+      "dxf": {
+        "start": { "x": 13163.07, "y": 73522.70 },
+        "end": { "x": 13099.60, "y": 73558.62 }
+      },
+      "length": 86.8,
+      "height": 2.5,
+      "layer": "(040) Ограда",
+      "sourceSegment": "FENCE-SEG-M8"
+    },
+    "WALL-ROAD-D4": {
+      "type": "wall",
+      "name": "Road Barrier D4",
+      "nameRu": "Дорожный барьер D4",
+      "grid": "D4",
+      "dxf": {
+        "start": { "x": 12969, "y": 73613 },
+        "end": { "x": 12971, "y": 73621 }
+      },
+      "length": 8.2,
+      "height": 1.0,
+      "layer": "Т-ограждение",
+      "sourceSegment": "WALL-SEG-D4"
+    },
+    "WALL-ROAD-D2": {
+      "type": "wall",
+      "name": "Road Barrier D2",
+      "nameRu": "Дорожный барьер D2",
+      "grid": "D2",
+      "dxf": {
+        "start": { "x": 12973, "y": 73629 },
+        "end": { "x": 12978, "y": 73652 }
+      },
+      "length": 23.9,
+      "height": 1.0,
+      "layer": "Т-ограждение",
+      "sourceSegment": "WALL-SEG-D2"
+    },
+    "WALL-ROAD-E1": {
+      "type": "wall",
+      "name": "Road Barrier E1",
+      "nameRu": "Дорожный барьер E1",
+      "grid": "E1",
+      "dxf": {
+        "start": { "x": 12980, "y": 73660 },
+        "end": { "x": 12981, "y": 73663 }
+      },
+      "length": 2.8,
+      "height": 1.0,
+      "layer": "Т-ограждение",
+      "sourceSegment": "WALL-SEG-E1"
+    }
+  }
+}

@@ -81,16 +81,16 @@ function formatNumber(num: number, digits: number = 2): string {
     </div>
 
     <!-- Selection Indicator -->
-    <div v-if="selected" class="selection-indicator">
-      <span class="check-icon">✓</span>
-    </div>
+    <a-tag v-if="selected" color="purple" style="position: absolute; top: 8px; right: 8px; margin: 0; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; padding: 0;">
+      ✓
+    </a-tag>
   </div>
 </template>
 
 <style scoped>
 .position-suggestion-card {
-  background: #f6ffed;
-  border: 2px solid #b7eb8f;
+  background: var(--ant-green-1, #f6ffed);
+  border: 2px solid var(--ant-green-3, #b7eb8f);
   border-radius: 8px;
   padding: 12px;
   cursor: pointer;
@@ -100,13 +100,13 @@ function formatNumber(num: number, digits: number = 2): string {
 }
 
 .position-suggestion-card:hover {
-  border-color: #52c41a;
+  border-color: var(--ant-color-success, #52c41a);
   box-shadow: 0 2px 8px rgba(82, 196, 26, 0.15);
 }
 
 .position-suggestion-card.selected {
-  border-color: #722ed1;
-  background: #f9f0ff;
+  border-color: var(--ant-purple-6, #722ed1);
+  background: var(--ant-purple-1, #f9f0ff);
 }
 
 /* Header */
@@ -124,14 +124,14 @@ function formatNumber(num: number, digits: number = 2): string {
 }
 
 .star-icon {
-  color: #52c41a;
+  color: var(--ant-color-success, #52c41a);
   font-size: 16px;
 }
 
 .header-title {
   font-weight: 600;
   font-size: 13px;
-  color: #389e0d;
+  color: var(--ant-green-7, #389e0d);
 }
 
 .show-3d-btn {
@@ -204,23 +204,5 @@ function formatNumber(num: number, digits: number = 2): string {
   line-height: 1.4;
 }
 
-/* Selection Indicator */
-.selection-indicator {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 20px;
-  height: 20px;
-  background: #722ed1;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
-.check-icon {
-  color: white;
-  font-size: 12px;
-  font-weight: bold;
-}
 </style>

@@ -59,6 +59,11 @@ const offlineCount = computed(() =>
 
     <!-- Vehicle list -->
     <div v-else class="vehicle-list">
+      <a-empty v-if="activeVehicles.length === 0 && offlineCount === 0" :image="false" style="padding: 12px;">
+        <template #description>
+          <span style="color: rgba(255, 255, 255, 0.45); font-size: 12px;">Нет техники</span>
+        </template>
+      </a-empty>
       <div
         v-for="vehicle in activeVehicles"
         :key="vehicle.id"
@@ -206,7 +211,7 @@ const offlineCount = computed(() =>
 }
 
 .container-number {
-  color: #fa8c16;
+  color: var(--ant-color-warning, #fa8c16);
 }
 
 .target-arrow {
@@ -214,7 +219,7 @@ const offlineCount = computed(() =>
 }
 
 .target-coord {
-  color: #1890ff;
+  color: var(--ant-color-primary, #1890ff);
 }
 
 /* Offline summary */

@@ -38,7 +38,7 @@
             <ContainerOutlined />
             <span>Контейнеры</span>
           </a-menu-item>
-          <a-menu-item key="placement">
+          <a-menu-item key="yard">
             <AppstoreOutlined />
             <span>Площадка 3D</span>
           </a-menu-item>
@@ -291,7 +291,8 @@ const routeToKey: Record<string, string> = {
   '/gate': 'gate',
   '/vehicles': 'gate',
   '/containers': 'containers',
-  '/placement': 'placement',
+  '/yard': 'yard',
+  '/placement': 'yard',
   '/tasks': 'tasks',
   '/accounts/companies': 'companies',
   '/owners': 'owners',
@@ -320,7 +321,7 @@ const keyToRoute: Record<string, string> = {
   'executive': '/executive',
   'gate': '/gate',
   'containers': '/containers',
-  'placement': '/placement',
+  'yard': '/yard',
   'tasks': '/tasks',
   'companies': '/accounts/companies',
   'owners': '/owners',

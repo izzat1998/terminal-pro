@@ -70,9 +70,9 @@ function getShortCoordinate(position: Position): { zone: string; row: string; ba
           <template #icon><EyeOutlined /></template>
         </a-button>
 
-        <div v-if="selectedIndex === index" class="selection-badge">
+        <a-tag v-if="selectedIndex === index" color="purple" style="position: absolute; top: -6px; right: -6px; margin: 0; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 10px; font-weight: bold;">
           ✓
-        </div>
+        </a-tag>
       </div>
     </div>
   </div>
@@ -110,8 +110,8 @@ function getShortCoordinate(position: Position): { zone: string; row: string; ba
 
 /* Individual alternative card */
 .alternative-card {
-  background: #e6f4ff;
-  border: 2px solid #91caff;
+  background: var(--ant-blue-1, #e6f4ff);
+  border: 2px solid var(--ant-blue-3, #91caff);
   border-radius: 8px;
   padding: 10px;
   cursor: pointer;
@@ -123,13 +123,13 @@ function getShortCoordinate(position: Position): { zone: string; row: string; ba
 }
 
 .alternative-card:hover {
-  border-color: #1677ff;
+  border-color: var(--ant-color-primary, #1677ff);
   box-shadow: 0 2px 6px rgba(22, 119, 255, 0.15);
 }
 
 .alternative-card.selected {
-  border-color: #722ed1;
-  background: #f9f0ff;
+  border-color: var(--ant-purple-6, #722ed1);
+  background: var(--ant-purple-1, #f9f0ff);
 }
 
 .card-content {
@@ -155,9 +155,9 @@ function getShortCoordinate(position: Position): { zone: string; row: string; ba
 }
 
 .mini-cell.zone {
-  background: #1677ff;
+  background: var(--ant-color-primary, #1677ff);
   color: white;
-  border-color: #1677ff;
+  border-color: var(--ant-color-primary, #1677ff);
 }
 
 .mini-cell.tier {
@@ -182,20 +182,5 @@ function getShortCoordinate(position: Position): { zone: string; row: string; ba
   background: rgba(22, 119, 255, 0.1);
 }
 
-/* Selection badge */
-.selection-badge {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 18px;
-  height: 18px;
-  background: #722ed1;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 10px;
-  font-weight: bold;
-}
+
 </style>

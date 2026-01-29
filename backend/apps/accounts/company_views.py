@@ -655,7 +655,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
         """
         List all monthly statements for the company.
         """
-        from apps.billing.serializers import MonthlyStatementSerializer
+        from apps.billing.serializers import MonthlyStatementListSerializer
         from apps.billing.services.statement_service import MonthlyStatementService
 
         company = self.get_object()
@@ -667,7 +667,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
             year=int(year) if year else None,
         )
 
-        serializer = MonthlyStatementSerializer(statements, many=True)
+        serializer = MonthlyStatementListSerializer(statements, many=True)
         return Response({"success": True, "data": serializer.data})
 
     @extend_schema(
@@ -723,6 +723,105 @@ class CompanyViewSet(viewsets.ModelViewSet):
         return Response({"success": True, "data": serializer.data})
 
     @extend_schema(
+        summary="Toggle payment status on a statement",
+        responses={200: OpenApiResponse(description="Updated statement")},
+        description="Mark a statement as paid or unpaid (toggles current status)",
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"billing/statements/(?P<statement_id>[0-9]+)/mark-paid",
+    )
+    def billing_mark_paid(self, request, slug=None, statement_id=None):
+        """Toggle payment status on a monthly statement."""
+        from apps.billing.models import MonthlyStatement
+        from apps.billing.serializers import MonthlyStatementListSerializer
+        from apps.billing.services.statement_service import MonthlyStatementService
+
+        company = self.get_object()
+        statement = MonthlyStatement.objects.filter(
+            id=statement_id, company=company
+        ).select_related("paid_marked_by").first()
+
+        if not statement:
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "Выписка не найдена"}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        service = MonthlyStatementService()
+        statement = service.mark_paid(statement, request.user)
+
+        serializer = MonthlyStatementListSerializer(statement)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Finalize a draft statement",
+        responses={200: OpenApiResponse(description="Finalized statement")},
+        description="Finalize a draft statement, assigning an invoice number and locking it",
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"billing/statements/(?P<statement_id>[0-9]+)/finalize",
+    )
+    def billing_finalize(self, request, slug=None, statement_id=None):
+        """Finalize a draft statement."""
+        from apps.billing.models import MonthlyStatement
+        from apps.billing.serializers import MonthlyStatementListSerializer
+        from apps.billing.services.statement_service import MonthlyStatementService
+
+        company = self.get_object()
+        statement = MonthlyStatement.objects.filter(
+            id=statement_id, company=company
+        ).first()
+
+        if not statement:
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "Выписка не найдена"}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        service = MonthlyStatementService()
+        statement = service.finalize_statement(statement, request.user)
+
+        serializer = MonthlyStatementListSerializer(statement)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Create credit note for a statement",
+        responses={200: OpenApiResponse(description="Created credit note")},
+        description="Create a credit note that reverses the original statement",
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"billing/statements/(?P<statement_id>[0-9]+)/credit-note",
+    )
+    def billing_credit_note(self, request, slug=None, statement_id=None):
+        """Create a credit note for a finalized/paid statement."""
+        from apps.billing.models import MonthlyStatement
+        from apps.billing.serializers import MonthlyStatementListSerializer
+        from apps.billing.services.statement_service import MonthlyStatementService
+
+        company = self.get_object()
+        statement = MonthlyStatement.objects.filter(
+            id=statement_id, company=company
+        ).first()
+
+        if not statement:
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "Выписка не найдена"}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        service = MonthlyStatementService()
+        credit_note = service.create_credit_note(statement, request.user)
+
+        serializer = MonthlyStatementListSerializer(credit_note)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
         summary="Get available billing periods",
         responses={200: OpenApiResponse(description="List of available periods")},
         description="Get available billing periods for the company based on container entries",
@@ -773,6 +872,85 @@ class CompanyViewSet(viewsets.ModelViewSet):
             )
 
         return Response({"success": True, "data": result})
+
+    @extend_schema(
+        summary="Export statement to Excel",
+        responses={200: OpenApiResponse(description="Excel file download")},
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"billing/statements/(?P<year>[0-9]+)/(?P<month>[0-9]+)/export/excel",
+    )
+    def billing_export_excel(self, request, slug=None, year=None, month=None):
+        """Export a monthly statement to Excel."""
+        from django.http import HttpResponse
+
+        from apps.billing.services.export_service import StatementExportService
+        from apps.billing.services.statement_service import MonthlyStatementService
+
+        company = self.get_object()
+        year, month = int(year), int(month)
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company, year=year, month=month, user=request.user,
+        )
+
+        export_service = StatementExportService()
+        excel_file = export_service.export_to_excel(statement)
+        filename = export_service.get_excel_filename(statement)
+
+        response = HttpResponse(
+            excel_file.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+    @extend_schema(
+        summary="Export statement to PDF",
+        responses={200: OpenApiResponse(description="PDF file download")},
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"billing/statements/(?P<year>[0-9]+)/(?P<month>[0-9]+)/export/pdf",
+    )
+    def billing_export_pdf(self, request, slug=None, year=None, month=None):
+        """Export a monthly statement to PDF."""
+        from django.http import HttpResponse
+
+        from apps.billing.services.export_service import StatementExportService
+        from apps.billing.services.statement_service import MonthlyStatementService
+
+        company = self.get_object()
+        year, month = int(year), int(month)
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company, year=year, month=month, user=request.user,
+        )
+
+        export_service = StatementExportService()
+        pdf_file = export_service.export_to_pdf(statement)
+        filename = export_service.get_pdf_filename(statement)
+
+        response = HttpResponse(pdf_file.getvalue(), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     @extend_schema(
         summary="Get company additional charges",

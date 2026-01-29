@@ -6,8 +6,9 @@
       "Т-ограждение"
     ],
     "extractedAt": "2026-01-23T11:10:45.079Z",
-    "count": 72,
-    "totalLength": 4846.116360595092
+    "count": 71,
+    "totalLength": 4864.217251380136,
+    "semanticIdsAdded": "2026-01-24T16:00:33.206Z"
   },
   "bounds": {
     "minX": 12853.63369025029,
@@ -52,7 +53,8 @@
         }
       ],
       "length": 18.88265256493141,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-I26"
     },
     {
       "id": 2,
@@ -86,7 +88,8 @@
         }
       ],
       "length": 20.014817182000844,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-I26-A"
     },
     {
       "id": 3,
@@ -132,7 +135,8 @@
         }
       ],
       "length": 283.2634995686886,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-D23"
     },
     {
       "id": 4,
@@ -178,7 +182,8 @@
         }
       ],
       "length": 283.45918524753336,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-D23-A"
     },
     {
       "id": 5,
@@ -200,7 +205,8 @@
         }
       ],
       "length": 6.828864282487745,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-G9"
     },
     {
       "id": 6,
@@ -222,7 +228,8 @@
         }
       ],
       "length": 24.055930329719125,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-H9"
     },
     {
       "id": 7,
@@ -272,7 +279,8 @@
         }
       ],
       "length": 344.7405828387351,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-J20"
     },
     {
       "id": 8,
@@ -322,7 +330,8 @@
         }
       ],
       "length": 344.7323617993242,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-J20-A"
     },
     {
       "id": 9,
@@ -352,7 +361,8 @@
         }
       ],
       "length": 86.77896807783392,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-M8"
     },
     {
       "id": 10,
@@ -382,7 +392,8 @@
         }
       ],
       "length": 87.48514833862153,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-M8-A"
     },
     {
       "id": 11,
@@ -404,7 +415,8 @@
         }
       ],
       "length": 48.47277300076724,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-I7"
     },
     {
       "id": 12,
@@ -426,7 +438,8 @@
         }
       ],
       "length": 48.482709982394404,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-I7-A"
     },
     {
       "id": 13,
@@ -444,7 +457,8 @@
         }
       ],
       "length": 10.260711813161874,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-D17"
     },
     {
       "id": 14,
@@ -462,7 +476,8 @@
         }
       ],
       "length": 10.260711813143796,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-D17-A"
     },
     {
       "id": 15,
@@ -484,7 +499,8 @@
         }
       ],
       "length": 7.517911056244065,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-D16"
     },
     {
       "id": 16,
@@ -506,7 +522,8 @@
         }
       ],
       "length": 7.5115341526825725,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-D16-A"
     },
     {
       "id": 17,
@@ -556,7 +573,8 @@
         }
       ],
       "length": 112.50615048125692,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A16"
     },
     {
       "id": 18,
@@ -606,7 +624,8 @@
         }
       ],
       "length": 110.80322647291048,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A16-A"
     },
     {
       "id": 19,
@@ -628,7 +647,8 @@
         }
       ],
       "length": 10.913143281896053,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A14"
     },
     {
       "id": 20,
@@ -650,7 +670,8 @@
         }
       ],
       "length": 10.20335507938664,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A14-A"
     },
     {
       "id": 21,
@@ -684,7 +705,8 @@
         }
       ],
       "length": 50.62862009300393,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A15"
     },
     {
       "id": 22,
@@ -714,7 +736,8 @@
         }
       ],
       "length": 49.75395640697277,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A15-A"
     },
     {
       "id": 23,
@@ -736,7 +759,8 @@
         }
       ],
       "length": 33.43220099571798,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A6"
     },
     {
       "id": 24,
@@ -758,7 +782,8 @@
         }
       ],
       "length": 34.27931172991815,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A6-A"
     },
     {
       "id": 25,
@@ -784,7 +809,8 @@
         }
       ],
       "length": 40.14008789816996,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A7"
     },
     {
       "id": 26,
@@ -810,7 +836,8 @@
         }
       ],
       "length": 41.58648598067304,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A7-A"
     },
     {
       "id": 27,
@@ -844,7 +871,8 @@
         }
       ],
       "length": 15.103125200598932,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-B7"
     },
     {
       "id": 28,
@@ -870,7 +898,8 @@
         }
       ],
       "length": 24.348486148391498,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-B7-A"
     },
     {
       "id": 29,
@@ -912,7 +941,8 @@
         }
       ],
       "length": 126.04061382342626,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A4"
     },
     {
       "id": 30,
@@ -1014,7 +1044,8 @@
         }
       ],
       "length": 601.4637694114576,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-F1"
     },
     {
       "id": 31,
@@ -1052,7 +1083,8 @@
         }
       ],
       "length": 126.25037185552907,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A4-A"
     },
     {
       "id": 32,
@@ -1070,7 +1102,8 @@
         }
       ],
       "length": 18.795263404222762,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-D9"
     },
     {
       "id": 33,
@@ -1088,44 +1121,15 @@
         }
       ],
       "length": 14.086506227328274,
-      "closed": false
-    },
-    {
-      "id": 34,
-      "handle": "1948F0",
-      "layer": "(040) Ограда",
-      "type": "polyline",
-      "points": [
-        {
-          "x": 12907.01245484202,
-          "y": 73463.02506496673
-        },
-        {
-          "x": 12890.56085514909,
-          "y": 73466.5398582407
-        },
-        {
-          "x": 12885.67120160896,
-          "y": 73467.5845056729
-        }
-      ],
-      "length": 21.82286848951604,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-E8"
     },
     {
       "id": 35,
       "handle": "1948F1",
       "layer": "(040) Ограда",
-      "type": "polyline",
+      "type": "line",
       "points": [
-        {
-          "x": 12906.92888304743,
-          "y": 73462.63389268352
-        },
-        {
-          "x": 12890.47728335452,
-          "y": 73466.14868595748
-        },
         {
           "x": 12885.19101101858,
           "y": 73467.27806880156
@@ -1135,8 +1139,9 @@
           "y": 73541.97953089977
         }
       ],
-      "length": 98.84937461354421,
-      "closed": false
+      "length": 76.62126544127142,
+      "closed": false,
+      "semanticId": "FENCE-SEG-A10"
     },
     {
       "id": 36,
@@ -1154,7 +1159,8 @@
         }
       ],
       "length": 76.21536727227279,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A9"
     },
     {
       "id": 37,
@@ -1176,7 +1182,8 @@
         }
       ],
       "length": 9.409263910629969,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-B17"
     },
     {
       "id": 38,
@@ -1194,7 +1201,8 @@
         }
       ],
       "length": 9.198155547807817,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-B17-A"
     },
     {
       "id": 39,
@@ -1224,7 +1232,8 @@
         }
       ],
       "length": 56.68106338169267,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-E7"
     },
     {
       "id": 40,
@@ -1254,7 +1263,8 @@
         }
       ],
       "length": 37.68235587433932,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-D7"
     },
     {
       "id": 41,
@@ -1272,7 +1282,8 @@
         }
       ],
       "length": 0.3999999999920396,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-J7"
     },
     {
       "id": 42,
@@ -1290,7 +1301,8 @@
         }
       ],
       "length": 0.39999999998641256,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-G6"
     },
     {
       "id": 43,
@@ -1307,7 +1319,8 @@
           "y": 73396.34956369015
         }
       ],
-      "length": 0.37536030723615016
+      "length": 0.37536030723615016,
+      "semanticId": "FENCE-SEG-B15"
     },
     {
       "id": 44,
@@ -1324,7 +1337,8 @@
           "y": 73400.88497249136
         }
       ],
-      "length": 0.40000000001147934
+      "length": 0.40000000001147934,
+      "semanticId": "FENCE-SEG-A14-B"
     },
     {
       "id": 45,
@@ -1341,7 +1355,8 @@
           "y": 73407.92873626047
         }
       ],
-      "length": 0.3999999999999917
+      "length": 0.3999999999999917,
+      "semanticId": "FENCE-SEG-A14-C"
     },
     {
       "id": 46,
@@ -1358,7 +1373,8 @@
           "y": 73369.74802547981
         }
       ],
-      "length": 0.3999999999968359
+      "length": 0.3999999999968359,
+      "semanticId": "FENCE-SEG-A16-B"
     },
     {
       "id": 47,
@@ -1375,7 +1391,8 @@
           "y": 73345.71617633438
         }
       ],
-      "length": 0.361585594342529
+      "length": 0.361585594342529,
+      "semanticId": "FENCE-SEG-A17"
     },
     {
       "id": 48,
@@ -1392,7 +1409,8 @@
           "y": 73339.1747087809
         }
       ],
-      "length": 0.3999999999973938
+      "length": 0.3999999999973938,
+      "semanticId": "FENCE-SEG-A18"
     },
     {
       "id": 49,
@@ -1409,7 +1427,8 @@
           "y": 73180.13722177882
         }
       ],
-      "length": 0.40000000001358155
+      "length": 0.40000000001358155,
+      "semanticId": "FENCE-SEG-G25"
     },
     {
       "id": 50,
@@ -1426,24 +1445,8 @@
           "y": 73178.6183958846
         }
       ],
-      "length": 0.4000000000143863
-    },
-    {
-      "id": 51,
-      "handle": "194A32",
-      "layer": "(040) Ограда",
-      "type": "line",
-      "points": [
-        {
-          "x": 12907.01245484202,
-          "y": 73463.02506496673
-        },
-        {
-          "x": 12906.92888304743,
-          "y": 73462.63389268352
-        }
-      ],
-      "length": 0.40000000000602837
+      "length": 0.4000000000143863,
+      "semanticId": "FENCE-SEG-H26"
     },
     {
       "id": 52,
@@ -1460,7 +1463,8 @@
           "y": 73561.00038512275
         }
       ],
-      "length": 0.4382248120909935
+      "length": 0.4382248120909935,
+      "semanticId": "FENCE-SEG-A6-B"
     },
     {
       "id": 53,
@@ -1477,7 +1481,8 @@
           "y": 73568.31407815784
         }
       ],
-      "length": 0.3999999999942252
+      "length": 0.3999999999942252,
+      "semanticId": "FENCE-SEG-A6-C"
     },
     {
       "id": 54,
@@ -1494,7 +1499,8 @@
           "y": 73345.27110052315
         }
       ],
-      "length": 0.3999999999913416
+      "length": 0.3999999999913416,
+      "semanticId": "FENCE-SEG-D17-B"
     },
     {
       "id": 55,
@@ -1511,7 +1517,8 @@
           "y": 73355.41264209806
         }
       ],
-      "length": 0.3998050878342347
+      "length": 0.3998050878342347,
+      "semanticId": "FENCE-SEG-D17-C"
     },
     {
       "id": 56,
@@ -1528,7 +1535,8 @@
           "y": 73364.15669990152
         }
       ],
-      "length": 0.40034987623419177
+      "length": 0.40034987623419177,
+      "semanticId": "FENCE-SEG-D16-B"
     },
     {
       "id": 57,
@@ -1545,7 +1553,8 @@
           "y": 73826.06606797136
         }
       ],
-      "length": 0.40046989846860087
+      "length": 0.40046989846860087,
+      "semanticId": "FENCE-SEG-D1"
     },
     {
       "id": 58,
@@ -1562,7 +1571,8 @@
           "y": 73684.11866221904
         }
       ],
-      "length": 46.199856984079624
+      "length": 46.199856984079624,
+      "semanticId": "FENCE-SEG-C1"
     },
     {
       "id": 59,
@@ -1579,7 +1589,8 @@
           "y": 73707.57185891403
         }
       ],
-      "length": 18.19397637481899
+      "length": 18.19397637481899,
+      "semanticId": "FENCE-SEG-B1"
     },
     {
       "id": 60,
@@ -1677,7 +1688,8 @@
         }
       ],
       "length": 602.3979748020797,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-F1-A"
     },
     {
       "id": 61,
@@ -1719,7 +1731,8 @@
         }
       ],
       "length": 126.04214064463686,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-A4-B"
     },
     {
       "id": 62,
@@ -1821,7 +1834,8 @@
         }
       ],
       "length": 601.6116168936784,
-      "closed": false
+      "closed": false,
+      "semanticId": "FENCE-SEG-F1-B"
     },
     {
       "id": 66,
@@ -1839,7 +1853,8 @@
         }
       ],
       "length": 8.166518110253309,
-      "closed": false
+      "closed": false,
+      "semanticId": "WALL-SEG-D4"
     },
     {
       "id": 67,
@@ -1857,7 +1872,8 @@
         }
       ],
       "length": 23.92482372037185,
-      "closed": false
+      "closed": false,
+      "semanticId": "WALL-SEG-D2"
     },
     {
       "id": 68,
@@ -1875,7 +1891,8 @@
         }
       ],
       "length": 2.7653606565299658,
-      "closed": false
+      "closed": false,
+      "semanticId": "WALL-SEG-E1"
     },
     {
       "id": 69,
@@ -1893,7 +1910,8 @@
         }
       ],
       "length": 23.096811203531562,
-      "closed": false
+      "closed": false,
+      "semanticId": "WALL-SEG-C4"
     },
     {
       "id": 70,
@@ -1911,7 +1929,8 @@
         }
       ],
       "length": 3.9999999999877462,
-      "closed": false
+      "closed": false,
+      "semanticId": "WALL-SEG-D3"
     },
     {
       "id": 71,
@@ -1929,7 +1948,8 @@
         }
       ],
       "length": 3.9999999999857,
-      "closed": false
+      "closed": false,
+      "semanticId": "WALL-SEG-D3-A"
     },
     {
       "id": 72,
@@ -1947,7 +1967,8 @@
         }
       ],
       "length": 3.9999999999937157,
-      "closed": false
+      "closed": false,
+      "semanticId": "WALL-SEG-A2"
     },
     {
       "id": 73,
@@ -1965,7 +1986,8 @@
         }
       ],
       "length": 4.000000000013562,
-      "closed": false
+      "closed": false,
+      "semanticId": "WALL-SEG-A2-A"
     },
     {
       "id": 74,
@@ -1983,7 +2005,8 @@
         }
       ],
       "length": 3.9999999999877462,
-      "closed": false
+      "closed": false,
+      "semanticId": "WALL-SEG-D2-A"
     },
     {
       "id": 75,
@@ -2001,7 +2024,25 @@
         }
       ],
       "length": 3.9999999999994174,
-      "closed": false
+      "closed": false,
+      "semanticId": "WALL-SEG-D2-B"
+    },
+    {
+      "id": 76,
+      "layer": "(040) Ограда",
+      "type": "line",
+      "points": [
+        {
+          "x": 12885.67120160896,
+          "y": 73467.5845056729
+        },
+        {
+          "x": 12866.43252041506,
+          "y": 73408.06470733049
+        }
+      ],
+      "length": 62.55186844683927,
+      "semanticId": "FENCE-SEG-A11-EXT"
     }
   ]
 }

@@ -56,7 +56,7 @@ const routes = [
   {
     path: '/yard-test-dev',
     name: 'YardTestDev',
-    component: () => import('../views/YardTestView.vue'),
+    component: () => import('../views/UnifiedYardView.vue'),
     meta: { requiresAuth: false, title: 'Тест 3D Площадки - МТТ' },
   },
   {
@@ -140,16 +140,18 @@ const routes = [
         meta: { title: 'Контейнеры - МТТ', roles: ['admin'] as UserRole[] },
       },
       {
-        path: '/placement',
-        name: 'ContainerPlacement',
-        component: () => import('../views/ContainerPlacement.vue'),
+        path: '/yard',
+        name: 'Yard',
+        component: () => import('../views/UnifiedYardView.vue'),
         meta: { title: 'Площадка 3D - МТТ', roles: ['admin'] as UserRole[] },
       },
       {
+        path: '/placement',
+        redirect: '/yard',
+      },
+      {
         path: '/yard-test',
-        name: 'YardTest',
-        component: () => import('../views/YardTestView.vue'),
-        meta: { title: 'Тест 3D Площадки - МТТ', roles: ['admin'] as UserRole[] },
+        redirect: '/yard',
       },
       {
         path: '/tasks',

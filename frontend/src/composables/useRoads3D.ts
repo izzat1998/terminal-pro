@@ -425,8 +425,9 @@ export function useRoads3D(
       if (mergedRoad) {
         const roadMaterial = new THREE.MeshStandardMaterial({
           color: ROAD_COLORS.road,
-          roughness: 0.9,
+          roughness: 0.95,           // Very rough asphalt surface
           metalness: 0.0,
+          envMapIntensity: 0.05,     // Minimal reflections
         })
         const mesh = new THREE.Mesh(mergedRoad, roadMaterial)
         mesh.receiveShadow = true
@@ -446,8 +447,9 @@ export function useRoads3D(
         if (mergedCurb) {
           const curbMaterial = new THREE.MeshStandardMaterial({
             color: ROAD_COLORS.curb,
-            roughness: 0.8,
-            metalness: 0.1,
+            roughness: 0.85,           // Concrete curb
+            metalness: 0.0,
+            envMapIntensity: 0.1,      // Subtle reflections
           })
           const mesh = new THREE.Mesh(mergedCurb, curbMaterial)
           mesh.castShadow = true
@@ -477,8 +479,9 @@ export function useRoads3D(
       if (mergedSidewalk) {
         const sidewalkMaterial = new THREE.MeshStandardMaterial({
           color: ROAD_COLORS.sidewalk,
-          roughness: 0.85,
-          metalness: 0.05,
+          roughness: 0.9,              // Matte concrete sidewalk
+          metalness: 0.0,
+          envMapIntensity: 0.15,       // Subtle reflections
         })
         const mesh = new THREE.Mesh(mergedSidewalk, sidewalkMaterial)
         mesh.receiveShadow = true

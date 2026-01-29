@@ -4,12 +4,33 @@ Serializers for billing models and storage cost results.
 
 from decimal import Decimal
 
-from django.db import models
+from django.db.models import Q
 from rest_framework import serializers
 
 from apps.accounts.models import Company
 
-from .models import AdditionalCharge, ContainerBillingStatus, ContainerSize, ExpenseType, MonthlyStatement, StatementLineItem, Tariff, TariffRate
+from .models import AdditionalCharge, ContainerBillingStatus, ContainerSize, ExpenseType, MonthlyStatement, StatementLineItem, StatementServiceItem, Tariff, TariffRate
+
+
+def _get_user_display_name(user) -> str:
+    """Return display name for a user, or empty string if None."""
+    if user:
+        return user.get_full_name() or user.username
+    return ""
+
+
+def _get_statement_summary(obj: MonthlyStatement) -> dict:
+    """Build summary dict for a statement."""
+    return {
+        "total_containers": obj.total_containers,
+        "total_billable_days": obj.total_billable_days,
+        "total_storage_usd": str(obj.total_storage_usd),
+        "total_storage_uzs": str(obj.total_storage_uzs),
+        "total_services_usd": str(obj.total_services_usd),
+        "total_services_uzs": str(obj.total_services_uzs),
+        "total_usd": str(obj.total_usd),
+        "total_uzs": str(obj.total_uzs),
+    }
 
 
 class TariffRateSerializer(serializers.ModelSerializer):
@@ -90,9 +111,7 @@ class TariffSerializer(serializers.ModelSerializer):
         ]
 
     def get_created_by_name(self, obj) -> str:
-        if obj.created_by:
-            return obj.created_by.get_full_name() or obj.created_by.username
-        return ""
+        return _get_user_display_name(obj.created_by)
 
 
 class TariffCreateSerializer(serializers.Serializer):
@@ -148,8 +167,8 @@ class TariffCreateSerializer(serializers.Serializer):
             company=company,
             effective_from__lte=effective_to or effective_from,
         ).filter(
-            models.Q(effective_to__isnull=True)
-            | models.Q(effective_to__gte=effective_from)
+            Q(effective_to__isnull=True)
+            | Q(effective_to__gte=effective_from)
         )
 
         # Exclude current instance if updating
@@ -320,12 +339,34 @@ class StatementLineItemSerializer(serializers.ModelSerializer):
         ]
 
 
-class MonthlyStatementSerializer(serializers.ModelSerializer):
-    """Serializer for monthly statements."""
+class StatementServiceItemSerializer(serializers.ModelSerializer):
+    """Serializer for statement service (additional charge) items."""
+
+    class Meta:
+        model = StatementServiceItem
+        fields = [
+            "id",
+            "container_number",
+            "description",
+            "charge_date",
+            "amount_usd",
+            "amount_uzs",
+        ]
+
+
+class MonthlyStatementListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for statement master table (no line_items)."""
 
     month_name = serializers.CharField(read_only=True)
     billing_method_display = serializers.CharField(read_only=True)
-    line_items = StatementLineItemSerializer(many=True, read_only=True)
+    status_display = serializers.CharField(read_only=True)
+    statement_type_display = serializers.CharField(read_only=True)
+    company_name = serializers.CharField(source="company.name", read_only=True)
+    paid_marked_by_name = serializers.SerializerMethodField()
+    finalized_by_name = serializers.SerializerMethodField()
+    original_statement_id = serializers.IntegerField(
+        source="original_statement.id", read_only=True, default=None,
+    )
     summary = serializers.SerializerMethodField()
 
     class Meta:
@@ -337,18 +378,81 @@ class MonthlyStatementSerializer(serializers.ModelSerializer):
             "month_name",
             "billing_method",
             "billing_method_display",
+            "statement_type",
+            "statement_type_display",
+            "invoice_number",
+            "original_statement_id",
+            "status",
+            "status_display",
+            "finalized_at",
+            "finalized_by_name",
+            "paid_at",
+            "paid_marked_by_name",
+            "company_name",
             "summary",
-            "line_items",
             "generated_at",
         ]
 
     def get_summary(self, obj: MonthlyStatement) -> dict:
-        return {
-            "total_containers": obj.total_containers,
-            "total_billable_days": obj.total_billable_days,
-            "total_usd": str(obj.total_usd),
-            "total_uzs": str(obj.total_uzs),
-        }
+        return _get_statement_summary(obj)
+
+    def get_paid_marked_by_name(self, obj: MonthlyStatement) -> str:
+        return _get_user_display_name(obj.paid_marked_by)
+
+    def get_finalized_by_name(self, obj: MonthlyStatement) -> str:
+        return _get_user_display_name(obj.finalized_by)
+
+
+class MonthlyStatementSerializer(serializers.ModelSerializer):
+    """Full serializer for monthly statements (with line_items and service_items)."""
+
+    month_name = serializers.CharField(read_only=True)
+    billing_method_display = serializers.CharField(read_only=True)
+    status_display = serializers.CharField(read_only=True)
+    statement_type_display = serializers.CharField(read_only=True)
+    line_items = StatementLineItemSerializer(many=True, read_only=True)
+    service_items = StatementServiceItemSerializer(many=True, read_only=True)
+    paid_marked_by_name = serializers.SerializerMethodField()
+    finalized_by_name = serializers.SerializerMethodField()
+    original_statement_id = serializers.IntegerField(
+        source="original_statement.id", read_only=True, default=None,
+    )
+    summary = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MonthlyStatement
+        fields = [
+            "id",
+            "year",
+            "month",
+            "month_name",
+            "billing_method",
+            "billing_method_display",
+            "statement_type",
+            "statement_type_display",
+            "invoice_number",
+            "original_statement_id",
+            "status",
+            "status_display",
+            "finalized_at",
+            "finalized_by_name",
+            "paid_at",
+            "paid_marked_by_name",
+            "summary",
+            "line_items",
+            "service_items",
+            "pending_containers_data",
+            "generated_at",
+        ]
+
+    def get_summary(self, obj: MonthlyStatement) -> dict:
+        return _get_statement_summary(obj)
+
+    def get_paid_marked_by_name(self, obj: MonthlyStatement) -> str:
+        return _get_user_display_name(obj.paid_marked_by)
+
+    def get_finalized_by_name(self, obj: MonthlyStatement) -> str:
+        return _get_user_display_name(obj.finalized_by)
 
 
 class AvailablePeriodSerializer(serializers.Serializer):
@@ -393,9 +497,7 @@ class AdditionalChargeSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at", "created_by"]
 
     def get_created_by_name(self, obj) -> str:
-        if obj.created_by:
-            return obj.created_by.get_full_name() or obj.created_by.username
-        return ""
+        return _get_user_display_name(obj.created_by)
 
 
 class AdditionalChargeCreateSerializer(serializers.ModelSerializer):

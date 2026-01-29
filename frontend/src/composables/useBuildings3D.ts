@@ -201,11 +201,12 @@ export function useBuildings3D(
     // Pick color based on building characteristics for visual variety
     const buildingColor = getBuildingVisualColor(building)
 
-    // Create material with premium PBR settings
+    // Create material with premium PBR settings for concrete/wall look
     const material = new THREE.MeshStandardMaterial({
       color: buildingColor,
-      roughness: 0.6,
-      metalness: 0.2,
+      roughness: 0.8,          // Matte concrete surface
+      metalness: 0.0,          // Non-metallic
+      envMapIntensity: 0.2,    // Subtle environment reflections
       flatShading: false,
     })
 

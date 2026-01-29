@@ -11,9 +11,11 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 
 from apps.core.exceptions import BusinessLogicError
 from apps.core.pagination import StandardResultsSetPagination
+from apps.core.utils import safe_int_param
 
 from .filters import ContainerEntryFilter
 from .models import ContainerEntry, ContainerOwner, CraneOperation
@@ -81,7 +83,7 @@ class CraneOperationViewSet(viewsets.ModelViewSet):
         """
         entry_id = self.request.query_params.get("container_entry_id")
         return self.crane_service.get_operations_queryset(
-            entry_id=int(entry_id) if entry_id else None
+            entry_id=safe_int_param(entry_id, None)
         )
 
     def perform_create(self, serializer):
@@ -95,7 +97,7 @@ class CraneOperationViewSet(viewsets.ModelViewSet):
 
         # Service handles validation and entity lookup
         operation = self.crane_service.create_operation(
-            entry_id=int(entry_id) if entry_id else None,
+            entry_id=safe_int_param(entry_id, None),
             operation_date=serializer.validated_data["operation_date"],
         )
 
@@ -114,7 +116,7 @@ class CraneOperationViewSet(viewsets.ModelViewSet):
 
         entry_id = request.data.get("container_entry_id")
         operation = self.crane_service.create_operation(
-            entry_id=int(entry_id) if entry_id else None,
+            entry_id=safe_int_param(entry_id, None),
             operation_date=serializer.validated_data["operation_date"],
         )
 
@@ -354,7 +356,7 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
         """
         from .services import ExecutiveDashboardService
 
-        days = int(request.query_params.get("days", 30))
+        days = safe_int_param(request.query_params.get("days"), 30, min_val=1, max_val=365)
         dashboard_service = ExecutiveDashboardService()
         data = dashboard_service.get_executive_dashboard(days=days)
         return Response({"success": True, "data": data})
@@ -667,12 +669,14 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
             else:
                 return Response(result, status=status.HTTP_400_BAD_REQUEST)
 
-        except Exception as e:
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).exception("Excel import failed")
             return Response(
                 {
                     "success": False,
-                    "message": f"Import failed: {e!s}",
-                    "errors": [str(e)],
+                    "message": "Ошибка при импорте файла",
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
@@ -825,6 +829,7 @@ class PlateRecognizerAPIView(viewsets.GenericViewSet):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [AnonRateThrottle]
     parser_classes = [MultiPartParser, FormParser]
     serializer_class = PlateRecognitionRequestSerializer
 
@@ -1366,12 +1371,9 @@ class PlacementViewSet(viewsets.GenericViewSet):
     def available(self, request):
         """Get list of available positions."""
         zone = request.query_params.get("zone")
-        tier = request.query_params.get("tier")
-        limit = int(request.query_params.get("limit", 50))
+        tier = safe_int_param(request.query_params.get("tier"), None, min_val=1, max_val=4)
+        limit = safe_int_param(request.query_params.get("limit"), 50, min_val=1, max_val=500)
         container_size = request.query_params.get("container_size")
-
-        if tier:
-            tier = int(tier)
 
         service = self.get_placement_service()
         positions = service.get_available_positions(
@@ -1766,12 +1768,7 @@ class WorkOrderViewSet(
             )
 
         # Get active work orders for these vehicles
-        service = self.get_work_order_service()
-        queryset = (
-            service.get_queryset()
-            if hasattr(service, "get_queryset")
-            else self.get_queryset()
-        )
+        queryset = self.get_queryset()
         queryset = queryset.filter(
             assigned_to_vehicle_id__in=list(vehicles),
             status="PENDING",
@@ -2078,5 +2075,86 @@ class TerminalVehicleViewSet(viewsets.ModelViewSet):
                 "data": data,
                 "count": len(data),
                 "working_count": working_count,
+            }
+        )
+
+
+# ============ Yard Slots ViewSet ============
+
+
+class YardSlotViewSet(viewsets.GenericViewSet):
+    """
+    API endpoint for yard slots (3D yard visualization).
+    Returns all container positions with DXF coordinates and occupant data.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        from .models import ContainerPosition
+
+        return ContainerPosition.objects.select_related(
+            "container_entry__container",
+            "container_entry__company",
+        ).order_by("zone", "row", "bay", "tier")
+
+    @extend_schema(
+        summary="List yard slots",
+        description=(
+            "Returns all yard slots with DXF coordinates and occupant data "
+            "for 3D yard visualization. Supports filtering by zone, occupancy, "
+            "and container size."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="zone",
+                type=str,
+                required=False,
+                description="Filter by zone (A-E)",
+            ),
+            OpenApiParameter(
+                name="occupied",
+                type=bool,
+                required=False,
+                description="Filter by occupancy (true=occupied, false=empty)",
+            ),
+            OpenApiParameter(
+                name="container_size",
+                type=str,
+                required=False,
+                description="Filter by slot size (20ft, 40ft, 45ft)",
+            ),
+        ],
+        tags=["Yard"],
+    )
+    @action(detail=False, methods=["get"], url_path="slots", url_name="slots")
+    def slots(self, request):
+        """Get all yard slots with occupant data for 3D rendering."""
+        from .serializers import YardSlotSerializer
+
+        queryset = self.get_queryset()
+
+        # Apply filters
+        zone = request.query_params.get("zone")
+        if zone:
+            queryset = queryset.filter(zone=zone.upper())
+
+        occupied = request.query_params.get("occupied")
+        if occupied is not None:
+            if occupied.lower() == "true":
+                queryset = queryset.filter(container_entry__isnull=False)
+            elif occupied.lower() == "false":
+                queryset = queryset.filter(container_entry__isnull=True)
+
+        container_size = request.query_params.get("container_size")
+        if container_size:
+            queryset = queryset.filter(container_size=container_size)
+
+        serializer = YardSlotSerializer(queryset, many=True)
+        return Response(
+            {
+                "success": True,
+                "data": serializer.data,
+                "count": len(serializer.data),
             }
         )

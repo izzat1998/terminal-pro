@@ -43,11 +43,6 @@ const formattedValue = computed(() => {
   return props.value;
 });
 
-const trendClass = computed(() => {
-  if (!props.trend) return '';
-  return props.trend >= 0 ? 'positive' : 'negative';
-});
-
 const trendIcon = computed(() => {
   if (!props.trend) return null;
   return props.trend >= 0 ? ArrowUpOutlined : ArrowDownOutlined;
@@ -67,10 +62,10 @@ const trendIcon = computed(() => {
           <span v-if="suffix" class="kpi-suffix">{{ suffix }}</span>
         </div>
         <div class="kpi-label">{{ label }}</div>
-        <div v-if="trend !== undefined" class="kpi-trend" :class="trendClass">
+        <a-tag v-if="trend !== undefined" :color="trend >= 0 ? 'success' : 'error'" style="margin-top: 8px;">
           <component :is="trendIcon" />
-          <span>{{ Math.abs(trend) }}%</span>
-        </div>
+          {{ Math.abs(trend) }}%
+        </a-tag>
       </div>
     </div>
   </a-card>
@@ -130,24 +125,5 @@ const trendIcon = computed(() => {
   margin-top: 4px;
 }
 
-.kpi-trend {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  margin-top: 8px;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
 
-.kpi-trend.positive {
-  color: #52c41a;
-  background-color: #f6ffed;
-}
-
-.kpi-trend.negative {
-  color: #ff4d4f;
-  background-color: #fff2f0;
-}
 </style>

@@ -3,11 +3,15 @@
  *
  * Defines gate locations, parking zones, and animation paths.
  * Coordinates are in DXF space (same as containers, buildings).
- * Use transformPosition() to convert to Three.js world coordinates.
+ * Use transformToWorld() to convert to Three.js world coordinates.
  */
 
 import gatePositionsJson from './gatePositions.json'
 import type { DxfCoordinateSystem } from '@/types/dxf'
+import { transformToWorld } from '@/utils/coordinateTransforms'
+
+// Re-export transformToWorld from shared utility for backward compatibility
+export { transformToWorld }
 
 // Types
 export interface Position2D {
@@ -49,27 +53,6 @@ export const PATHS: Record<string, PathDefinition> = gatePositionsJson.paths as 
 
 // Default gate for when no specific gate is specified
 export const DEFAULT_GATE_ID = 'main'
-
-/**
- * Transform DXF position to Three.js world coordinates
- *
- * @param dxfPos - Position in DXF coordinates
- * @param coordSystem - Coordinate system from useDxfYard
- * @returns Position in Three.js world space { x, y, z }
- */
-export function transformToWorld(
-  dxfPos: Position2D,
-  coordSystem: DxfCoordinateSystem
-): { x: number; y: number; z: number } {
-  const scale = coordSystem.scale ?? 1.0
-  const center = coordSystem.center ?? { x: 0, y: 0 }
-
-  // DXF Y becomes negative Three.js Z (plan view to 3D conversion)
-  const x = (dxfPos.x - center.x) * scale
-  const z = -(dxfPos.y - center.y) * scale
-
-  return { x, y: 0, z }
-}
 
 /**
  * Transform a path's waypoints to Three.js world coordinates

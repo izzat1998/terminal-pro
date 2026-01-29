@@ -37,6 +37,8 @@ from .placement import (
     PlacementSuggestResponseSerializer,
     PositionSerializer,
     UnplacedContainerSerializer,
+    YardSlotContainerEntrySerializer,
+    YardSlotSerializer,
 )
 
 # PreOrder serializers
@@ -115,6 +117,8 @@ __all__ = [
     "PlacementMoveRequestSerializer",
     "PlacementAvailableRequestSerializer",
     "UnplacedContainerSerializer",
+    "YardSlotContainerEntrySerializer",
+    "YardSlotSerializer",
     # Work Orders
     "get_container_size_from_iso",
     "WorkOrderContainerSerializer",
