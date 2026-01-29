@@ -4,7 +4,6 @@
  * Provides:
  * - PBR material presets for containers, concrete, asphalt, glass
  * - Procedural texture generation (no external assets)
- * - Environment map application
  * - Material caching for performance
  */
 
@@ -16,7 +15,6 @@ export interface MaterialPreset {
   color: number
   metalness: number
   roughness: number
-  envMapIntensity: number
   transparent?: boolean
   opacity?: number
   side?: THREE.Side
@@ -30,21 +28,18 @@ export const MATERIAL_PRESETS: Record<string, MaterialPreset> = {
     color: 0x3b82f6,
     metalness: 0.85,
     roughness: 0.35,
-    envMapIntensity: 0.8,
   },
   containerPainted: {
     name: 'Container Painted',
     color: 0x64748b,
     metalness: 0.2,
     roughness: 0.55,
-    envMapIntensity: 0.4,
   },
   containerRusted: {
     name: 'Container Rusted',
     color: 0x8b5c3f,
     metalness: 0.6,
     roughness: 0.75,
-    envMapIntensity: 0.3,
   },
 
   // Infrastructure materials
@@ -53,28 +48,24 @@ export const MATERIAL_PRESETS: Record<string, MaterialPreset> = {
     color: 0x94a3b8,
     metalness: 0.0,
     roughness: 0.9,
-    envMapIntensity: 0.15,
   },
   concreteDark: {
     name: 'Concrete Dark',
     color: 0x64748b,
     metalness: 0.0,
     roughness: 0.85,
-    envMapIntensity: 0.1,
   },
   asphalt: {
     name: 'Asphalt',
     color: 0x374151,
     metalness: 0.0,
     roughness: 0.95,
-    envMapIntensity: 0.05,
   },
   asphaltWet: {
     name: 'Asphalt Wet',
     color: 0x1f2937,
     metalness: 0.1,
     roughness: 0.6,
-    envMapIntensity: 0.3,
   },
 
   // Building materials
@@ -83,21 +74,18 @@ export const MATERIAL_PRESETS: Record<string, MaterialPreset> = {
     color: 0xf1f5f9,
     metalness: 0.0,
     roughness: 0.8,
-    envMapIntensity: 0.2,
   },
   buildingRoof: {
     name: 'Building Roof',
     color: 0x475569,
     metalness: 0.3,
     roughness: 0.6,
-    envMapIntensity: 0.4,
   },
   glass: {
     name: 'Glass',
     color: 0x87ceeb,
     metalness: 0.0,
     roughness: 0.05,
-    envMapIntensity: 1.5,
     transparent: true,
     opacity: 0.3,
   },
@@ -108,14 +96,12 @@ export const MATERIAL_PRESETS: Record<string, MaterialPreset> = {
     color: 0x4ade80,
     metalness: 0.0,
     roughness: 0.95,
-    envMapIntensity: 0.1,
   },
   dirt: {
     name: 'Dirt',
     color: 0x92400e,
     metalness: 0.0,
     roughness: 0.95,
-    envMapIntensity: 0.05,
   },
 
   // Metal materials
@@ -124,14 +110,12 @@ export const MATERIAL_PRESETS: Record<string, MaterialPreset> = {
     color: 0xc0c0c0,
     metalness: 0.95,
     roughness: 0.2,
-    envMapIntensity: 1.2,
   },
   steelBrushed: {
     name: 'Steel Brushed',
     color: 0xa8a8a8,
     metalness: 0.9,
     roughness: 0.45,
-    envMapIntensity: 0.8,
   },
 
   // Railway
@@ -140,14 +124,12 @@ export const MATERIAL_PRESETS: Record<string, MaterialPreset> = {
     color: 0x78716c,
     metalness: 0.8,
     roughness: 0.5,
-    envMapIntensity: 0.5,
   },
   railBed: {
     name: 'Rail Bed',
     color: 0x57534e,
     metalness: 0.0,
     roughness: 0.95,
-    envMapIntensity: 0.05,
   },
 }
 
@@ -172,22 +154,6 @@ export function useMaterials3D() {
   // Material cache for reuse
   const materialCache: ShallowRef<Map<string, THREE.MeshStandardMaterial>> = shallowRef(new Map())
   const textureCache: ShallowRef<Map<string, THREE.Texture>> = shallowRef(new Map())
-
-  // Current environment map (set by useEnvironment3D)
-  const currentEnvMap: ShallowRef<THREE.Texture | null> = shallowRef(null)
-
-  /**
-   * Set the environment map for all materials.
-   */
-  function setEnvironmentMap(envMap: THREE.Texture | null): void {
-    currentEnvMap.value = envMap
-
-    // Update all cached materials with new env map
-    materialCache.value.forEach((material) => {
-      material.envMap = envMap
-      material.needsUpdate = true
-    })
-  }
 
   /**
    * Create a PBR material from a preset.
@@ -219,8 +185,6 @@ export function useMaterials3D() {
       color,
       metalness: preset.metalness,
       roughness: preset.roughness,
-      envMap: currentEnvMap.value,
-      envMapIntensity: preset.envMapIntensity,
       transparent: preset.transparent ?? false,
       opacity: preset.opacity ?? 1.0,
       side: preset.side ?? THREE.FrontSide,
@@ -241,40 +205,21 @@ export function useMaterials3D() {
     options: {
       metalness?: number
       roughness?: number
-      envMapIntensity?: number
     } = {}
   ): THREE.MeshStandardMaterial {
     const {
       metalness = 0.85,
       roughness = 0.35,
-      envMapIntensity = 0.8,
     } = options
 
     const material = new THREE.MeshStandardMaterial({
       color: color instanceof THREE.Color ? color : new THREE.Color(color),
       metalness,
       roughness,
-      envMap: currentEnvMap.value,
-      envMapIntensity,
       flatShading: false,
     })
 
     return material
-  }
-
-  /**
-   * Apply environment map to an existing material.
-   */
-  function applyEnvMap(
-    material: THREE.MeshStandardMaterial,
-    envMap: THREE.Texture,
-    intensity?: number
-  ): void {
-    material.envMap = envMap
-    if (intensity !== undefined) {
-      material.envMapIntensity = intensity
-    }
-    material.needsUpdate = true
   }
 
   /**
@@ -477,21 +422,15 @@ export function useMaterials3D() {
    */
   function dispose(): void {
     clearCache()
-    currentEnvMap.value = null
   }
 
   return {
     // State
-    currentEnvMap,
     materialCache,
-
-    // Environment
-    setEnvironmentMap,
 
     // Material creation
     createMaterial,
     createContainerMaterial,
-    applyEnvMap,
 
     // Procedural textures
     createNoiseTexture,
