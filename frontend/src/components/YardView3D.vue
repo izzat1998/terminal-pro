@@ -9,6 +9,8 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { useDxfYard, type YardLayerInfo } from '@/composables/useDxfYard'
 import { disposeObject3D } from '@/utils/threeUtils'
+import { clearGeometryCaches } from '@/utils/geometryUtils'
+import { disposeSharedMaterials } from '@/composables/useMaterials3D'
 import { useContainers3D, type ContainerPosition, type ContainerData } from '@/composables/useContainers3D'
 import { useContainerLabels3D } from '@/composables/useContainerLabels3D'
 import { useYardSettings, type ColorMode } from '@/composables/useYardSettings'
@@ -19,7 +21,7 @@ import { useFences3D, type FenceSegment } from '@/composables/useFences3D'
 import { useRailway3D, type RailwayTrack } from '@/composables/useRailway3D'
 import { usePlatforms3D, type PlatformData } from '@/composables/usePlatforms3D'
 import { useRoads3D, type RoadSegment, type SidewalkData } from '@/composables/useRoads3D'
-import { useVehicleModels } from '@/composables/useVehicleModels'
+import { useVehicleModels, disposeLicensePlatePool } from '@/composables/useVehicleModels'
 import { useMaterials3D } from '@/composables/useMaterials3D'
 import { detectOptimalQuality, getQualityPreset, type QualityLevel } from '@/utils/qualityPresets'
 import { GATES, transformToWorld } from '@/data/scenePositions'
@@ -1098,6 +1100,11 @@ function dispose(): void {
   disposePlatforms()
   disposeRoads()
   disposeMaterials()
+
+  // Cleanup pooled resources
+  clearGeometryCaches()
+  disposeSharedMaterials()
+  disposeLicensePlatePool()
 
   controls.value?.dispose()
   renderer.value?.dispose()
