@@ -20,8 +20,6 @@ import { useRailway3D, type RailwayTrack } from '@/composables/useRailway3D'
 import { usePlatforms3D, type PlatformData } from '@/composables/usePlatforms3D'
 import { useRoads3D, type RoadSegment, type SidewalkData } from '@/composables/useRoads3D'
 import { useVehicleModels } from '@/composables/useVehicleModels'
-import { useEnvironment3D } from '@/composables/useEnvironment3D'
-import { usePostProcessing } from '@/composables/usePostProcessing'
 import { useMaterials3D } from '@/composables/useMaterials3D'
 import { detectOptimalQuality, getQualityPreset, type QualityLevel } from '@/utils/qualityPresets'
 import { GATES, transformToWorld } from '@/data/scenePositions'
@@ -248,23 +246,8 @@ const {
   createWagonModel,
 } = useVehicleModels()
 
-// Visual quality composables
+// Materials composable
 const {
-  loadEnvironment,
-  dispose: disposeEnvironment,
-} = useEnvironment3D()
-
-const {
-  initComposer,
-  setQuality: setPostProcessingQuality,
-  resize: resizePostProcessing,
-  render: renderPostProcessing,
-  isInitialized: isPostProcessingInitialized,
-  dispose: disposePostProcessing,
-} = usePostProcessing()
-
-const {
-  setEnvironmentMap,
   dispose: disposeMaterials,
 } = useMaterials3D()
 
@@ -541,29 +524,6 @@ function initScene(): void {
   gridHelper.name = 'grid'
   scene.value.add(gridHelper)
 
-  // Initialize environment map for reflections
-  loadEnvironment(renderer.value, scene.value, {
-    intensity: qualityPreset.envMapIntensity,
-  }).then((envTexture) => {
-    if (envTexture) {
-      setEnvironmentMap(envTexture)
-    }
-  })
-
-  // Initialize post-processing pipeline
-  initComposer(renderer.value, scene.value, camera.value, {
-    ssao: qualityPreset.ssao,
-    ssaoRadius: qualityPreset.ssaoRadius,
-    bloom: qualityPreset.bloom,
-    bloomThreshold: qualityPreset.bloomThreshold,
-    bloomStrength: qualityPreset.bloomStrength,
-    bloomRadius: qualityPreset.bloomRadius,
-    vignette: qualityPreset.vignette,
-    vignetteOffset: qualityPreset.vignetteOffset,
-    vignetteDarkness: qualityPreset.vignetteDarkness,
-    colorGrading: qualityPreset.colorGrading,
-  })
-
   isInitialized.value = true
   animate()
 }
@@ -580,12 +540,8 @@ function animate(): void {
     updateContainerLabelVisibility(camera.value)
   }
 
-  // Use post-processing if available, otherwise direct render
-  if (isPostProcessingInitialized()) {
-    renderPostProcessing()
-  } else {
-    renderer.value.render(scene.value, camera.value)
-  }
+  // Direct render (no post-processing for maximum sharpness)
+  renderer.value.render(scene.value, camera.value)
 }
 
 // Load DXF and containers
@@ -960,9 +916,6 @@ function handleQualityChange(level: QualityLevel): void {
   qualityLevel.value = level
   const preset = getQualityPreset(level)
 
-  // Update post-processing
-  setPostProcessingQuality(preset)
-
   // Update renderer settings
   if (renderer.value) {
     renderer.value.setPixelRatio(preset.pixelRatio)
@@ -970,12 +923,21 @@ function handleQualityChange(level: QualityLevel): void {
     if (preset.toneMapping) {
       renderer.value.toneMapping = THREE.ACESFilmicToneMapping
       renderer.value.toneMappingExposure = preset.toneMappingExposure
+    } else {
+      renderer.value.toneMapping = THREE.NoToneMapping
     }
   }
 
-  // Fog disabled - keep scene clear
+  // Update shadow map size on main light
   if (scene.value) {
-    scene.value.fog = null
+    scene.value.traverse((child) => {
+      if (child instanceof THREE.DirectionalLight && child.castShadow) {
+        child.shadow.mapSize.width = preset.shadowMapSize
+        child.shadow.mapSize.height = preset.shadowMapSize
+        child.shadow.map?.dispose()
+        child.shadow.map = null
+      }
+    })
   }
 
   if (import.meta.env.DEV) console.log(`Quality changed to: ${level}`)
@@ -1106,10 +1068,6 @@ function handleResize(): void {
   camera.value.updateProjectionMatrix()
 
   renderer.value.setSize(width, height)
-
-  // Resize post-processing with correct pixel ratio for sharp rendering
-  const pixelRatio = renderer.value.getPixelRatio()
-  resizePostProcessing(width, height, pixelRatio)
 }
 
 // Layer visibility toggle
@@ -1139,10 +1097,6 @@ function dispose(): void {
   disposeRailway()
   disposePlatforms()
   disposeRoads()
-
-  // Dispose visual quality composables
-  disposePostProcessing()
-  disposeEnvironment()
   disposeMaterials()
 
   controls.value?.dispose()
