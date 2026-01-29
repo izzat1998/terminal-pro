@@ -15,6 +15,8 @@ import type { VehicleType } from '@/composables/useVehicleModels'
 
 type CameraSource = 'webcam' | 'mock'
 
+type GateMode = 'entry' | 'exit'
+
 interface Props {
   /** Show/hide the widget */
   visible: boolean
@@ -22,11 +24,14 @@ interface Props {
   initialSource?: CameraSource
   /** Gate identifier for display */
   gateId?: string
+  /** Gate mode - entry (inbound) or exit (outbound) */
+  mode?: GateMode
 }
 
 const props = withDefaults(defineProps<Props>(), {
   initialSource: 'mock',
   gateId: 'Gate 01',
+  mode: 'entry',
 })
 
 const emit = defineEmits<{
@@ -86,6 +91,24 @@ const vehicleTypeIcons: Record<VehicleType, string> = {
   WAGON: '🚃',
   UNKNOWN: '❓',
 }
+
+// Mode-specific styling and labels
+const modeConfig = computed(() => {
+  if (props.mode === 'exit') {
+    return {
+      badgeClass: 'gate-badge--exit',
+      modeLabel: 'ВЫЕЗД',
+      detectionLabel: 'Выезд ТС',
+      scanButtonText: 'Сканировать выезд',
+    }
+  }
+  return {
+    badgeClass: 'gate-badge--entry',
+    modeLabel: 'ВЪЕЗД',
+    detectionLabel: 'Въезд ТС',
+    scanButtonText: 'Сканировать',
+  }
+})
 
 // Watch for visibility changes
 watch(() => props.visible, (visible) => {
@@ -238,12 +261,13 @@ onUnmounted(() => {
       <!-- Header -->
       <header class="widget-header" @click="toggleMinimize">
         <div class="header-left">
-          <div class="gate-badge">
+          <div class="gate-badge" :class="modeConfig.badgeClass">
             <svg class="gate-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
               <circle cx="12" cy="13" r="4"/>
             </svg>
             <span class="gate-label">{{ gateId }}</span>
+            <span class="gate-mode-badge">{{ modeConfig.modeLabel }}</span>
           </div>
         </div>
 
@@ -528,6 +552,37 @@ onUnmounted(() => {
   color: white;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+/* Mode badge (ВЪЕЗД/ВЫЕЗД) */
+.gate-mode-badge {
+  font-size: 8px;
+  font-weight: 700;
+  color: white;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 1px 4px;
+  border-radius: 2px;
+  letter-spacing: 0.5px;
+}
+
+/* Entry mode - green accent */
+.gate-badge--entry {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  border: 1px solid #10b981;
+}
+
+.gate-badge--entry .gate-mode-badge {
+  background: rgba(16, 185, 129, 0.4);
+}
+
+/* Exit mode - orange accent */
+.gate-badge--exit {
+  background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+  border: 1px solid #f97316;
+}
+
+.gate-badge--exit .gate-mode-badge {
+  background: rgba(249, 115, 22, 0.4);
 }
 
 /* Status Indicator */

@@ -18,6 +18,7 @@ const WIDGET_HEIGHT = 200
 const WIDGET_MARGIN = 16
 
 type DockPosition = 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right'
+type GateMode = 'entry' | 'exit'
 
 interface Props {
   /** The CSS3D scene to add the widget to */
@@ -28,11 +29,14 @@ interface Props {
   gateId?: string
   /** Container dimensions for position calculation */
   containerSize: { width: number; height: number }
+  /** Gate mode - entry (inbound) or exit (outbound) */
+  mode?: GateMode
 }
 
 const props = withDefaults(defineProps<Props>(), {
   dockPosition: 'bottom-left',
   gateId: 'Gate 01',
+  mode: 'entry',
 })
 
 const emit = defineEmits<{
@@ -148,6 +152,7 @@ onUnmounted(() => {
     <GateCameraWidget
       :visible="true"
       :gateId="gateId"
+      :mode="mode"
       @vehicleDetected="$emit('vehicleDetected', $event)"
     />
   </div>

@@ -898,6 +898,76 @@ export function useVehicles3D(
   }
 
   /**
+   * Find a vehicle by its license plate number
+   *
+   * Searches through all active vehicles (excluding those already exiting/fading)
+   * and returns the first match.
+   *
+   * @param plateNumber - License plate number to search for
+   * @returns The matched vehicle or null if not found
+   */
+  function findVehicleByPlate(plateNumber: string): ActiveVehicle | null {
+    for (const vehicle of vehicles.value.values()) {
+      if (
+        vehicle.plateNumber === plateNumber &&
+        vehicle.state !== 'exiting' &&
+        vehicle.state !== 'fading'
+      ) {
+        return vehicle
+      }
+    }
+    return null
+  }
+
+  /**
+   * Animate a vehicle through the complete exit sequence
+   *
+   * Full exit flow:
+   * 1. Change state to 'exiting' (label turns orange)
+   * 2. Animate along exit path from current zone to gate
+   * 3. Continue driving 20m past gate (off-screen)
+   * 4. Fade out and remove from scene
+   *
+   * @param vehicle - The vehicle to exit
+   * @param onComplete - Optional callback when exit animation completes
+   * @returns Promise that resolves when vehicle is fully removed
+   */
+  async function animateVehicleExit(
+    vehicle: ActiveVehicle,
+    onComplete?: () => void
+  ): Promise<void> {
+    // 1. Change state to exiting
+    setVehicleState(vehicle, 'exiting')
+
+    // 2. Animate along exit path from zone to gate
+    const exitPathId = `${vehicle.targetZone}_to_exit`
+    const exitPath = PATHS[exitPathId]
+
+    if (exitPath) {
+      await animateVehicleAlongPath(vehicle, exitPath)
+    } else {
+      // Fallback: animate directly to main gate if no exit path defined
+      const mainGatePos = getGateWorldPosition('main', coordSystem.value!)
+      if (mainGatePos) {
+        // Get DXF coordinates for main gate
+        const gateConfig = PATHS['main_to_waiting']?.waypoints?.[0]
+        if (gateConfig) {
+          await animateVehicleToPosition(vehicle, gateConfig.x, gateConfig.y, 3)
+        }
+      }
+    }
+
+    // 3. Drive off-screen (20m forward past gate)
+    await animateVehicleForward(vehicle, 20, 8)
+
+    // 4. Fade out and remove
+    await fadeOutVehicle(vehicle.id, 1000)
+
+    // Call completion callback
+    onComplete?.()
+  }
+
+  /**
    * Cleanup all resources
    */
   function dispose(): void {
@@ -933,6 +1003,10 @@ export function useVehicles3D(
     removeVehicle,
     removeAllVehicles,
     getAllVehicles,
+    findVehicleByPlate,
+
+    // Exit animation
+    animateVehicleExit,
 
     // Animation
     animateVehicleAlongPath,

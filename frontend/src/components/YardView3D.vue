@@ -23,6 +23,10 @@ import { usePlatforms3D, type PlatformData } from '@/composables/usePlatforms3D'
 import { useRoads3D, type RoadSegment, type SidewalkData } from '@/composables/useRoads3D'
 import { useVehicleModels, disposeLicensePlatePool } from '@/composables/useVehicleModels'
 import { useMaterials3D } from '@/composables/useMaterials3D'
+import { useVehicles3D, type VehicleDetection, type ActiveVehicle } from '@/composables/useVehicles3D'
+import { useExitDetection, type ExitDetectionResult } from '@/composables/useExitDetection'
+import GateCameraWidget from '@/components/yard/GateCameraWidget.vue'
+import type { VehicleDetectionResult } from '@/composables/useGateDetection'
 import { detectOptimalQuality, getQualityPreset, type QualityLevel } from '@/utils/qualityPresets'
 import { GATES, transformToWorld } from '@/data/scenePositions'
 import buildingsJson from '@/data/buildings.json'
@@ -67,6 +71,8 @@ interface Props {
   interactive?: boolean
   /** Show test vehicles at gates (for demo, disable when using live detection) */
   showTestVehicles?: boolean
+  /** Show gate camera widgets for entry/exit detection */
+  showGateCameras?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -76,6 +82,7 @@ const props = withDefaults(defineProps<Props>(), {
   colorMode: 'visual',  // Default to visual mode for colorful display
   interactive: true,
   showTestVehicles: true,  // Set to false when using live gate detection
+  showGateCameras: true,   // Show entry/exit camera widgets
 })
 
 const emit = defineEmits<{
@@ -255,6 +262,198 @@ const {
 
 // Quality level (auto-detected or user-selected)
 const qualityLevel = ref<QualityLevel>('medium')
+
+// ============ Gate Camera & Vehicle Detection ============
+// Vehicle management composable (initialized after scene is ready)
+const vehicles3DRef = shallowRef<ReturnType<typeof useVehicles3D> | null>(null)
+
+// Exit detection composable (initialized after vehicles3D is ready)
+const exitDetectionRef = shallowRef<ReturnType<typeof useExitDetection> | null>(null)
+
+// Gate camera visibility state
+const showEntryCameraWidget = ref(true)
+const showExitCameraWidget = ref(true)
+
+// Demo mode state
+const autoDemoEnabled = ref(false)
+let autoDemoIntervalId: ReturnType<typeof setInterval> | null = null
+
+// Random plate generation for demo
+const PLATE_LETTERS = 'ABCDEFGHJKLMNOPQRSTUVWXYZ'
+const PLATE_REGIONS = ['01', '10', '20', '25', '30', '40', '50', '60', '70', '75', '80', '90', '95']
+
+function generateRandomPlate(): string {
+  const region = PLATE_REGIONS[Math.floor(Math.random() * PLATE_REGIONS.length)]!
+  const letter1 = PLATE_LETTERS[Math.floor(Math.random() * PLATE_LETTERS.length)]
+  const digits = String(Math.floor(Math.random() * 1000)).padStart(3, '0')
+  const letter2 = PLATE_LETTERS[Math.floor(Math.random() * PLATE_LETTERS.length)]
+  const letter3 = PLATE_LETTERS[Math.floor(Math.random() * PLATE_LETTERS.length)]
+  return `${region}${letter1}${digits}${letter2}${letter3}`
+}
+
+/**
+ * Simulate a vehicle entry for demo purposes
+ */
+function simulateEntry(): void {
+  const mockResult: VehicleDetectionResult = {
+    plateNumber: generateRandomPlate(),
+    vehicleType: Math.random() > 0.4 ? 'TRUCK' : 'CAR',
+    confidence: 0.85 + Math.random() * 0.14,
+    timestamp: new Date().toISOString(),
+    source: 'mock',
+  }
+  handleEntryDetection(mockResult)
+}
+
+/**
+ * Simulate a vehicle exit for demo purposes
+ */
+function simulateExit(): void {
+  if (!exitDetectionRef.value) {
+    console.warn('[YardView3D] Exit detection not ready')
+    return
+  }
+  exitDetectionRef.value.triggerMockExit()
+}
+
+/**
+ * Toggle auto-demo mode
+ */
+function toggleAutoDemo(): void {
+  autoDemoEnabled.value = !autoDemoEnabled.value
+
+  if (autoDemoEnabled.value) {
+    // Start auto-demo: alternate between entry and exit every 10-15 seconds
+    let isEntry = true
+    autoDemoIntervalId = setInterval(() => {
+      if (isEntry) {
+        simulateEntry()
+      } else {
+        simulateExit()
+      }
+      isEntry = !isEntry
+    }, 10000 + Math.random() * 5000) // 10-15 seconds
+  } else {
+    // Stop auto-demo
+    if (autoDemoIntervalId) {
+      clearInterval(autoDemoIntervalId)
+      autoDemoIntervalId = null
+    }
+  }
+}
+
+/**
+ * Get count of parked vehicles for demo UI
+ */
+const parkedVehicleCount = computed(() => {
+  if (!vehicles3DRef.value) return 0
+  return Array.from(vehicles3DRef.value.vehicles.value.values())
+    .filter(v => v.state === 'parked').length
+})
+
+/**
+ * Initialize vehicle management and exit detection composables
+ * Called after scene and coordinate system are ready
+ */
+function initVehicleManagement(): void {
+  if (!scene.value || !coordinateSystem.value) return
+
+  // Initialize vehicles3D composable
+  vehicles3DRef.value = useVehicles3D(scene.value, coordinateSystem)
+
+  // Initialize exit detection with vehicle registry
+  exitDetectionRef.value = useExitDetection({
+    vehicleRegistry: vehicles3DRef.value.vehicles,
+    onVehicleMatched: handleExitVehicleMatched,
+    onUnknownVehicle: handleUnknownVehicleExit,
+  })
+
+  if (import.meta.env.DEV) {
+    console.log('[YardView3D] Vehicle management initialized')
+  }
+}
+
+/**
+ * Handle entry camera detection - spawn vehicle and animate to zone
+ */
+function handleEntryDetection(result: VehicleDetectionResult): void {
+  if (!vehicles3DRef.value || !coordinateSystem.value) {
+    console.warn('[YardView3D] Vehicle management not ready')
+    return
+  }
+
+  const detection: VehicleDetection = {
+    id: `entry-${Date.now()}`,
+    plateNumber: result.plateNumber,
+    vehicleType: result.vehicleType,
+    gateId: 'main',
+    targetZone: 'waiting',  // Default to waiting area
+    direction: 'entering',
+  }
+
+  // Spawn vehicle and animate to waiting area
+  const vehicle = vehicles3DRef.value.spawnVehicle(detection)
+  if (vehicle) {
+    // Animate to waiting zone after brief pause
+    setTimeout(() => {
+      vehicles3DRef.value?.animateToZone(vehicle, 'waiting')
+    }, 500)
+
+    if (import.meta.env.DEV) {
+      console.log(`[YardView3D] Entry detected: ${result.plateNumber}`)
+    }
+  }
+}
+
+/**
+ * Handle exit camera detection - process through exit detection composable
+ */
+function handleExitDetection(result: VehicleDetectionResult): void {
+  if (!exitDetectionRef.value) {
+    console.warn('[YardView3D] Exit detection not ready')
+    return
+  }
+
+  exitDetectionRef.value.processExitDetection(
+    result.plateNumber,
+    result.vehicleType,
+    result.confidence,
+    result.source
+  )
+}
+
+/**
+ * Callback when exit detection matches a vehicle in registry
+ */
+async function handleExitVehicleMatched(vehicle: ActiveVehicle, result: ExitDetectionResult): Promise<void> {
+  if (!vehicles3DRef.value) return
+
+  if (import.meta.env.DEV) {
+    console.log(`[YardView3D] Exit matched: ${vehicle.plateNumber} from zone ${vehicle.targetZone}`)
+  }
+
+  // Animate vehicle exit sequence
+  await vehicles3DRef.value.animateVehicleExit(vehicle, () => {
+    // Notify backend after animation completes
+    exitDetectionRef.value?.notifyBackendExit(
+      vehicle.id,
+      vehicle.plateNumber,
+      result.confidence
+    )
+  })
+}
+
+/**
+ * Callback when exit detection finds unknown vehicle
+ */
+function handleUnknownVehicleExit(plateNumber: string, result: ExitDetectionResult): void {
+  if (import.meta.env.DEV) {
+    console.log(`[YardView3D] Unknown exit: ${plateNumber} (not tracked)`)
+  }
+
+  // Silent logging - notify backend for audit trail
+  exitDetectionRef.value?.notifyBackendExit(null, plateNumber, result.confidence)
+}
 
 // Test vehicles group (for demonstration)
 const testVehiclesGroup = shallowRef<THREE.Group | null>(null)
@@ -717,6 +916,11 @@ async function loadYard(): Promise<void> {
     createTestVehicles()
   }
 
+  // Initialize vehicle management for gate camera detection
+  if (coordinateSystem.value && props.showGateCameras) {
+    initVehicleManagement()
+  }
+
   // Fit camera to content
   fitCameraToContent()
 
@@ -1090,6 +1294,19 @@ function dispose(): void {
     testVehiclesGroup.value = null
   }
 
+  // Stop auto-demo if running
+  if (autoDemoIntervalId) {
+    clearInterval(autoDemoIntervalId)
+    autoDemoIntervalId = null
+  }
+
+  // Dispose vehicle management
+  if (vehicles3DRef.value) {
+    vehicles3DRef.value.dispose()
+    vehicles3DRef.value = null
+  }
+  exitDetectionRef.value = null
+
   disposeYard()
   disposeContainers()
   disposeContainerLabels()
@@ -1345,6 +1562,70 @@ defineExpose({
       :y="tooltipY"
       :visible="hoveredContainerData !== null"
     />
+
+    <!-- Gate Camera Widgets -->
+    <div v-if="showGateCameras" class="gate-cameras-container">
+      <!-- Entry Camera (left side) -->
+      <div class="gate-camera-wrapper gate-camera-left">
+        <GateCameraWidget
+          :visible="showEntryCameraWidget"
+          mode="entry"
+          gateId="Ворота 01"
+          initial-source="mock"
+          @vehicle-detected="handleEntryDetection"
+        />
+      </div>
+
+      <!-- Exit Camera (right side) -->
+      <div class="gate-camera-wrapper gate-camera-right">
+        <GateCameraWidget
+          :visible="showExitCameraWidget"
+          mode="exit"
+          gateId="Ворота 01"
+          initial-source="mock"
+          @vehicle-detected="handleExitDetection"
+        />
+      </div>
+    </div>
+
+    <!-- Demo Controls Panel -->
+    <div v-if="showGateCameras" class="demo-controls">
+      <div class="demo-controls-header">
+        <span class="demo-icon">🎬</span>
+        <span class="demo-title">Демо режим</span>
+      </div>
+      <div class="demo-controls-body">
+        <div class="demo-stats">
+          <span class="demo-stat">
+            <span class="stat-icon">🚛</span>
+            <span class="stat-value">{{ parkedVehicleCount }}</span>
+            <span class="stat-label">на стоянке</span>
+          </span>
+        </div>
+        <div class="demo-buttons">
+          <a-button size="small" @click="simulateEntry">
+            <template #icon><span>➡️</span></template>
+            Въезд
+          </a-button>
+          <a-button
+            size="small"
+            :disabled="parkedVehicleCount === 0"
+            @click="simulateExit"
+          >
+            <template #icon><span>⬅️</span></template>
+            Выезд
+          </a-button>
+        </div>
+        <div class="demo-auto">
+          <a-switch
+            v-model:checked="autoDemoEnabled"
+            size="small"
+            @change="toggleAutoDemo"
+          />
+          <span class="auto-label">Авто</span>
+        </div>
+      </div>
+    </div>
 
     <!-- Legend -->
     <div class="color-legend">
@@ -1813,5 +2094,134 @@ defineExpose({
 .search-bar-leave-to {
   opacity: 0;
   transform: translateX(-50%) translateY(-4px);
+}
+
+/* ============ Gate Camera Widgets ============ */
+.gate-cameras-container {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 15;
+}
+
+.gate-camera-wrapper {
+  position: absolute;
+  bottom: 0;
+  pointer-events: auto;
+}
+
+.gate-camera-left {
+  left: 16px;
+}
+
+.gate-camera-right {
+  right: 16px;
+}
+
+/* Adjust stats position when cameras are visible */
+.yard-view-3d:has(.gate-cameras-container) .yard-stats {
+  bottom: 240px; /* Move stats above the camera widgets */
+}
+
+/* Adjust legend position when cameras are visible */
+.yard-view-3d:has(.gate-cameras-container) .color-legend {
+  bottom: 240px; /* Move legend above the camera widgets */
+}
+
+/* ============ Demo Controls Panel ============ */
+.demo-controls {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  min-width: 160px;
+}
+
+.demo-controls-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.demo-icon {
+  font-size: 14px;
+}
+
+.demo-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.demo-controls-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.demo-stats {
+  display: flex;
+  justify-content: center;
+}
+
+.demo-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.demo-stat .stat-icon {
+  font-size: 14px;
+}
+
+.demo-stat .stat-value {
+  font-weight: 600;
+  color: #374151;
+  min-width: 16px;
+  text-align: center;
+}
+
+.demo-stat .stat-label {
+  color: #9ca3af;
+}
+
+.demo-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.demo-buttons .ant-btn {
+  flex: 1;
+  font-size: 11px;
+}
+
+.demo-auto {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.demo-auto .auto-label {
+  font-size: 11px;
+  color: #6b7280;
 }
 </style>

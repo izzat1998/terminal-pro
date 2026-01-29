@@ -14,7 +14,19 @@
         "y": 73391
       },
       "rotation": 65,
-      "direction": "inbound"
+      "direction": "bidirectional",
+      "lanes": {
+        "entry": {
+          "offset": { "x": -5, "y": 0 },
+          "direction": "inbound",
+          "cameraId": "main_entry"
+        },
+        "exit": {
+          "offset": { "x": 5, "y": 0 },
+          "direction": "outbound",
+          "cameraId": "main_exit"
+        }
+      }
     },
     "secondary": {
       "id": "secondary",
