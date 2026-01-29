@@ -10,6 +10,7 @@ import {
   dxfToWorld as dxfToWorldUtil,
   type CoordinateTransformOptions
 } from '@/utils/coordinateTransforms'
+import { createExtrudedPolygonGeometry } from '@/utils/geometryUtils'
 
 // Platform footprint data from extraction
 export interface PlatformData {
@@ -95,37 +96,21 @@ export function usePlatforms3D(platformsRef: Ref<PlatformData[]>) {
       return null
     }
 
-    // Create 2D shape from vertices (in XZ plane)
-    const shape = new THREE.Shape()
-
-    // Convert first vertex to world coordinates
-    const firstVertex = vertices[0]
-    if (!firstVertex) return null
-    const firstWorld = dxfToWorld(firstVertex.x, firstVertex.y, opts)
-    shape.moveTo(firstWorld.x, -firstWorld.z)  // Shape uses X,Y; we'll rotate later
-
-    // Add remaining vertices
-    for (let i = 1; i < vertices.length; i++) {
-      const vertex = vertices[i]
-      if (!vertex) continue
+    // Transform vertices to world coordinates
+    const worldPoints: Array<{ x: number; z: number }> = []
+    for (const vertex of vertices) {
       const world = dxfToWorld(vertex.x, vertex.y, opts)
-      shape.lineTo(world.x, -world.z)
+      worldPoints.push({ x: world.x, z: world.z })
     }
-    shape.closePath()
 
-    // Extrude settings
+    // Create extruded geometry using utility
     const height = opts.height
-    const extrudeSettings: THREE.ExtrudeGeometryOptions = {
-      depth: height,
-      bevelEnabled: false,
+    const geometry = createExtrudedPolygonGeometry(worldPoints, height, { bevelEnabled: false })
+
+    if (!geometry) {
+      console.warn(`Platform ${platform.id} failed to create geometry`)
+      return null
     }
-
-    // Create geometry
-    const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings)
-
-    // Rotate to stand upright: ExtrudeGeometry extrudes along +Z,
-    // we need platforms to be flat on the ground (XZ plane)
-    geometry.rotateX(-Math.PI / 2)
 
     // Create material with slight transparency
     const material = new THREE.MeshStandardMaterial({
