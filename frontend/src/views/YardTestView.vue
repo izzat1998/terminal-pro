@@ -12,15 +12,17 @@
  */
 
 import { ref, shallowRef, onMounted, onUnmounted, watch, computed } from 'vue'
-import type * as THREE from 'three'
+import * as THREE from 'three'
 import YardView3D from '@/components/YardView3D.vue'
 import { isInputElement } from '@/utils/keyboardUtils'
+import { useCSS3DRenderer } from '@/composables/useCSS3DRenderer'
 
 import YardGridOverlay from '@/components/yard/YardGridOverlay.vue'
 import YardDebugTooltip from '@/components/yard/YardDebugTooltip.vue'
 import YardDrawOverlay from '@/components/yard/YardDrawOverlay.vue'
 import GateCamera3D from '@/components/yard/GateCamera3D.vue'
 import GateCameraWidget from '@/components/yard/GateCameraWidget.vue'
+import GateCameraWidget3D from '@/components/yard/GateCameraWidget3D.vue'
 import VehicleStatsOverlay from '@/components/yard/VehicleStatsOverlay.vue'
 import GateStatsHeader from '@/components/yard/GateStatsHeader.vue'
 import { useYardDebug } from '@/composables/useYardDebug'
@@ -43,6 +45,12 @@ const scene = shallowRef<THREE.Scene>()
 const camera = shallowRef<THREE.Camera>()
 const containerRef = ref<HTMLElement>()
 const coordinateSystem = shallowRef<DxfCoordinateSystem | null>(null)
+
+// CSS3DRenderer for 3D positioned widgets
+const css3D = useCSS3DRenderer({ container: containerRef })
+
+// Container size tracking for CSS3D widget positioning
+const viewportSize = ref({ width: 0, height: 0 })
 
 // Debug mode
 const { isDebugMode, debugSettings, initDebugMode, disposeDebugMode } = useYardDebug()
@@ -254,7 +262,18 @@ function onLoaded(stats: { entityCount: number; containerCount: number }): void 
       // Initialize label renderer for vehicle plates
       if (containerRef.value) {
         vehicles3D.initLabelRenderer(containerRef.value)
+
+        // Initialize container size for CSS3D widget positioning
+        viewportSize.value = {
+          width: containerRef.value.clientWidth,
+          height: containerRef.value.clientHeight,
+        }
       }
+    }
+
+    // Initialize CSS3DRenderer after camera is ready
+    if (camera.value) {
+      css3D.init(camera.value)
     }
   }
 }
@@ -273,6 +292,18 @@ function onCameraClick(): void {
 function onWidgetClose(): void {
   isCameraWidgetVisible.value = false
   isWidgetOpen.value = false
+}
+
+// Focus on gate when 3D camera is clicked
+function focusOnGate(payload: { gateId: string; position: { x: number; y: number; z: number } }): void {
+  const yardView = yardViewRef.value
+  if (!yardView) return
+
+  // Use the exposed flyToPosition method from YardView3D
+  const targetPos = new THREE.Vector3(payload.position.x, 0, payload.position.z)
+
+  // Zoom level 4 provides a good close-up view of the gate area
+  yardView.flyToPosition(targetPos, 4, 1000)
 }
 
 // Gate entry path coordinates (DXF)
@@ -372,11 +403,26 @@ function handleTestKeydown(event: KeyboardEvent): void {
   }
 }
 
+// Resize handler for CSS3D and viewport size tracking
+function handleResize(): void {
+  // Update CSS3D renderer size
+  css3D.updateSize()
+
+  // Update viewport size for CSS3D widgets
+  if (containerRef.value) {
+    viewportSize.value = {
+      width: containerRef.value.clientWidth,
+      height: containerRef.value.clientHeight,
+    }
+  }
+}
+
 // Lifecycle
 onMounted(async () => {
   initDebugMode()
   initDrawMode()
   window.addEventListener('keydown', handleTestKeydown)
+  window.addEventListener('resize', handleResize)
   await fetchYardData()
 })
 
@@ -384,7 +430,9 @@ onUnmounted(() => {
   disposeDebugMode()
   disposeDrawMode()
   window.removeEventListener('keydown', handleTestKeydown)
+  window.removeEventListener('resize', handleResize)
   vehicles3D?.dispose()
+  css3D.dispose()
 })
 </script>
 
@@ -461,6 +509,7 @@ onUnmounted(() => {
           :detection-zone-vertices="GATE_DETECTION_ZONE"
           gate-id="main"
           @click="onCameraClick"
+          @focus-gate="focusOnGate"
         />
 
         <!-- Debug Grid Overlay -->
@@ -513,8 +562,18 @@ onUnmounted(() => {
         />
       </div>
 
-      <!-- Gate Camera Widget (docked) -->
+      <!-- Gate Camera Widget (CSS3D positioned when scene is ready, fallback to docked) -->
+      <GateCameraWidget3D
+        v-if="css3D.scene.value && viewportSize.width > 0"
+        :css3-d-scene="css3D.scene.value"
+        dock-position="bottom-left"
+        gate-id="Въезд А"
+        :container-size="viewportSize"
+        @vehicle-detected="onVehicleDetected"
+      />
+      <!-- Fallback widget when CSS3D is not ready -->
       <GateCameraWidget
+        v-else
         :visible="isCameraWidgetVisible"
         docked="bottom-left"
         initial-source="mock"

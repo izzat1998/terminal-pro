@@ -52,7 +52,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  click: [screenPosition: { x: number; y: number }]
+  focusGate: [payload: { gateId: string; position: { x: number; y: number; z: number } }]
   hover: [isHovered: boolean]
 }>()
 
@@ -142,36 +142,19 @@ function onMouseMove(event: MouseEvent): void {
   }
 }
 
-// Handle click on camera
+// Handle click on camera - emit gate position for camera focus
 function onClick(_event: MouseEvent): void {
   if (!cameraInstance.value || !isHovered.value) return
 
-  // Calculate screen position for widget
-  const cameraWorldPos = new THREE.Vector3()
-  cameraInstance.value.mesh.getWorldPosition(cameraWorldPos)
-
-  // Project to screen coordinates
-  const screenPos = cameraWorldPos.clone().project(props.camera)
-
-  const rect = props.container.getBoundingClientRect()
-  const x = ((screenPos.x + 1) / 2) * rect.width + rect.left
-  const y = ((-screenPos.y + 1) / 2) * rect.height + rect.top
-
-  // Offset to the right of the camera
-  const offsetX = 20
-  const widgetWidth = 300
-  const widgetHeight = 400
-
-  // Check if widget would go off-screen, if so position to the left
-  let finalX = x + offsetX
-  if (finalX + widgetWidth > window.innerWidth - 20) {
-    finalX = x - offsetX - widgetWidth
-  }
-
-  // Ensure widget stays within vertical bounds
-  let finalY = Math.max(20, Math.min(y - 50, window.innerHeight - widgetHeight - 20))
-
-  emit('click', { x: finalX, y: finalY })
+  // Emit the gate's world position for camera focus animation
+  emit('focusGate', {
+    gateId: props.gateId,
+    position: {
+      x: cameraInstance.value.mesh.position.x,
+      y: cameraInstance.value.mesh.position.y,
+      z: cameraInstance.value.mesh.position.z,
+    },
+  })
 }
 
 // Watch for widget state changes

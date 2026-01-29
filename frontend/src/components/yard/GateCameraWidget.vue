@@ -4,11 +4,12 @@
  *
  * Corporate-grade camera widget for vehicle detection at terminal gates.
  * Clean, efficient interface focused on operational clarity.
+ * Designed to be embedded in CSS3DRenderer for 3D yard canvas integration.
  */
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { ToolOutlined, CameraOutlined, ScanOutlined } from '@ant-design/icons-vue'
+import { ToolOutlined, CameraOutlined, ScanOutlined, DownOutlined, UpOutlined } from '@ant-design/icons-vue'
 import { useGateDetection, type VehicleDetectionResult } from '@/composables/useGateDetection'
 import type { VehicleType } from '@/composables/useVehicleModels'
 
@@ -17,25 +18,18 @@ type CameraSource = 'webcam' | 'mock'
 interface Props {
   /** Show/hide the widget */
   visible: boolean
-  /** Screen position { x, y } - ignored when docked */
-  position?: { x: number; y: number }
   /** Initial camera source */
   initialSource?: CameraSource
-  /** Dock to fixed position (ignores position prop) */
-  docked?: 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right' | false
   /** Gate identifier for display */
   gateId?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   initialSource: 'mock',
-  position: () => ({ x: 100, y: 100 }),
-  docked: false,
   gateId: 'Gate 01',
 })
 
 const emit = defineEmits<{
-  close: []
   vehicleDetected: [result: VehicleDetectionResult]
 }>()
 
@@ -50,10 +44,8 @@ const isWebcamActive = ref(false)
 const webcamError = ref<string | null>(null)
 const mediaStream = ref<MediaStream | null>(null)
 
-// Dragging state
-const isDragging = ref(false)
-const dragOffset = ref({ x: 0, y: 0 })
-const widgetPosition = ref({ x: props.position.x, y: props.position.y })
+// Minimize state
+const isMinimized = ref(false)
 
 // Detection
 const { isDetecting, lastResult, error: detectionError, useMockDetection, detectVehicle, clearError } = useGateDetection()
@@ -94,13 +86,6 @@ const vehicleTypeIcons: Record<VehicleType, string> = {
   WAGON: '🚃',
   UNKNOWN: '❓',
 }
-
-// Watch for position changes
-watch(() => props.position, (newPos) => {
-  if (!isDragging.value) {
-    widgetPosition.value = { x: newPos.x, y: newPos.y }
-  }
-}, { immediate: true })
 
 // Watch for visibility changes
 watch(() => props.visible, (visible) => {
@@ -225,105 +210,60 @@ async function handleCapture(): Promise<void> {
   }
 }
 
-// Close handlers
-function handleClose(): void {
-  stopWebcam()
-  emit('close')
-}
-
-function handleKeyDown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && props.visible) {
-    handleClose()
-  }
-}
-
-// Drag handlers
-function startDrag(event: MouseEvent): void {
-  if (props.docked) return
-  isDragging.value = true
-  dragOffset.value = {
-    x: event.clientX - widgetPosition.value.x,
-    y: event.clientY - widgetPosition.value.y,
-  }
-
-  document.addEventListener('mousemove', onDrag)
-  document.addEventListener('mouseup', stopDrag)
-}
-
-function onDrag(event: MouseEvent): void {
-  if (!isDragging.value) return
-
-  widgetPosition.value = {
-    x: event.clientX - dragOffset.value.x,
-    y: event.clientY - dragOffset.value.y,
-  }
-}
-
-function stopDrag(): void {
-  isDragging.value = false
-  document.removeEventListener('mousemove', onDrag)
-  document.removeEventListener('mouseup', stopDrag)
+// Minimize/Expand toggle
+function toggleMinimize(): void {
+  isMinimized.value = !isMinimized.value
 }
 
 // Lifecycle
 onMounted(() => {
-  document.addEventListener('keydown', handleKeyDown)
-
   if (props.visible && currentSource.value === 'webcam') {
     startWebcam()
   }
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeyDown)
   stopWebcam()
 })
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="widget-slide">
-      <div
-        v-if="visible"
-        ref="widgetRef"
-        class="gate-camera-widget"
-        :class="{ [`docked-${docked}`]: docked, 'is-dragging': isDragging }"
-        :style="docked ? undefined : {
-          left: `${widgetPosition.x}px`,
-          top: `${widgetPosition.y}px`,
-        }"
-      >
-        <!-- Header -->
-        <header class="widget-header" @mousedown="startDrag">
-          <div class="header-left">
-            <div class="gate-badge">
-              <svg class="gate-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                <circle cx="12" cy="13" r="4"/>
-              </svg>
-              <span class="gate-label">{{ gateId }}</span>
-            </div>
+  <Transition name="widget-slide">
+    <div
+      v-if="visible"
+      ref="widgetRef"
+      class="gate-camera-widget"
+      :class="{ 'gate-widget--minimized': isMinimized }"
+    >
+      <!-- Header -->
+      <header class="widget-header" @click="toggleMinimize">
+        <div class="header-left">
+          <div class="gate-badge">
+            <svg class="gate-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            <span class="gate-label">{{ gateId }}</span>
           </div>
+        </div>
 
-          <div class="header-center">
-            <div class="status-indicator" :class="statusType">
-              <span class="status-dot"></span>
-              <span class="status-label">{{ statusText }}</span>
-            </div>
+        <div class="header-center">
+          <div class="status-indicator" :class="statusType">
+            <span class="status-dot"></span>
+            <span class="status-label">{{ statusText }}</span>
           </div>
+        </div>
 
-          <div class="header-right">
-            <button class="btn-icon btn-close" @click="handleClose" @mousedown.stop title="Закрыть (Esc)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"/>
-                <line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </button>
-          </div>
-        </header>
+        <div class="header-right">
+          <button class="btn-icon btn-toggle" :title="isMinimized ? 'Развернуть' : 'Свернуть'">
+            <UpOutlined v-if="isMinimized" />
+            <DownOutlined v-else />
+          </button>
+        </div>
+      </header>
 
-        <!-- Video Feed -->
-        <div class="video-container">
+      <!-- Video Feed -->
+      <div v-show="!isMinimized" class="video-container">
           <video
             ref="videoRef"
             class="video-feed"
@@ -380,9 +320,9 @@ onUnmounted(() => {
           <canvas ref="canvasRef" class="capture-canvas" />
         </div>
 
-        <!-- Detection Result -->
-        <Transition name="result-slide">
-          <div v-if="lastResult" class="result-panel">
+      <!-- Detection Result -->
+      <Transition name="result-slide">
+        <div v-if="lastResult && !isMinimized" class="result-panel">
             <div class="result-header">
               <svg class="result-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
@@ -413,42 +353,39 @@ onUnmounted(() => {
           </div>
         </Transition>
 
-        <!-- Controls -->
-        <div class="controls-panel">
-          <a-segmented
-            :value="currentSource"
-            :options="[
-              { value: 'mock', label: 'Тест', icon: ToolOutlined },
-              { value: 'webcam', label: 'Камера', icon: CameraOutlined },
-            ]"
-            block
-            size="small"
-            @change="(val: string | number) => onSourceChange(val as CameraSource)"
-          />
+      <!-- Controls -->
+      <div v-show="!isMinimized" class="controls-panel">
+        <a-segmented
+          :value="currentSource"
+          :options="[
+            { value: 'mock', label: 'Тест', icon: ToolOutlined },
+            { value: 'webcam', label: 'Камера', icon: CameraOutlined },
+          ]"
+          block
+          size="small"
+          @change="(val: string | number) => onSourceChange(val as CameraSource)"
+        />
 
-          <a-button
-            type="primary"
-            block
-            size="small"
-            :loading="isDetecting"
-            :disabled="!canCapture"
-            class="scan-btn"
-            @click="handleCapture"
-          >
-            <template v-if="!isDetecting" #icon><ScanOutlined /></template>
-            {{ isDetecting ? 'Анализ...' : 'Сканировать' }}
-          </a-button>
-        </div>
-
-        <!-- Footer -->
-        <footer class="widget-footer">
-          <span class="footer-hint">Esc — закрыть</span>
-          <span class="footer-divider">•</span>
-          <span class="footer-hint">Перетащите заголовок для перемещения</span>
-        </footer>
+        <a-button
+          type="primary"
+          block
+          size="small"
+          :loading="isDetecting"
+          :disabled="!canCapture"
+          class="scan-btn"
+          @click.stop="handleCapture"
+        >
+          <template v-if="!isDetecting" #icon><ScanOutlined /></template>
+          {{ isDetecting ? 'Анализ...' : 'Сканировать' }}
+        </a-button>
       </div>
-    </Transition>
-  </Teleport>
+
+      <!-- Footer -->
+      <footer v-show="!isMinimized" class="widget-footer">
+        <span class="footer-hint">Нажмите на заголовок для сворачивания</span>
+      </footer>
+    </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -462,6 +399,14 @@ onUnmounted(() => {
   --widget-border: var(--color-border, #e2e8f0);
   --widget-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
   --widget-shadow-lg: var(--shadow-xl, 0 20px 25px -5px rgba(0, 0, 0, 0.1));
+
+  /* 3D Depth Effects */
+  --widget-shadow-3d:
+    0 2px 4px rgba(0, 0, 0, 0.1),
+    0 8px 16px rgba(0, 0, 0, 0.1),
+    0 16px 32px rgba(0, 0, 0, 0.15),
+    0 32px 64px rgba(0, 0, 0, 0.1);
+  --widget-border-glow: 0 0 0 1px rgba(255, 255, 255, 0.1);
 
   --text-primary: var(--color-text, #1e293b);
   --text-secondary: var(--color-text-secondary, #64748b);
@@ -484,46 +429,55 @@ onUnmounted(() => {
   --transition-base: 200ms ease;
   --transition-slow: 300ms ease;
 
-  position: fixed;
   width: 260px;
   background: var(--widget-bg);
   border: 1px solid var(--widget-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--widget-shadow-lg);
-  z-index: 1000;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   user-select: none;
+
+  /* 3D Depth Styling */
+  box-shadow:
+    var(--widget-shadow-3d),
+    var(--widget-border-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transform: perspective(1000px) rotateX(1deg);
+  transform-origin: center bottom;
+  transition:
+    transform var(--transition-base),
+    box-shadow var(--transition-base),
+    height var(--transition-slow);
 }
 
-.gate-camera-widget.is-dragging {
-  cursor: grabbing;
-  box-shadow: var(--widget-shadow-lg), 0 0 0 2px var(--accent-primary);
+/* Hover effect for subtle 3D lift */
+.gate-camera-widget:hover {
+  transform: perspective(1000px) rotateX(0.5deg) translateY(-2px);
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.12),
+    0 12px 24px rgba(0, 0, 0, 0.12),
+    0 24px 48px rgba(0, 0, 0, 0.15),
+    0 48px 96px rgba(0, 0, 0, 0.1),
+    var(--widget-border-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
-/* Docked Positions */
-.gate-camera-widget.docked-bottom-left {
-  left: 180px !important;
-  bottom: 16px !important;
-  top: auto !important;
+/* Minimized State */
+.gate-camera-widget.gate-widget--minimized {
+  height: auto;
+  transform: perspective(1000px) rotateX(0deg);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.08),
+    0 4px 8px rgba(0, 0, 0, 0.08),
+    var(--widget-border-glow);
 }
 
-.gate-camera-widget.docked-bottom-right {
-  right: 16px !important;
-  bottom: 16px !important;
-  left: auto !important;
-  top: auto !important;
+.gate-camera-widget.gate-widget--minimized:hover {
+  transform: perspective(1000px) rotateX(0deg) translateY(-1px);
 }
 
-.gate-camera-widget.docked-top-left {
-  left: 16px !important;
-  top: 80px !important;
-}
-
-.gate-camera-widget.docked-top-right {
-  right: 16px !important;
-  top: 80px !important;
-  left: auto !important;
+.gate-camera-widget.gate-widget--minimized .widget-header {
+  border-bottom: none;
 }
 
 /* ============ HEADER ============ */
@@ -534,11 +488,12 @@ onUnmounted(() => {
   padding: 10px 12px;
   background: var(--surface-1);
   border-bottom: 1px solid var(--widget-border);
-  cursor: grab;
+  cursor: pointer;
+  transition: background var(--transition-fast);
 }
 
-.widget-header:active {
-  cursor: grabbing;
+.widget-header:hover {
+  background: var(--surface-2);
 }
 
 .header-left,
@@ -627,7 +582,7 @@ onUnmounted(() => {
   color: var(--text-secondary);
 }
 
-/* Close Button */
+/* Toggle Button */
 .btn-icon {
   display: flex;
   align-items: center;
@@ -643,18 +598,18 @@ onUnmounted(() => {
 }
 
 .btn-icon:hover {
-  background: var(--surface-2);
+  background: var(--surface-3);
   color: var(--text-primary);
 }
 
-.btn-icon svg {
+.btn-icon svg,
+.btn-icon :deep(svg) {
   width: 14px;
   height: 14px;
 }
 
-.btn-close:hover {
-  background: rgba(239, 68, 68, 0.1);
-  color: var(--accent-error);
+.btn-toggle {
+  pointer-events: none;
 }
 
 /* ============ VIDEO CONTAINER ============ */
@@ -663,6 +618,8 @@ onUnmounted(() => {
   height: 130px;
   background: var(--text-primary);
   overflow: hidden;
+  /* Inset shadow for depth - video appears recessed */
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .video-feed {
@@ -952,13 +909,13 @@ onUnmounted(() => {
 /* ============ TRANSITIONS ============ */
 .widget-slide-enter-active,
 .widget-slide-leave-active {
-  transition: all var(--transition-slow);
+  transition: all 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .widget-slide-enter-from,
 .widget-slide-leave-to {
   opacity: 0;
-  transform: translateY(16px) scale(0.98);
+  transform: perspective(1000px) rotateX(10deg) translateY(24px) scale(0.95);
 }
 
 .result-slide-enter-active,
