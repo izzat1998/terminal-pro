@@ -10,6 +10,7 @@ import {
   dxfToWorld as dxfToWorldUtil,
   type CoordinateTransformOptions
 } from '@/utils/coordinateTransforms'
+import { mergeBufferGeometries } from '@/utils/geometryUtils'
 
 // Road segment data from extraction
 export interface RoadSegment {
@@ -309,73 +310,6 @@ export function useRoads3D(
   }
 
   /**
-   * Merge multiple geometries into one
-   */
-  function mergeGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeometry | null {
-    const validGeometries = geometries.filter(g => g !== null)
-    if (validGeometries.length === 0) return null
-
-    let totalVertices = 0
-    let totalIndices = 0
-
-    validGeometries.forEach(geom => {
-      const pos = geom.getAttribute('position')
-      const idx = geom.getIndex()
-      if (pos) totalVertices += pos.count
-      if (idx) totalIndices += idx.count
-    })
-
-    const mergedPositions = new Float32Array(totalVertices * 3)
-    const mergedNormals = new Float32Array(totalVertices * 3)
-    const mergedIndices = new Uint32Array(totalIndices)
-
-    let vertexOffset = 0
-    let indexOffset = 0
-    let vertexCount = 0
-
-    validGeometries.forEach(geom => {
-      const pos = geom.getAttribute('position') as THREE.BufferAttribute
-      const norm = geom.getAttribute('normal') as THREE.BufferAttribute | null
-      const idx = geom.getIndex()
-
-      if (!pos) return
-
-      for (let i = 0; i < pos.count; i++) {
-        mergedPositions[vertexOffset + i * 3] = pos.getX(i)
-        mergedPositions[vertexOffset + i * 3 + 1] = pos.getY(i)
-        mergedPositions[vertexOffset + i * 3 + 2] = pos.getZ(i)
-
-        if (norm) {
-          mergedNormals[vertexOffset + i * 3] = norm.getX(i)
-          mergedNormals[vertexOffset + i * 3 + 1] = norm.getY(i)
-          mergedNormals[vertexOffset + i * 3 + 2] = norm.getZ(i)
-        } else {
-          mergedNormals[vertexOffset + i * 3] = 0
-          mergedNormals[vertexOffset + i * 3 + 1] = 1
-          mergedNormals[vertexOffset + i * 3 + 2] = 0
-        }
-      }
-
-      if (idx) {
-        for (let i = 0; i < idx.count; i++) {
-          mergedIndices[indexOffset + i] = idx.getX(i) + vertexCount
-        }
-        indexOffset += idx.count
-      }
-
-      vertexOffset += pos.count * 3
-      vertexCount += pos.count
-    })
-
-    const merged = new THREE.BufferGeometry()
-    merged.setAttribute('position', new THREE.BufferAttribute(mergedPositions, 3))
-    merged.setAttribute('normal', new THREE.BufferAttribute(mergedNormals, 3))
-    merged.setIndex(new THREE.BufferAttribute(mergedIndices, 1))
-
-    return merged
-  }
-
-  /**
    * Create all road and sidewalk meshes
    */
   function createRoadMeshes(opts: UseRoads3DOptions = {}): THREE.Group {
@@ -421,7 +355,7 @@ export function useRoads3D(
 
     // Merge and create road mesh
     if (roadGeometries.length > 0) {
-      const mergedRoad = mergeGeometries(roadGeometries)
+      const mergedRoad = mergeBufferGeometries(roadGeometries)
       roadGeometries.forEach(g => g.dispose())
 
       if (mergedRoad) {
@@ -443,7 +377,7 @@ export function useRoads3D(
     if (mergedOpts.showCurbs) {
       const allCurbGeometries = [...leftCurbGeometries, ...rightCurbGeometries]
       if (allCurbGeometries.length > 0) {
-        const mergedCurb = mergeGeometries(allCurbGeometries)
+        const mergedCurb = mergeBufferGeometries(allCurbGeometries)
         allCurbGeometries.forEach(g => g.dispose())
 
         if (mergedCurb) {
@@ -475,7 +409,7 @@ export function useRoads3D(
 
     // Merge and create sidewalk mesh
     if (sidewalkGeometries.length > 0) {
-      const mergedSidewalk = mergeGeometries(sidewalkGeometries)
+      const mergedSidewalk = mergeBufferGeometries(sidewalkGeometries)
       sidewalkGeometries.forEach(g => g.dispose())
 
       if (mergedSidewalk) {

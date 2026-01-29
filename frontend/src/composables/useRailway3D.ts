@@ -10,6 +10,7 @@ import {
   dxfToWorld as dxfToWorldUtil,
   type CoordinateTransformOptions
 } from '@/utils/coordinateTransforms'
+import { mergeBufferGeometries } from '@/utils/geometryUtils'
 
 // Railway track data from extraction
 export interface RailwayTrack {
@@ -318,68 +319,6 @@ export function useRailway3D(tracksRef: Ref<RailwayTrack[]>) {
     console.log(`🚂 Created railway with ${tracks.length} tracks, ${sleeperIndex} sleepers`)
 
     return group
-  }
-
-  /**
-   * Simple geometry merge
-   */
-  function mergeBufferGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeometry | null {
-    if (geometries.length === 0) return null
-
-    let totalVertices = 0
-    let totalIndices = 0
-
-    geometries.forEach(geom => {
-      const pos = geom.getAttribute('position')
-      const idx = geom.getIndex()
-      if (pos) totalVertices += pos.count
-      if (idx) totalIndices += idx.count
-    })
-
-    const mergedPositions = new Float32Array(totalVertices * 3)
-    const mergedNormals = new Float32Array(totalVertices * 3)
-    const mergedIndices = new Uint32Array(totalIndices)
-
-    let vertexOffset = 0
-    let indexOffset = 0
-    let vertexCount = 0
-
-    geometries.forEach(geom => {
-      const pos = geom.getAttribute('position') as THREE.BufferAttribute
-      const norm = geom.getAttribute('normal') as THREE.BufferAttribute
-      const idx = geom.getIndex()
-
-      if (!pos) return
-
-      for (let i = 0; i < pos.count; i++) {
-        mergedPositions[vertexOffset + i * 3] = pos.getX(i)
-        mergedPositions[vertexOffset + i * 3 + 1] = pos.getY(i)
-        mergedPositions[vertexOffset + i * 3 + 2] = pos.getZ(i)
-
-        if (norm) {
-          mergedNormals[vertexOffset + i * 3] = norm.getX(i)
-          mergedNormals[vertexOffset + i * 3 + 1] = norm.getY(i)
-          mergedNormals[vertexOffset + i * 3 + 2] = norm.getZ(i)
-        }
-      }
-
-      if (idx) {
-        for (let i = 0; i < idx.count; i++) {
-          mergedIndices[indexOffset + i] = idx.getX(i) + vertexCount
-        }
-        indexOffset += idx.count
-      }
-
-      vertexOffset += pos.count * 3
-      vertexCount += pos.count
-    })
-
-    const merged = new THREE.BufferGeometry()
-    merged.setAttribute('position', new THREE.BufferAttribute(mergedPositions, 3))
-    merged.setAttribute('normal', new THREE.BufferAttribute(mergedNormals, 3))
-    merged.setIndex(new THREE.BufferAttribute(mergedIndices, 1))
-
-    return merged
   }
 
   /**
