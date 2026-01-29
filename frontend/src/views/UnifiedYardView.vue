@@ -27,7 +27,8 @@ import VehicleStatsOverlay from '@/components/yard/VehicleStatsOverlay.vue'
 import GateStatsHeader from '@/components/yard/GateStatsHeader.vue'
 import { useYardDebug } from '@/composables/useYardDebug'
 import { useYardDraw } from '@/composables/useYardDraw'
-import { useVehicles3D, type VehicleDetection } from '@/composables/useVehicles3D'
+import { useVehicles3D, type VehicleDetection, type ActiveVehicle } from '@/composables/useVehicles3D'
+import { useExitDetection, type ExitDetectionResult } from '@/composables/useExitDetection'
 import type { ContainerPosition, ContainerData } from '@/composables/useContainers3D'
 import type { DxfCoordinateSystem } from '@/types/dxf'
 import type { VehicleDetectionResult } from '@/composables/useGateDetection'
@@ -170,9 +171,13 @@ if (import.meta.env.DEV) {
 // Gate camera widget state
 const isWidgetOpen = ref(false)
 const isCameraWidgetVisible = ref(true)
+const isExitCameraWidgetVisible = ref(true)
 
 // Vehicles3D composable
 let vehicles3D: ReturnType<typeof useVehicles3D> | null = null
+
+// Exit detection composable
+let exitDetection: ReturnType<typeof useExitDetection> | null = null
 
 // Vehicle counter for unique IDs
 let vehicleIdCounter = 0
@@ -241,9 +246,62 @@ function onLoaded(stats: { entityCount: number; containerCount: number }): void 
       if (containerRef.value) {
         vehicles3D.initLabelRenderer(containerRef.value)
       }
+
+      // Initialize exit detection
+      exitDetection = useExitDetection({
+        vehicleRegistry: vehicles3D.vehicles,
+        onVehicleMatched: handleExitVehicleMatched,
+        onUnknownVehicle: handleUnknownVehicleExit,
+      })
     }
   }
 }
+
+// ============ Exit Detection Handlers ============
+
+/**
+ * Handle exit camera detection
+ */
+function onExitDetected(result: VehicleDetectionResult): void {
+  if (!exitDetection) {
+    console.warn('[UnifiedYardView] Exit detection not ready')
+    return
+  }
+
+  exitDetection.processExitDetection(
+    result.plateNumber,
+    result.vehicleType,
+    result.confidence,
+    result.source
+  )
+}
+
+/**
+ * Callback when exit detection matches a vehicle
+ */
+async function handleExitVehicleMatched(vehicle: ActiveVehicle, result: ExitDetectionResult): Promise<void> {
+  if (!vehicles3D) return
+
+  if (import.meta.env.DEV) {
+    console.log(`[UnifiedYardView] Exit matched: ${vehicle.plateNumber} from zone ${vehicle.targetZone}`)
+  }
+
+  // Animate vehicle exit
+  await vehicles3D.animateVehicleExit(vehicle, () => {
+    exitDetection?.notifyBackendExit(vehicle.id, vehicle.plateNumber, result.confidence)
+  })
+
+  activeVehicleCount.value = vehicles3D.getAllVehicles().length
+}
+
+/**
+ * Callback when exit detection finds unknown vehicle
+ */
+function handleUnknownVehicleExit(plateNumber: string, result: ExitDetectionResult): void {
+  if (import.meta.env.DEV) {
+    console.log(`[UnifiedYardView] Unknown exit: ${plateNumber}`)
+  }
+  exitDetection?.notifyBackendExit(null, plateNumber, result.confidence)
 
 function onError(message: string): void {
   if (import.meta.env.DEV) console.error('Yard error:', message)
@@ -516,15 +574,26 @@ onUnmounted(() => {
         />
       </div>
 
-      <!-- Gate Camera Widget (docked) -->
-      <GateCameraWidget
-        :visible="isCameraWidgetVisible"
-        docked="bottom-left"
-        initial-source="mock"
-        gate-id="Въезд А"
-        @close="onWidgetClose"
-        @vehicle-detected="onVehicleDetected"
-      />
+      <!-- Gate Camera Widgets (docked to right side) -->
+      <div class="gate-widgets-dock">
+        <!-- Entry Camera Widget -->
+        <GateCameraWidget
+          :visible="isCameraWidgetVisible"
+          mode="entry"
+          initial-source="mock"
+          gate-id="Въезд А"
+          @vehicle-detected="onVehicleDetected"
+        />
+
+        <!-- Exit Camera Widget -->
+        <GateCameraWidget
+          :visible="isExitCameraWidgetVisible"
+          mode="exit"
+          initial-source="mock"
+          gate-id="Выезд А"
+          @vehicle-detected="onExitDetected"
+        />
+      </div>
     </main>
 
     <!-- Debug Panel (only in debug mode) -->
@@ -1076,5 +1145,16 @@ kbd {
 .panel-slide-leave-to {
   opacity: 0;
   transform: translateX(20px);
+}
+
+/* ============ Gate Camera Widgets Dock ============ */
+.gate-widgets-dock {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 50;
 }
 </style>
