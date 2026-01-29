@@ -21,6 +21,31 @@ const PLATE_DIMS = {
   height: 0.11,
 }
 
+// Pooled geometry for license plates (all plates are same size)
+let licensePlateGeometry: THREE.PlaneGeometry | null = null
+
+/**
+ * Get or create the shared license plate geometry.
+ * All plates are identical in size, so we pool the geometry.
+ */
+function getLicensePlateGeometry(): THREE.PlaneGeometry {
+  if (!licensePlateGeometry) {
+    licensePlateGeometry = new THREE.PlaneGeometry(PLATE_DIMS.width, PLATE_DIMS.height)
+  }
+  return licensePlateGeometry
+}
+
+/**
+ * Dispose the pooled license plate geometry.
+ * Call this when the 3D scene is being torn down.
+ */
+export function disposeLicensePlatePool(): void {
+  if (licensePlateGeometry) {
+    licensePlateGeometry.dispose()
+    licensePlateGeometry = null
+  }
+}
+
 // Color palette matching the premium yard theme
 export const VEHICLE_COLORS = {
   truckPrimary: 0x0077B6,    // Deep blue (matches yard theme)
@@ -125,15 +150,14 @@ export function useVehicleModels() {
     texture.magFilter = THREE.LinearFilter
     texture.anisotropy = 4
 
-    // Create plate mesh
-    const geometry = new THREE.PlaneGeometry(PLATE_DIMS.width, PLATE_DIMS.height)
+    // Create plate mesh using pooled geometry
     const material = new THREE.MeshStandardMaterial({
       map: texture,
       roughness: 0.3,
       metalness: 0.1,
     })
 
-    const plate = new THREE.Mesh(geometry, material)
+    const plate = new THREE.Mesh(getLicensePlateGeometry(), material)
     plate.name = facingBack ? 'license-plate-rear' : 'license-plate-front'
 
     // Rotate to face the correct direction
