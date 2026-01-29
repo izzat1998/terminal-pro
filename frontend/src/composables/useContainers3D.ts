@@ -675,22 +675,72 @@ export function useContainers3D(
 
   /**
    * Select a container by ID
+   * Optimized: only updates affected containers, not all 3000+
    */
   function selectContainer(id: number, additive: boolean = false): void {
-    if (!additive) {
+    if (!containerMesh.value) return
+
+    const color = new THREE.Color()
+    const hlIdx = highlightedIndex.value
+
+    // If not additive, restore previously selected containers to normal
+    if (!additive && selectedIds.value.size > 0) {
+      selectedIds.value.forEach(prevId => {
+        const prevIndex = idToIndex.value.get(prevId)
+        if (prevIndex !== undefined && prevIndex !== hlIdx) {
+          const c = containers.value[prevIndex]
+          color.copy(c?.color ?? CONTAINER_COLORS.unknown)
+          containerMesh.value!.setColorAt(prevIndex, color)
+        }
+      })
       selectedIds.value.clear()
     }
+
+    // Add new selection and apply selected color
     selectedIds.value.add(id)
-    updateColors()
+    const newIndex = idToIndex.value.get(id)
+    if (newIndex !== undefined && newIndex !== hlIdx) {
+      color.copy(CONTAINER_COLORS.selected)
+      containerMesh.value.setColorAt(newIndex, color)
+    }
+
+    if (containerMesh.value.instanceColor) {
+      containerMesh.value.instanceColor.needsUpdate = true
+    }
+
     updateOutlines()
   }
 
   /**
    * Clear all selections
+   * Optimized: only updates previously selected containers
    */
   function clearSelection(): void {
+    if (!containerMesh.value || selectedIds.value.size === 0) {
+      selectedIds.value.clear()
+      updateOutlines()
+      return
+    }
+
+    const color = new THREE.Color()
+    const hlIdx = highlightedIndex.value
+
+    // Restore all selected containers to their normal colors
+    selectedIds.value.forEach(id => {
+      const index = idToIndex.value.get(id)
+      if (index !== undefined && index !== hlIdx) {
+        const c = containers.value[index]
+        color.copy(c?.color ?? CONTAINER_COLORS.unknown)
+        containerMesh.value!.setColorAt(index, color)
+      }
+    })
+
     selectedIds.value.clear()
-    updateColors()
+
+    if (containerMesh.value.instanceColor) {
+      containerMesh.value.instanceColor.needsUpdate = true
+    }
+
     updateOutlines()
   }
 
