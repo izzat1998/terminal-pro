@@ -150,8 +150,58 @@ export const CONTAINER_DWELL_COLORS = {
   critical: 0xef4444, // 21+ days: Red
 }
 
+// Module-level shared materials (truly shared, no cloning)
+const sharedMaterials = new Map<string, THREE.MeshStandardMaterial>()
+
+/**
+ * Get a shared material by key. Creates if not exists.
+ * Use for objects that don't need individual color customization.
+ * WARNING: Do not modify returned material - it's shared across all users!
+ *
+ * @param key - Unique identifier for this material configuration
+ * @param options - Material options (only used on first creation)
+ */
+export function getSharedMaterial(
+  key: string,
+  options: {
+    color: number
+    metalness?: number
+    roughness?: number
+  }
+): THREE.MeshStandardMaterial {
+  if (sharedMaterials.has(key)) {
+    return sharedMaterials.get(key)!
+  }
+
+  const material = new THREE.MeshStandardMaterial({
+    color: options.color,
+    metalness: options.metalness ?? 0.1,
+    roughness: options.roughness ?? 0.8,
+  })
+
+  sharedMaterials.set(key, material)
+  return material
+}
+
+/**
+ * Get a clone of a shared material (for objects needing color variation).
+ * The clone can be safely modified without affecting the original.
+ */
+export function getSharedMaterialClone(key: string): THREE.MeshStandardMaterial | null {
+  const base = sharedMaterials.get(key)
+  return base ? base.clone() : null
+}
+
+/**
+ * Dispose all shared materials. Call on scene teardown.
+ */
+export function disposeSharedMaterials(): void {
+  sharedMaterials.forEach(m => m.dispose())
+  sharedMaterials.clear()
+}
+
 export function useMaterials3D() {
-  // Material cache for reuse
+  // Material cache for reuse (per-composable instance)
   const materialCache: ShallowRef<Map<string, THREE.MeshStandardMaterial>> = shallowRef(new Map())
   const textureCache: ShallowRef<Map<string, THREE.Texture>> = shallowRef(new Map())
 
@@ -418,7 +468,8 @@ export function useMaterials3D() {
   }
 
   /**
-   * Dispose all resources.
+   * Dispose all resources (instance cache only).
+   * Note: Call disposeSharedMaterials() separately for module-level cleanup.
    */
   function dispose(): void {
     clearCache()
