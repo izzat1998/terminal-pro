@@ -261,6 +261,17 @@ router.beforeEach(async (to, _from, next) => {
   const title = to.meta.title || 'МТТ';
   document.title = title;
 
+  // DEV MODE: Skip authentication entirely
+  if (import.meta.env.DEV) {
+    // Redirect root/login to main app page
+    if (to.name === 'Login' || to.name === 'Landing' || to.path === '/app' || to.path === '/app/') {
+      next({ path: '/containers' });
+      return;
+    }
+    next();
+    return;
+  }
+
   // Check if route requires authentication
   const requiresAuth = to.meta.requiresAuth !== false;
 

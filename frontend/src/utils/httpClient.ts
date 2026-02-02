@@ -55,6 +55,9 @@ async function refreshAccessToken(): Promise<string | null> {
 }
 
 function clearAuthAndRedirect() {
+  // DEV MODE: Don't redirect to login
+  if (import.meta.env.DEV) return;
+
   deleteCookie(ACCESS_TOKEN_KEY);
   deleteCookie(REFRESH_TOKEN_KEY);
 

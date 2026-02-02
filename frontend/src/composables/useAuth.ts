@@ -5,7 +5,22 @@ import { getCookie, setCookie, deleteCookie } from '../utils/storage';
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 
-const user = ref<User | null>(null);
+// DEV MODE: Provide a mock admin user so the UI renders without login
+const DEV_MOCK_USER: User | null = import.meta.env.DEV
+  ? {
+      id: 0,
+      username: 'dev',
+      email: 'dev@localhost',
+      first_name: 'Dev',
+      last_name: 'User',
+      is_admin: true,
+      is_staff: true,
+      is_active: true,
+      user_type: 'admin',
+    }
+  : null;
+
+const user = ref<User | null>(DEV_MOCK_USER);
 const accessToken = ref<string | null>(getCookie(ACCESS_TOKEN_KEY));
 const refreshToken = ref<string | null>(getCookie(REFRESH_TOKEN_KEY));
 const loading = ref(false);
