@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTT Exit Flow Editor</title>
+<style>
+:root{--bg:#0d1117;--s:#161b22;--s2:#21262d;--s3:#292e36;--bd:#30363d;--tx:#e6edf3;--tm:#8b949e;--ac:#58a6ff;--ad:#1f6feb30;--gn:#3fb950;--gd:#23863620;--or:#d29922;--od:#d2992220;--rd:#f85149;--rdd:#f8514920;--pr:#bc8cff;--tg-in:#182533;--tg-out:#2b5278}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;display:flex;flex-direction:column}
+
+/* Header */
+.hdr{padding:12px 20px;border-bottom:1px solid var(--bd);background:var(--s);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.hdr h1{font-size:16px;font-weight:600;white-space:nowrap}.hdr h1 span{color:var(--ac)}
+.hdr-actions{display:flex;gap:8px;margin-left:auto}
+.hdr-btn{padding:6px 14px;border-radius:6px;border:1px solid var(--bd);background:var(--s2);color:var(--tm);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s}
+.hdr-btn:hover{border-color:var(--ac);color:var(--tx)}
+.hdr-btn.primary{background:var(--ac);color:#fff;border-color:var(--ac)}
+.hdr-btn.primary:hover{opacity:.85}
+.hdr-btn.sync{background:#238636;color:#fff;border-color:#238636;font-weight:600}
+.hdr-btn.sync:hover{background:#2ea043}
+.hdr-btn.sync.synced{background:var(--gn)}
+.change-count{background:var(--or);color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:700}
+
+/* Layout */
+.layout{display:grid;grid-template-columns:1fr 1fr;flex:1;overflow:hidden}
+
+/* Left: Flow Editor + Prompt */
+.editor-panel{display:flex;flex-direction:column;border-right:1px solid var(--bd);overflow:hidden}
+.editor-scroll{flex:1;overflow-y:auto;padding:16px}
+
+/* Step cards */
+.step-card{background:var(--s);border:1px solid var(--bd);border-radius:10px;margin-bottom:10px;transition:all .2s;position:relative}
+.step-card.new-step{border-color:var(--gn);border-style:dashed}
+.step-card.modified{border-color:var(--or)}
+.step-card.deleted{opacity:.4;border-color:var(--rd);border-style:dashed}
+.step-card.deleted .step-body{display:none}
+
+.step-head{padding:10px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.step-icon{font-size:18px;flex-shrink:0}
+.step-title{font-size:13px;font-weight:600;flex:1}
+.step-state{font-size:10px;color:var(--pr);font-family:'SFMono-Regular',Consolas,monospace;background:var(--s2);padding:2px 6px;border-radius:4px}
+.step-badge-mod{font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;margin-left:4px}
+.badge-new{background:var(--gd);color:var(--gn)}
+.badge-mod{background:var(--od);color:var(--or)}
+.badge-del{background:var(--rdd);color:var(--rd)}
+
+.step-actions{display:flex;gap:4px}
+.step-action{width:24px;height:24px;border-radius:4px;border:1px solid var(--bd);background:var(--s2);color:var(--tm);font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.step-action:hover{border-color:var(--ac);color:var(--ac)}
+.step-action.del:hover{border-color:var(--rd);color:var(--rd)}
+
+.step-body{padding:0 14px 14px;display:none}
+.step-card.open .step-body{display:block}
+
+.step-field{margin-bottom:10px}
+.step-field:last-child{margin-bottom:0}
+.step-lbl{font-size:11px;color:var(--tm);margin-bottom:3px;display:flex;align-items:center;gap:6px}
+.step-lbl .kt{background:var(--s2);border:1px solid var(--bd);border-radius:3px;padding:0 4px;font-family:monospace;font-size:9px;color:var(--pr)}
+
+.step-field textarea,.step-field input[type="text"]{width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:6px;color:var(--tx);font-family:inherit;font-size:12px;padding:7px 9px;resize:vertical;transition:border-color .15s}
+.step-field textarea:focus,.step-field input:focus{outline:none;border-color:var(--ac)}
+.step-field textarea{min-height:38px}
+
+.btns-editor{display:flex;flex-wrap:wrap;gap:6px}
+.btn-chip{background:var(--ad);border:1px solid rgba(88,166,255,.25);color:var(--ac);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px}
+.btn-chip input{background:transparent;border:none;color:var(--ac);font-size:11px;width:80px;padding:0;outline:none}
+.btn-chip .chip-del{color:var(--tm);cursor:pointer;font-size:9px}.btn-chip .chip-del:hover{color:var(--rd)}
+
+.add-btn-chip{background:var(--s2);border:1px dashed var(--bd);color:var(--tm);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer}
+.add-btn-chip:hover{border-color:var(--gn);color:var(--gn)}
+
+/* Add step */
+.add-step-area{display:flex;align-items:center;justify-content:center;padding:8px;margin-bottom:10px}
+.add-step-btn{background:var(--s);border:2px dashed var(--bd);border-radius:10px;padding:10px 20px;font-size:13px;color:var(--tm);cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px;width:100%;justify-content:center}
+.add-step-btn:hover{border-color:var(--gn);color:var(--gn)}
+
+/* Prompt area */
+.prompt-area{border-top:1px solid var(--bd);background:var(--s);padding:12px 16px}
+.prompt-area h3{font-size:12px;color:var(--tm);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.prompt-area h3 span{color:var(--ac)}
+.prompt-input{width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:8px;color:var(--tx);font-family:inherit;font-size:13px;padding:10px 12px;resize:vertical;min-height:70px;transition:border-color .15s}
+.prompt-input:focus{outline:none;border-color:var(--ac)}
+.prompt-input::placeholder{color:var(--tm)}
+
+/* Right: Preview */
+.preview-panel{display:flex;flex-direction:column;overflow:hidden}
+.preview-tabs{display:flex;border-bottom:1px solid var(--bd);background:var(--s)}
+.ptab{padding:10px 16px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;color:var(--tm);transition:all .15s}
+.ptab:hover{color:var(--tx)}.ptab.active{border-bottom-color:var(--ac);color:var(--ac)}
+.preview-scroll{flex:1;overflow-y:auto;padding:20px}
+
+/* TG chat */
+.tg-chat{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.tg-msg{background:var(--tg-in);border-radius:12px 12px 12px 4px;padding:10px 14px;max-width:95%;font-size:13px;line-height:1.5;word-break:break-word}
+.tg-msg.out{background:var(--tg-out);border-radius:12px 12px 4px 12px;align-self:flex-end}
+.tg-msg b{font-weight:600}
+.tg-msg code{font-family:monospace;background:rgba(255,255,255,.08);padding:1px 4px;border-radius:3px}
+.tg-msg .sb{display:inline-block;background:var(--ad);color:var(--ac);font-size:9px;padding:2px 7px;border-radius:8px;margin-bottom:5px;font-weight:600}
+.tg-kb{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.tg-b{background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.25);color:var(--ac);padding:5px 12px;border-radius:7px;font-size:12px;flex:1;text-align:center;min-width:80px}
+.tg-b.sel{background:var(--ac);color:#fff;border-color:var(--ac)}
+.tg-rk{background:var(--s2);border-radius:8px;padding:6px;display:flex;gap:5px;max-width:95%}
+.tg-rb{background:var(--s);border:1px solid var(--bd);color:var(--tx);padding:5px 12px;border-radius:7px;font-size:12px;flex:1;text-align:center}
+
+/* Diff view */
+.diff-panel{max-width:600px;margin:0 auto}
+.diff-item{background:var(--s);border:1px solid var(--bd);border-radius:8px;margin-bottom:8px;overflow:hidden}
+.diff-head{padding:8px 12px;background:var(--s2);font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}
+.diff-body{padding:10px 12px;font-size:12px}
+.diff-old{background:var(--rdd);border-radius:4px;padding:6px 8px;margin-bottom:6px;font-family:monospace;font-size:11px;white-space:pre-wrap;color:var(--rd)}
+.diff-new{background:var(--gd);border-radius:4px;padding:6px 8px;font-family:monospace;font-size:11px;white-space:pre-wrap;color:var(--gn)}
+.diff-added{background:var(--gd);border-radius:4px;padding:6px 8px;font-family:monospace;font-size:11px;white-space:pre-wrap;color:var(--gn)}
+
+/* Sync output file info */
+.sync-info{background:var(--s);border:1px solid var(--gn);border-radius:8px;padding:14px;margin:12px auto;max-width:600px}
+.sync-info h4{color:var(--gn);font-size:14px;margin-bottom:8px}
+.sync-info pre{background:var(--bg);border-radius:6px;padding:10px;font-size:11px;overflow-x:auto;color:var(--tm);max-height:300px;overflow-y:auto}
+
+/* Toast */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--gn);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+
+@media(max-width:900px){.layout{grid-template-columns:1fr;grid-template-rows:1fr 1fr}.editor-panel{border-right:none;border-bottom:1px solid var(--bd)}}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1>🚚 MTT <span>Exit Flow</span> Editor</h1>
+  <div class="hdr-actions">
+    <button class="hdr-btn" onclick="resetAll()">↺ Reset</button>
+    <button class="hdr-btn" onclick="switchTab('diff')">
+      📝 Changes <span class="change-count" id="change-count" style="display:none">0</span>
+    </button>
+    <button class="hdr-btn sync" id="sync-btn" onclick="doSync()">🔄 Sync to Codebase</button>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- Left: Flow Editor -->
+  <div class="editor-panel">
+    <div class="editor-scroll" id="editor-scroll"></div>
+
+    <!-- Prompt Input -->
+    <div class="prompt-area">
+      <h3>✍️ <span>Describe your changes</span> (free-form instructions)</h3>
+      <textarea class="prompt-input" id="user-prompt"
+        placeholder="Example: Add a step after transport number to ask for seal number (пломба). Make it optional with a skip button. Also change the success message to show the client name."
+        oninput="updateAll()"></textarea>
+    </div>
+  </div>
+
+  <!-- Right: Preview -->
+  <div class="preview-panel">
+    <div class="preview-tabs">
+      <div class="ptab active" onclick="switchTab('chat')">💬 Chat</div>
+      <div class="ptab" onclick="switchTab('flow')">🔀 Flow</div>
+      <div class="ptab" onclick="switchTab('notif')">📢 Notification</div>
+      <div class="ptab" onclick="switchTab('diff')">📝 Changes</div>
+      <div class="ptab" onclick="switchTab('sync')">🔄 Sync Output</div>
+    </div>
+    <div class="preview-scroll" id="preview-scroll"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// DATA MODEL: The flow as editable step objects
+// ═══════════════════════════════════════════════════
+
+const ORIGINAL_STEPS = [
+  {
+    id: 'container_number', icon: '📝', title: 'Container Number',
+    state: 'ExitForm.container_number',
+    message_key: 'start_exit',
+    message_ru: 'Начинаем регистрацию выезда контейнера.\n\n📝 Введите номер контейнера:',
+    message_uz: 'Konteyner chiqishini ro\'yxatdan o\'tkkazishni boshlaymiz.\n\n📝 Konteyner raqamini kiriting:',
+    buttons: [],
+    reply_buttons: ['❌ Отменить', 'ℹ️ Справка'],
+    input_type: 'text',
+    condition: 'always',
+    description: 'Manager enters container number (4 letters + 7 digits). Validates format, checks active entry exists.'
+  },
+  {
+    id: 'exit_transport_type', icon: '🚛', title: 'Transport Type',
+    state: 'ExitForm.exit_transport_type',
+    message_key: 'ask_exit_transport_type',
+    message_ru: '🚛 Выберите тип транспорта для выезда:',
+    message_uz: '🚛 Chiqish uchun transport turini tanlang:',
+    buttons: [
+      { label_ru: 'Авто', label_uz: 'Yuk mashinasi', callback: 'exit_transport_TRUCK', key: 'btn_truck' },
+      { label_ru: 'Вагон', label_uz: 'Vagon', callback: 'exit_transport_WAGON', key: 'btn_wagon' }
+    ],
+    input_type: 'inline_keyboard',
+    condition: 'always',
+    description: 'Select exit transport. TRUCK → photos with plate recognition. WAGON → manual number.'
+  },
+  {
+    id: 'photos_truck', icon: '📷', title: 'Photos + Plate Recognition',
+    state: 'ExitForm.photos',
+    message_key: 'ask_all_photos_truck',
+    message_ru: '📸 Отправьте фотографии (авто и контейнер).\nНомер авто будет распознан автоматически.\nКогда закончите, нажмите \'Готово\':',
+    message_uz: '📸 Rasmlarni yuboring (avtomobil va konteyner).\nAvtomobil raqami avtomatik tanib olinadi.\nTugagach, \'Tayyor\' tugmasini bosing:',
+    buttons: [
+      { label_ru: 'Пропустить', label_uz: 'O\'tkazib yuborish', callback: 'skip_exit_photos', key: 'btn_skip' },
+      { label_ru: 'Готово', label_uz: 'Tayyor', callback: 'done_exit_photos', key: 'btn_done' },
+      { label_ru: '◀️ Назад', label_uz: '◀️ Orqaga', callback: 'back_to_exit_transport_type', key: 'btn_back' }
+    ],
+    input_type: 'photo',
+    condition: 'transport_type == TRUCK',
+    description: 'Upload photos. System tries automatic plate recognition (≥50% confidence).'
+  },
+  {
+    id: 'plate_confirm', icon: '✅', title: 'Confirm Detected Plate',
+    state: 'ExitForm.exit_transport_plate_photo',
+    message_key: 'plate_recognized',
+    message_ru: '✅ Распознан номер: <b>{plate}</b>\n\nУверенность: {confidence}%\n\nВсё верно?',
+    message_uz: '✅ Tanilgan raqam: <b>{plate}</b>\n\nIshonch: {confidence}%\n\nTo\'g\'rimi?',
+    buttons: [
+      { label_ru: '✅ Подтвердить', label_uz: '✅ Tasdiqlash', callback: 'confirm_exit_plate', key: 'btn_confirm_plate' },
+      { label_ru: '✏️ Ввести вручную', label_uz: '✏️ Qo\'lda kiritish', callback: 'edit_exit_plate', key: 'btn_edit_plate' },
+      { label_ru: '◀️ Назад', label_uz: '◀️ Orqaga', callback: 'back_to_exit_photos', key: 'btn_back' }
+    ],
+    input_type: 'inline_keyboard',
+    condition: 'transport_type == TRUCK && plate_detected',
+    description: 'Shows auto-detected plate. Manager confirms or chooses manual entry.'
+  },
+  {
+    id: 'transport_number', icon: '🔢', title: 'Transport Number (Manual)',
+    state: 'ExitForm.exit_transport_number',
+    message_key: 'ask_exit_transport_number',
+    message_ru: '📝 Введите номер транспорта для выезда (номер авто или вагона):',
+    message_uz: '📝 Chiqish uchun transport raqamini kiriting (yuk mashinasi yoki vagon raqami):',
+    buttons: [],
+    input_type: 'text',
+    condition: 'transport_type == WAGON || !plate_detected',
+    description: 'Manual entry of transport/vehicle number.'
+  },
+  {
+    id: 'exit_photos', icon: '📸', title: 'Exit Photos (WAGON only)',
+    state: 'ExitForm.photos',
+    message_key: 'ask_exit_photos',
+    message_ru: '📸 Отправьте фотографии выезда контейнера (опционально).\nКогда закончите, нажмите \'Готово\' или \'Пропустить\':',
+    message_uz: '📸 Konteyner chiqishining fotosuratlarini yuboring (ixtiyoriy).\nTugagach, \'Tayyor\' yoki \'O\'tkazib yuborish\' tugmasini bosing:',
+    buttons: [
+      { label_ru: 'Пропустить', label_uz: 'O\'tkazib yuborish', callback: 'skip_photos', key: 'btn_skip' },
+      { label_ru: 'Готово', label_uz: 'Tayyor', callback: 'done_photos', key: 'btn_done' }
+    ],
+    input_type: 'photo',
+    condition: 'transport_type == WAGON',
+    description: 'WAGON only: upload exit photos after manual transport number. TRUCK already collected photos at step 3.'
+  },
+  {
+    id: 'confirmation', icon: '🔍', title: 'Confirmation',
+    state: 'ExitForm.confirmation',
+    message_key: 'exit_confirmation_header',
+    message_ru: '📋 Проверьте данные выезда:',
+    message_uz: '📋 Chiqish ma\'lumotlarini tekshiring:',
+    extra_message_key: 'exit_confirmation_question',
+    extra_message_ru: 'Всё верно? Подтвердить выезд?',
+    extra_message_uz: 'Hammasi to\'g\'rimi? Chiqishni tasdiqlaysizmi?',
+    buttons: [
+      { label_ru: '✅ Подтвердить', label_uz: '✅ Tasdiqlash', callback: 'confirm_yes', key: 'btn_confirm' },
+      { label_ru: '❌ Отменить', label_uz: '❌ Bekor qilish', callback: 'confirm_no', key: 'btn_cancel' }
+    ],
+    input_type: 'inline_keyboard',
+    condition: 'always',
+    description: 'Shows full summary of all collected data. Manager confirms or cancels.'
+  },
+  {
+    id: 'success', icon: '✨', title: 'Exit Recorded',
+    state: '— complete —',
+    message_key: 'exit_created',
+    message_ru: '✅ Выезд успешно зарегистрирован!\n\nКонтейнер: {container}\nДата выезда: {exit_date}\n⏱️ Время стоянки: {dwell_time} дней',
+    message_uz: '✅ Chiqish muvaffaqiyatli ro\'yxatdan o\'tdi!\n\nKonteyner: {container}\nChiqish sanasi: {exit_date}\n⏱️ Turish vaqti: {dwell_time} kun',
+    buttons: [],
+    input_type: 'none',
+    condition: 'always',
+    description: 'Success message. Activity logged, owner notification sent.'
+  }
+];
+
+const ORIGINAL_NOTIF = {
+  title_laden_ru: '🚪 Выезд груженого контейнера',
+  title_empty_ru: '🚪 Выезд порожнего контейнера',
+  body_ru: '📋 Контейнер: {container}\n📐 ISO тип: {iso_type}\n📊 Статус: {status}\n🚛 Транспорт выезда: {transport} ({transport_num})\n🕐 Въезд: {entry_time}\n🕐 Выезд: {exit_time}\n⏱️ Время на терминале: {dwell_time} дн.\n👤 Менеджер: {manager}'
+};
+
+// Current editable state
+let steps = JSON.parse(JSON.stringify(ORIGINAL_STEPS));
+let notif = JSON.parse(JSON.stringify(ORIGINAL_NOTIF));
+let deletedStepIds = new Set();
+let currentTab = 'chat';
+let openStepId = null;
+let nextNewId = 1;
+
+// ═══════════════════════════════════════════════════
+// EDITOR RENDERING
+// ═══════════════════════════════════════════════════
+
+function renderEditor() {
+  const el = document.getElementById('editor-scroll');
+  let html = '';
+
+  steps.forEach((step, idx) => {
+    const isDeleted = deletedStepIds.has(step.id);
+    const isNew = step._isNew;
+    const isMod = !isNew && !isDeleted && isStepModified(step);
+    const isOpen = openStepId === step.id;
+
+    const cls = [
+      'step-card',
+      isOpen ? 'open' : '',
+      isNew ? 'new-step' : '',
+      isMod ? 'modified' : '',
+      isDeleted ? 'deleted' : ''
+    ].filter(Boolean).join(' ');
+
+    html += `<div class="${cls}" data-id="${step.id}">`;
+    html += `<div class="step-head" onclick="toggleStep('${step.id}')">`;
+    html += `<span class="step-icon">${esc(step.icon)}</span>`;
+    html += `<span class="step-title">${esc(step.title)}`;
+    if (isNew) html += ` <span class="step-badge-mod badge-new">NEW</span>`;
+    else if (isMod) html += ` <span class="step-badge-mod badge-mod">MODIFIED</span>`;
+    else if (isDeleted) html += ` <span class="step-badge-mod badge-del">DELETED</span>`;
+    html += `</span>`;
+    html += `<span class="step-state">${esc(step.state)}</span>`;
+    html += `<div class="step-actions" onclick="event.stopPropagation()">`;
+    if (idx > 0) html += `<button class="step-action" onclick="moveStep('${step.id}',-1)" title="Move up">↑</button>`;
+    if (idx < steps.length - 1) html += `<button class="step-action" onclick="moveStep('${step.id}',1)" title="Move down">↓</button>`;
+    if (isDeleted) {
+      html += `<button class="step-action" onclick="restoreStep('${step.id}')" title="Restore">↩</button>`;
+    } else {
+      html += `<button class="step-action del" onclick="deleteStep('${step.id}')" title="Delete">✕</button>`;
+    }
+    html += `</div></div>`;
+
+    // Body (editable fields)
+    html += `<div class="step-body">`;
+    html += `<div class="step-field"><div class="step-lbl">Title</div>`;
+    html += `<input type="text" value="${escAttr(step.title)}" onchange="editStep('${step.id}','title',this.value)"></div>`;
+
+    html += `<div class="step-field"><div class="step-lbl">Icon (emoji)</div>`;
+    html += `<input type="text" value="${escAttr(step.icon)}" style="width:60px" onchange="editStep('${step.id}','icon',this.value)"></div>`;
+
+    html += `<div class="step-field"><div class="step-lbl">FSM State <span class="kt">${esc(step.state)}</span></div>`;
+    html += `<input type="text" value="${escAttr(step.state)}" onchange="editStep('${step.id}','state',this.value)"></div>`;
+
+    html += `<div class="step-field"><div class="step-lbl">Message (Russian) <span class="kt">${esc(step.message_key)}</span></div>`;
+    html += `<textarea onchange="editStep('${step.id}','message_ru',this.value)">${esc(step.message_ru)}</textarea></div>`;
+
+    html += `<div class="step-field"><div class="step-lbl">Message (Uzbek)</div>`;
+    html += `<textarea onchange="editStep('${step.id}','message_uz',this.value)">${esc(step.message_uz)}</textarea></div>`;
+
+    if (step.extra_message_key) {
+      html += `<div class="step-field"><div class="step-lbl">Extra Message (Russian) <span class="kt">${esc(step.extra_message_key)}</span></div>`;
+      html += `<textarea onchange="editStep('${step.id}','extra_message_ru',this.value)">${esc(step.extra_message_ru || '')}</textarea></div>`;
+    }
+
+    html += `<div class="step-field"><div class="step-lbl">Condition</div>`;
+    html += `<input type="text" value="${escAttr(step.condition)}" onchange="editStep('${step.id}','condition',this.value)"></div>`;
+
+    html += `<div class="step-field"><div class="step-lbl">Description</div>`;
+    html += `<textarea onchange="editStep('${step.id}','description',this.value)">${esc(step.description)}</textarea></div>`;
+
+    // Buttons editor
+    html += `<div class="step-field"><div class="step-lbl">Inline Buttons</div>`;
+    html += `<div class="btns-editor">`;
+    step.buttons.forEach((btn, bi) => {
+      html += `<div class="btn-chip">`;
+      html += `<input value="${escAttr(btn.label_ru)}" onchange="editStepBtn('${step.id}',${bi},'label_ru',this.value)">`;
+      html += `<span class="chip-del" onclick="removeStepBtn('${step.id}',${bi})">✕</span>`;
+      html += `</div>`;
+    });
+    html += `<div class="add-btn-chip" onclick="addStepBtn('${step.id}')">+ Add Button</div>`;
+    html += `</div></div>`;
+
+    html += `</div></div>`;
+  });
+
+  // Add step button
+  html += `<div class="add-step-area"><button class="add-step-btn" onclick="addNewStep()">➕ Add New Step</button></div>`;
+
+  el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════
+// STEP OPERATIONS
+// ═══════════════════════════════════════════════════
+
+function toggleStep(id) { openStepId = openStepId === id ? null : id; renderEditor(); }
+
+function editStep(id, field, value) {
+  const step = steps.find(s => s.id === id);
+  if (step) { step[field] = value; updateAll(); }
+}
+
+function editStepBtn(id, bi, field, value) {
+  const step = steps.find(s => s.id === id);
+  if (step && step.buttons[bi]) { step.buttons[bi][field] = value; updateAll(); }
+}
+
+function addStepBtn(id) {
+  const step = steps.find(s => s.id === id);
+  if (step) {
+    step.buttons.push({ label_ru: 'Новая кнопка', label_uz: 'Yangi tugma', callback: 'new_callback', key: 'btn_new' });
+    updateAll();
+  }
+}
+
+function removeStepBtn(id, bi) {
+  const step = steps.find(s => s.id === id);
+  if (step) { step.buttons.splice(bi, 1); updateAll(); }
+}
+
+function moveStep(id, dir) {
+  const idx = steps.findIndex(s => s.id === id);
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= steps.length) return;
+  [steps[idx], steps[newIdx]] = [steps[newIdx], steps[idx]];
+  updateAll();
+}
+
+function deleteStep(id) { deletedStepIds.add(id); updateAll(); }
+function restoreStep(id) { deletedStepIds.delete(id); updateAll(); }
+
+function addNewStep() {
+  const newId = `new_step_${nextNewId++}`;
+  steps.splice(steps.length - 2, 0, { // Insert before confirmation
+    id: newId, _isNew: true,
+    icon: '🆕', title: 'New Step',
+    state: 'ExitForm.new_state',
+    message_key: 'ask_new_field',
+    message_ru: '📝 Введите значение:',
+    message_uz: '📝 Qiymatni kiriting:',
+    buttons: [
+      { label_ru: 'Пропустить', label_uz: 'O\'tkazib yuborish', callback: 'skip_new_field', key: 'btn_skip' }
+    ],
+    input_type: 'text_or_skip',
+    condition: 'always',
+    description: 'New custom step. Describe what data it collects.'
+  });
+  openStepId = newId;
+  updateAll();
+  // Scroll to new step
+  setTimeout(() => {
+    const card = document.querySelector(`[data-id="${newId}"]`);
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 50);
+}
+
+function resetAll() {
+  if (!confirm('Reset all changes? This cannot be undone.')) return;
+  steps = JSON.parse(JSON.stringify(ORIGINAL_STEPS));
+  notif = JSON.parse(JSON.stringify(ORIGINAL_NOTIF));
+  deletedStepIds.clear();
+  openStepId = null;
+  nextNewId = 1;
+  document.getElementById('user-prompt').value = '';
+  updateAll();
+  showToast('✅ Reset to original');
+}
+
+// ═══════════════════════════════════════════════════
+// CHANGE DETECTION
+// ═══════════════════════════════════════════════════
+
+function isStepModified(step) {
+  const orig = ORIGINAL_STEPS.find(o => o.id === step.id);
+  if (!orig) return false;
+  return step.message_ru !== orig.message_ru ||
+         step.message_uz !== orig.message_uz ||
+         step.title !== orig.title ||
+         step.icon !== orig.icon ||
+         step.state !== orig.state ||
+         step.condition !== orig.condition ||
+         step.description !== orig.description ||
+         (step.extra_message_ru || '') !== (orig.extra_message_ru || '') ||
+         JSON.stringify(step.buttons) !== JSON.stringify(orig.buttons);
+}
+
+function getChanges() {
+  const changes = [];
+
+  // Modified steps
+  steps.forEach(step => {
+    if (step._isNew) {
+      changes.push({ type: 'add_step', step: { ...step } });
+      return;
+    }
+    if (deletedStepIds.has(step.id)) {
+      changes.push({ type: 'delete_step', stepId: step.id, title: step.title });
+      return;
+    }
+    const orig = ORIGINAL_STEPS.find(o => o.id === step.id);
+    if (!orig) return;
+
+    const diffs = [];
+    if (step.message_ru !== orig.message_ru) diffs.push({ field: 'message_ru', old: orig.message_ru, new: step.message_ru, key: step.message_key });
+    if (step.message_uz !== orig.message_uz) diffs.push({ field: 'message_uz', old: orig.message_uz, new: step.message_uz });
+    if (step.title !== orig.title) diffs.push({ field: 'title', old: orig.title, new: step.title });
+    if (step.icon !== orig.icon) diffs.push({ field: 'icon', old: orig.icon, new: step.icon });
+    if (step.state !== orig.state) diffs.push({ field: 'state', old: orig.state, new: step.state });
+    if (step.condition !== orig.condition) diffs.push({ field: 'condition', old: orig.condition, new: step.condition });
+    if ((step.extra_message_ru || '') !== (orig.extra_message_ru || '')) diffs.push({ field: 'extra_message_ru', old: orig.extra_message_ru || '', new: step.extra_message_ru || '', key: step.extra_message_key });
+    if (JSON.stringify(step.buttons) !== JSON.stringify(orig.buttons)) diffs.push({ field: 'buttons', old: orig.buttons, new: step.buttons });
+
+    if (diffs.length > 0) changes.push({ type: 'modify_step', stepId: step.id, title: step.title, diffs });
+  });
+
+  // Order changes
+  const origOrder = ORIGINAL_STEPS.map(s => s.id);
+  const curOrder = steps.filter(s => !s._isNew && !deletedStepIds.has(s.id)).map(s => s.id);
+  if (JSON.stringify(origOrder.filter(id => !deletedStepIds.has(id))) !== JSON.stringify(curOrder)) {
+    changes.push({ type: 'reorder', newOrder: steps.map(s => s.id) });
+  }
+
+  return changes;
+}
+
+// ═══════════════════════════════════════════════════
+// PREVIEW RENDERERS
+// ═══════════════════════════════════════════════════
+
+function esc(t) { return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(t) { return String(t).replace(/"/g,'&quot;').replace(/&/g,'&amp;'); }
+
+function renderChat() {
+  const activeSteps = steps.filter(s => !deletedStepIds.has(s.id));
+  let html = '<div class="tg-chat">';
+
+  html += `<div class="tg-msg out">/exit</div>`;
+
+  activeSteps.forEach((step, i) => {
+    // Bot message
+    html += `<div class="tg-msg">`;
+    html += `<div class="sb">STEP ${i + 1}${step._isNew ? ' — NEW' : ''}</div><br>`;
+    html += esc(step.message_ru);
+
+    if (step.extra_message_ru) {
+      html += `<br><br>${esc(step.extra_message_ru)}`;
+    }
+
+    // Inline buttons
+    if (step.buttons.length > 0) {
+      html += `<div class="tg-kb">`;
+      step.buttons.forEach((btn, bi) => {
+        const sel = bi === 0 && step.id === 'confirmation' ? ' sel' : '';
+        html += `<div class="tg-b${sel}">${esc(btn.label_ru)}</div>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
+
+    // Reply keyboard for first step
+    if (i === 0 && step.reply_buttons) {
+      html += `<div class="tg-rk">`;
+      step.reply_buttons.forEach(rb => { html += `<div class="tg-rb">${esc(rb)}</div>`; });
+      html += `</div>`;
+    }
+
+    // User response (simulate)
+    if (step.input_type === 'text' && step.id !== 'success') {
+      const responses = {
+        container_number: 'TEMU 1234567',
+        transport_number: '01A777BC',
+        destination_station: 'Ташкент-Товарная',
+      };
+      html += `<div class="tg-msg out">${esc(responses[step.id] || 'User input...')}</div>`;
+    } else if (step.input_type === 'photo') {
+      html += `<div class="tg-msg out">📷 [Photo sent]</div>`;
+    }
+  });
+
+  html += '</div>';
+  return html;
+}
+
+function renderFlow() {
+  const activeSteps = steps.filter(s => !deletedStepIds.has(s.id));
+  let html = '<div style="max-width:650px;margin:0 auto;">';
+
+  activeSteps.forEach((step, i) => {
+    const isNew = step._isNew;
+    const isMod = !isNew && isStepModified(step);
+    const nodeClass = isNew ? 'style="border-color:var(--gn);background:var(--gd)"' : isMod ? 'style="border-color:var(--or);background:var(--od)"' : 'class="flow-node"';
+
+    html += `<div style="display:flex;gap:14px;margin-bottom:4px">`;
+    html += `<div style="width:30px;height:30px;border-radius:50%;border:2px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;background:var(--s2)" ${nodeClass}>${step.icon}</div>`;
+    html += `<div style="flex:1;padding:2px 0 14px">`;
+    html += `<h4 style="font-size:13px;margin-bottom:3px">${esc(step.title)}`;
+    if (isNew) html += ` <span class="step-badge-mod badge-new">NEW</span>`;
+    else if (isMod) html += ` <span class="step-badge-mod badge-mod">MODIFIED</span>`;
+    html += ` <span style="font-size:10px;color:var(--pr);font-weight:normal;margin-left:6px;font-family:monospace">${esc(step.state)}</span></h4>`;
+    html += `<p style="font-size:11px;color:var(--tm)">${esc(step.description)}</p>`;
+    html += `<div style="font-size:11px;background:var(--s2);border-left:3px solid var(--ac);padding:5px 8px;margin-top:5px;border-radius:0 4px 4px 0;white-space:pre-wrap">${esc(step.message_ru)}</div>`;
+    if (step.buttons.length > 0) {
+      html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">`;
+      step.buttons.forEach(b => { html += `<span style="font-size:10px;background:var(--ad);color:var(--ac);padding:2px 8px;border-radius:4px">${esc(b.label_ru)}</span>`; });
+      html += `</div>`;
+    }
+    if (step.condition !== 'always') {
+      html += `<div style="font-size:10px;color:var(--or);margin-top:4px">⚡ ${esc(step.condition)}</div>`;
+    }
+    html += `</div></div>`;
+    if (i < activeSteps.length - 1) {
+      html += `<div style="width:3px;background:var(--ac);margin-left:14px;min-height:12px"></div>`;
+    }
+  });
+
+  html += '</div>';
+  return html;
+}
+
+function renderNotif() {
+  let html = '<div style="max-width:520px;margin:0 auto">';
+  html += `<p style="color:var(--tm);font-size:12px;margin-bottom:10px">Owner notification sent to Telegram group on exit (with photos as media group):</p>`;
+
+  // Simulated photo
+  html += `<div style="background:var(--tg-in);border-radius:12px 12px 0 0;padding:14px 18px;text-align:center;border-bottom:1px solid var(--bd)">`;
+  html += `<div style="background:var(--s2);border-radius:8px;padding:30px;color:var(--tm);font-size:12px">📷 Exit photos sent as media group<br><span style="font-size:11px;opacity:.7">(truck + container photos from the flow)</span></div>`;
+  html += `</div>`;
+
+  // Notification message (new enhanced format)
+  html += `<div style="background:var(--tg-in);border-radius:0 0 12px 12px;padding:14px 18px;font-size:13px;line-height:1.7">`;
+  html += `<b>🚪 Выезд груженого контейнера</b><br><br>`;
+  html += `📋 Контейнер: <code style="background:rgba(255,255,255,.08);padding:1px 4px;border-radius:3px">TEMU 1234567</code><br>`;
+  html += `📐 ISO тип: 40GP<br>`;
+  html += `📊 Статус: Гружёный<br>`;
+  html += `👤 Клиент: ООО "ТрансКарго"<br>`;
+  html += `📦 Груз: Текстиль<br>`;
+  html += `⚖️ Вес: 15.5 т<br>`;
+  html += `📍 Место: K1-A3<br>`;
+  html += `🚛 Въезд: Авто (01X999YZ) — 28.01.2026 09:15<br>`;
+  html += `🚛 Выезд: Авто (01A777BC) — 30.01.2026 14:30<br>`;
+  html += `⏱️ Время на терминале: <b>2 дн.</b><br>`;
+  html += `👤 Менеджер: Иванов Пётр`;
+  html += `</div>`;
+
+  // Comparison: before vs after
+  html += `<div style="margin-top:20px;background:var(--s);border:1px solid var(--bd);border-radius:8px;padding:14px">`;
+  html += `<h4 style="font-size:13px;margin-bottom:10px">📊 Before vs After</h4>`;
+  html += `<table style="width:100%;font-size:11px;border-collapse:collapse">`;
+  html += `<tr style="border-bottom:1px solid var(--bd)"><th style="text-align:left;padding:4px;color:var(--tm)">Field</th><th style="padding:4px;color:var(--rd)">Before</th><th style="padding:4px;color:var(--gn)">After</th></tr>`;
+  html += `<tr style="border-bottom:1px solid var(--bd)"><td style="padding:4px;color:var(--tm)">Photos</td><td style="padding:4px;color:var(--rd)">Not sent</td><td style="padding:4px;color:var(--gn)">✅ Sent as media group</td></tr>`;
+  html += `<tr style="border-bottom:1px solid var(--bd)"><td style="padding:4px;color:var(--tm)">Client</td><td style="padding:4px;color:var(--rd)">—</td><td style="padding:4px;color:var(--gn)">✅ Shown</td></tr>`;
+  html += `<tr style="border-bottom:1px solid var(--bd)"><td style="padding:4px;color:var(--tm)">Cargo</td><td style="padding:4px;color:var(--rd)">—</td><td style="padding:4px;color:var(--gn)">✅ Shown</td></tr>`;
+  html += `<tr style="border-bottom:1px solid var(--bd)"><td style="padding:4px;color:var(--tm)">Weight</td><td style="padding:4px;color:var(--rd)">—</td><td style="padding:4px;color:var(--gn)">✅ Shown</td></tr>`;
+  html += `<tr style="border-bottom:1px solid var(--bd)"><td style="padding:4px;color:var(--tm)">Location</td><td style="padding:4px;color:var(--rd)">—</td><td style="padding:4px;color:var(--gn)">✅ Shown</td></tr>`;
+  html += `<tr style="border-bottom:1px solid var(--bd)"><td style="padding:4px;color:var(--tm)">Entry transport</td><td style="padding:4px;color:var(--rd)">—</td><td style="padding:4px;color:var(--gn)">✅ Shown with time</td></tr>`;
+  html += `<tr><td style="padding:4px;color:var(--tm)">Dwell time</td><td style="padding:4px">✅ Shown</td><td style="padding:4px;color:var(--gn)">✅ Bold</td></tr>`;
+  html += `</table></div>`;
+
+  html += `<p style="color:var(--tm);font-size:11px;margin-top:12px">💡 Fields only appear if they have values (client, cargo, weight, location are optional).</p>`;
+
+  html += '</div>';
+  return html;
+}
+
+function renderDiff() {
+  const changes = getChanges();
+  const prompt = document.getElementById('user-prompt').value.trim();
+  if (changes.length === 0 && !prompt) {
+    return '<div style="text-align:center;color:var(--tm);padding:40px;font-size:14px">No changes yet.<br><br>Edit steps in the left panel or write instructions in the prompt area below.</div>';
+  }
+
+  let html = '<div class="diff-panel">';
+
+  if (prompt) {
+    html += `<div class="diff-item"><div class="diff-head">✍️ User Instructions</div>`;
+    html += `<div class="diff-body"><div class="diff-added">${esc(prompt)}</div></div></div>`;
+  }
+
+  changes.forEach(ch => {
+    if (ch.type === 'add_step') {
+      html += `<div class="diff-item"><div class="diff-head"><span class="step-badge-mod badge-new">ADD</span> ${esc(ch.step.title)}</div>`;
+      html += `<div class="diff-body">`;
+      html += `<div class="diff-added">+ New step: ${esc(ch.step.title)}\n  State: ${esc(ch.step.state)}\n  Message: ${esc(ch.step.message_ru)}\n  Buttons: ${ch.step.buttons.map(b=>b.label_ru).join(', ')}</div>`;
+      html += `</div></div>`;
+    } else if (ch.type === 'delete_step') {
+      html += `<div class="diff-item"><div class="diff-head"><span class="step-badge-mod badge-del">DELETE</span> ${esc(ch.title)}</div>`;
+      html += `<div class="diff-body"><div class="diff-old">- Step removed: ${esc(ch.title)}</div></div></div>`;
+    } else if (ch.type === 'modify_step') {
+      html += `<div class="diff-item"><div class="diff-head"><span class="step-badge-mod badge-mod">MODIFY</span> ${esc(ch.title)}</div>`;
+      html += `<div class="diff-body">`;
+      ch.diffs.forEach(d => {
+        if (d.field === 'buttons') {
+          html += `<div class="diff-old">- Buttons: ${Array.isArray(d.old) ? d.old.map(b=>b.label_ru).join(', ') : ''}</div>`;
+          html += `<div class="diff-new">+ Buttons: ${Array.isArray(d.new) ? d.new.map(b=>b.label_ru).join(', ') : ''}</div>`;
+        } else {
+          const keyInfo = d.key ? ` [${d.key}]` : '';
+          html += `<div class="diff-old">- ${d.field}${keyInfo}: ${esc(String(d.old))}</div>`;
+          html += `<div class="diff-new">+ ${d.field}${keyInfo}: ${esc(String(d.new))}</div>`;
+        }
+      });
+      html += `</div></div>`;
+    } else if (ch.type === 'reorder') {
+      html += `<div class="diff-item"><div class="diff-head"><span class="step-badge-mod badge-mod">REORDER</span> Step order changed</div>`;
+      html += `<div class="diff-body"><div class="diff-new">New order: ${ch.newOrder.join(' → ')}</div></div></div>`;
+    }
+  });
+
+  html += '</div>';
+  return html;
+}
+
+function renderSyncOutput() {
+  const changes = getChanges();
+  const prompt = document.getElementById('user-prompt').value.trim();
+
+  const syncData = {
+    timestamp: new Date().toISOString(),
+    user_instructions: prompt,
+    changes: changes,
+    full_flow: steps.filter(s => !deletedStepIds.has(s.id)),
+    notification: notif,
+    files_to_modify: [
+      'backend/telegram_bot/translations.py',
+      'backend/telegram_bot/handlers/exit.py',
+      'backend/telegram_bot/states/entry.py',
+      'backend/telegram_bot/keyboards/inline.py',
+      'backend/telegram_bot/services/entry_service.py',
+      'backend/telegram_bot/services/owner_notification_service.py'
+    ]
+  };
+
+  let html = '<div class="sync-info">';
+  html += `<h4>🔄 Sync Data (JSON)</h4>`;
+  html += `<p style="font-size:12px;color:var(--tm);margin-bottom:10px">This is the data that will be written to <code>exit-flow-changes.json</code> when you click Sync. Claude will read this file and implement all changes.</p>`;
+  html += `<pre id="sync-json">${esc(JSON.stringify(syncData, null, 2))}</pre>`;
+  html += `</div>`;
+  return html;
+}
+
+// ═══════════════════════════════════════════════════
+// SYNC: Write changes to file for Claude to read
+// ═══════════════════════════════════════════════════
+
+function doSync() {
+  const changes = getChanges();
+  const prompt = document.getElementById('user-prompt').value.trim();
+
+  if (changes.length === 0 && !prompt) {
+    showToast('⚠️ No changes to sync');
+    return;
+  }
+
+  const syncData = {
+    timestamp: new Date().toISOString(),
+    user_instructions: prompt,
+    changes: changes,
+    full_flow: steps.filter(s => !deletedStepIds.has(s.id)),
+    notification: notif,
+    files_to_modify: [
+      'backend/telegram_bot/translations.py',
+      'backend/telegram_bot/handlers/exit.py',
+      'backend/telegram_bot/states/entry.py',
+      'backend/telegram_bot/keyboards/inline.py'
+    ]
+  };
+
+  const json = JSON.stringify(syncData, null, 2);
+
+  // Download as file
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'exit-flow-changes.json';
+  a.click();
+  URL.revokeObjectURL(url);
+
+  // Also copy to clipboard
+  navigator.clipboard.writeText(json).then(() => {
+    const btn = document.getElementById('sync-btn');
+    btn.textContent = '✅ Synced! JSON copied & downloaded';
+    btn.classList.add('synced');
+    showToast('✅ Changes exported! Paste to Claude or open the JSON file.');
+    setTimeout(() => {
+      btn.textContent = '🔄 Sync to Codebase';
+      btn.classList.remove('synced');
+    }, 4000);
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// TABS & UPDATE
+// ═══════════════════════════════════════════════════
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.ptab').forEach(t => t.classList.remove('active'));
+  const tabs = document.querySelectorAll('.ptab');
+  const tabNames = ['chat','flow','notif','diff','sync'];
+  const idx = tabNames.indexOf(tab);
+  if (idx >= 0 && tabs[idx]) tabs[idx].classList.add('active');
+  renderPreview();
+}
+
+function renderPreview() {
+  const el = document.getElementById('preview-scroll');
+  switch (currentTab) {
+    case 'chat': el.innerHTML = renderChat(); break;
+    case 'flow': el.innerHTML = renderFlow(); break;
+    case 'notif': el.innerHTML = renderNotif(); break;
+    case 'diff': el.innerHTML = renderDiff(); break;
+    case 'sync': el.innerHTML = renderSyncOutput(); break;
+  }
+}
+
+function updateAll() {
+  renderEditor();
+  renderPreview();
+
+  // Update change count badge
+  const changes = getChanges();
+  const prompt = document.getElementById('user-prompt').value.trim();
+  const total = changes.length + (prompt ? 1 : 0);
+  const badge = document.getElementById('change-count');
+  if (total > 0) { badge.style.display = 'inline'; badge.textContent = total; }
+  else { badge.style.display = 'none'; }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// Init
+updateAll();
+</script>
+</body>
+</html>
