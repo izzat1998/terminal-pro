@@ -23,17 +23,17 @@ import YardDebugTooltip from '@/components/yard/YardDebugTooltip.vue'
 import YardDrawOverlay from '@/components/yard/YardDrawOverlay.vue'
 import GateCamera3D from '@/components/yard/GateCamera3D.vue'
 import GateCameraWidget from '@/components/yard/GateCameraWidget.vue'
-import VehicleStatsOverlay from '@/components/yard/VehicleStatsOverlay.vue'
 import GateStatsHeader from '@/components/yard/GateStatsHeader.vue'
 import { useYardDebug } from '@/composables/useYardDebug'
 import { useYardDraw } from '@/composables/useYardDraw'
-import { useVehicles3D, type VehicleDetection, type ActiveVehicle } from '@/composables/useVehicles3D'
-import { useExitDetection, type ExitDetectionResult } from '@/composables/useExitDetection'
+import { useVehicles3D, type VehicleDetection } from '@/composables/useVehicles3D'
+import { useGateEventPoller, type GateEntryEvent } from '@/composables/useGateEventPoller'
 import type { ContainerPosition, ContainerData } from '@/composables/useContainers3D'
 import type { DxfCoordinateSystem } from '@/types/dxf'
 import type { VehicleDetectionResult } from '@/composables/useGateDetection'
 import type { VehicleType } from '@/composables/useVehicleModels'
 import { getYardSlots, type YardSlot } from '@/services/yardService'
+import { gateVehicleService } from '@/services/gateVehicleService'
 
 // ============ API Data Loading ============
 
@@ -176,9 +176,6 @@ const isExitCameraWidgetVisible = ref(true)
 // Vehicles3D composable
 let vehicles3D: ReturnType<typeof useVehicles3D> | null = null
 
-// Exit detection composable
-let exitDetection: ReturnType<typeof useExitDetection> | null = null
-
 // Vehicle counter for unique IDs
 let vehicleIdCounter = 0
 function generateVehicleId(): string {
@@ -193,12 +190,146 @@ interface VehicleEntryRecord {
   plateNumber: string
   vehicleType: VehicleType
   timestamp: number
+  direction: 'entering' | 'exiting'
 }
 const vehicleEntries = ref<VehicleEntryRecord[]>([])
-const MAX_VEHICLE_ENTRIES = 200
 
 // Guard map to prevent concurrent animation chains per vehicle plate
 const animatingPlates = new Set<string>()
+
+// ============ Gate Event Poller (API-driven animations) ============
+
+// Gate animation waypoints (DXF coordinates)
+const GATE_SPAWN = { x: 12866, y: 73398 }   // Gate entrance
+const GATE_DEST  = { x: 12925, y: 73382 }   // Inside yard
+
+// Detection zone polygon for 3D gate camera (DXF coordinates)
+const GATE_DETECTION_ZONE = [
+  { x: 12860, y: 73390 },
+  { x: 12865, y: 73407 },
+  { x: 12871, y: 73402 },
+  { x: 12870, y: 73392 },
+]
+
+/** Options to control DB interaction */
+interface AnimateOptions {
+  /** If true, validate + write to DB before animating (camera-triggered).
+   *  If false, just animate (poller-triggered — DB already has the record). */
+  saveToDB?: boolean
+}
+
+/** Animate an entry event (shared by camera + poller) */
+async function animateEntry(
+  plateNumber: string,
+  vehicleType: VehicleType,
+  options: AnimateOptions = {},
+): Promise<void> {
+  if (!vehicles3D || !coordinateSystem.value) return
+  if (animatingPlates.has(plateNumber)) return
+  animatingPlates.add(plateNumber)
+
+  try {
+    // Camera-triggered: create VehicleEntry in DB first. Skip animation if it fails.
+    if (options.saveToDB) {
+      try {
+        const transportType = vehicleType === 'WAGON' ? 'WAGON' : 'TRUCK'
+        await gateVehicleService.createEntry(plateNumber, transportType)
+      } catch (e) {
+        // Entry failed (duplicate plate on terminal, validation error, etc.)
+        if (import.meta.env.DEV) console.warn('[Gate] Entry rejected:', e)
+        return
+      }
+    }
+
+    const vehicleId = generateVehicleId()
+    const detection: VehicleDetection = {
+      id: vehicleId,
+      plateNumber,
+      vehicleType,
+      direction: 'entering',
+    }
+
+    vehicleEntries.value = [
+      ...vehicleEntries.value,
+      { id: vehicleId, plateNumber, vehicleType, timestamp: Date.now(), direction: 'entering' },
+    ]
+
+    // Spawn at gate, facing destination
+    const vehicle = vehicles3D.spawnVehicleAtPosition(
+      detection, GATE_SPAWN.x, GATE_SPAWN.y,
+      { x: GATE_DEST.x, y: GATE_DEST.y },
+    )
+    if (!vehicle) return
+
+    activeVehicleCount.value = vehicles3D.getAllVehicles().length
+    await vehicles3D.animateVehicleToPosition(vehicle, GATE_DEST.x, GATE_DEST.y)
+    await vehicles3D.fadeOutVehicle(vehicleId, 1000)
+    activeVehicleCount.value = vehicles3D.getAllVehicles().length
+  } finally {
+    animatingPlates.delete(plateNumber)
+  }
+}
+
+/** Animate an exit event (shared by camera + poller) */
+async function animateExit(
+  plateNumber: string,
+  vehicleType: VehicleType,
+  options: AnimateOptions = {},
+): Promise<void> {
+  if (!vehicles3D || !coordinateSystem.value) return
+  if (animatingPlates.has(plateNumber)) return
+  animatingPlates.add(plateNumber)
+
+  try {
+    // Camera-triggered: register exit in DB first. Skip animation if vehicle not on terminal.
+    if (options.saveToDB) {
+      try {
+        await gateVehicleService.registerExit(plateNumber)
+      } catch (e) {
+        // Exit failed (vehicle not on terminal, not found, etc.)
+        if (import.meta.env.DEV) console.warn('[Gate] Exit rejected — vehicle not on terminal:', e)
+        return
+      }
+    }
+
+    const vehicleId = generateVehicleId()
+    const detection: VehicleDetection = {
+      id: vehicleId,
+      plateNumber,
+      vehicleType,
+      direction: 'exiting',
+    }
+
+    vehicleEntries.value = [
+      ...vehicleEntries.value,
+      { id: vehicleId, plateNumber, vehicleType, timestamp: Date.now(), direction: 'exiting' },
+    ]
+
+    // Spawn inside yard, facing gate (reverse of entry)
+    const vehicle = vehicles3D.spawnVehicleAtPosition(
+      detection, GATE_DEST.x, GATE_DEST.y,
+      { x: GATE_SPAWN.x, y: GATE_SPAWN.y },
+    )
+    if (!vehicle) return
+
+    activeVehicleCount.value = vehicles3D.getAllVehicles().length
+    await vehicles3D.animateVehicleToPosition(vehicle, GATE_SPAWN.x, GATE_SPAWN.y)
+    await vehicles3D.fadeOutVehicle(vehicleId, 1000)
+    activeVehicleCount.value = vehicles3D.getAllVehicles().length
+  } finally {
+    animatingPlates.delete(plateNumber)
+  }
+}
+
+const gatePoller = useGateEventPoller({
+  interval: 5000,
+  onNewEntry(event: GateEntryEvent) {
+    animateEntry(event.plateNumber, event.vehicleType)
+  },
+  onNewExit(event: GateEntryEvent) {
+    animateExit(event.plateNumber, event.vehicleType)
+  },
+})
 
 // Current time for header
 const currentTime = ref(new Date())
@@ -247,140 +378,34 @@ function onLoaded(stats: { entityCount: number; containerCount: number }): void 
         vehicles3D.initLabelRenderer(containerRef.value)
       }
 
-      // Initialize exit detection
-      exitDetection = useExitDetection({
-        vehicleRegistry: vehicles3D.vehicles,
-        onVehicleMatched: handleExitVehicleMatched,
-        onUnknownVehicle: handleUnknownVehicleExit,
-      })
+      // Start polling for gate events (Telegram bot entries/exits)
+      gatePoller.start()
     }
   }
 }
 
-// ============ Exit Detection Handlers ============
-
-/**
- * Handle exit camera detection
- */
-function onExitDetected(result: VehicleDetectionResult): void {
-  if (!exitDetection) {
-    console.warn('[UnifiedYardView] Exit detection not ready')
-    return
-  }
-
-  exitDetection.processExitDetection(
-    result.plateNumber,
-    result.vehicleType,
-    result.confidence,
-    result.source
-  )
-}
-
-/**
- * Callback when exit detection matches a vehicle
- */
-async function handleExitVehicleMatched(vehicle: ActiveVehicle, result: ExitDetectionResult): Promise<void> {
-  if (!vehicles3D) return
-
-  if (import.meta.env.DEV) {
-    console.log(`[UnifiedYardView] Exit matched: ${vehicle.plateNumber} from zone ${vehicle.targetZone}`)
-  }
-
-  // Animate vehicle exit
-  await vehicles3D.animateVehicleExit(vehicle, () => {
-    exitDetection?.notifyBackendExit(vehicle.id, vehicle.plateNumber, result.confidence)
-  })
-
-  activeVehicleCount.value = vehicles3D.getAllVehicles().length
-}
-
-/**
- * Callback when exit detection finds unknown vehicle
- */
-function handleUnknownVehicleExit(plateNumber: string, result: ExitDetectionResult): void {
-  if (import.meta.env.DEV) {
-    console.log(`[UnifiedYardView] Unknown exit: ${plateNumber}`)
-  }
-  exitDetection?.notifyBackendExit(null, plateNumber, result.confidence)
-}
+// ============ Event Handlers ============
 
 function onError(message: string): void {
   if (import.meta.env.DEV) console.error('Yard error:', message)
 }
 
-// Gate camera event handlers
 function onCameraClick(): void {
   isCameraWidgetVisible.value = !isCameraWidgetVisible.value
   isWidgetOpen.value = isCameraWidgetVisible.value
 }
 
-// Gate entry path coordinates (DXF)
-const GATE_ENTRY_PATH = {
-  spawn: { x: 12867, y: 73398 },
-  end: { x: 12904, y: 73388 },
+/** Handle entry camera detection -- saves to DB, deduplicates, and animates */
+async function onVehicleDetected(result: VehicleDetectionResult): Promise<void> {
+  gateCameraRef.value?.triggerPulse()
+  gatePoller.addCameraPlate(result.plateNumber)
+  await animateEntry(result.plateNumber, result.vehicleType, { saveToDB: true })
 }
 
-const GATE_DETECTION_ZONE = [
-  { x: 12860, y: 73390 },
-  { x: 12865, y: 73407 },
-  { x: 12871, y: 73402 },
-  { x: 12870, y: 73392 },
-]
-
-async function onVehicleDetected(result: VehicleDetectionResult): Promise<void> {
-  if (!vehicles3D || !coordinateSystem.value) return
-
-  // Prevent concurrent animation chains for the same plate
-  if (animatingPlates.has(result.plateNumber)) return
-  animatingPlates.add(result.plateNumber)
-
-  try {
-    gateCameraRef.value?.triggerPulse()
-
-    const vehicleId = generateVehicleId()
-
-    const detection: VehicleDetection = {
-      id: vehicleId,
-      plateNumber: result.plateNumber,
-      vehicleType: result.vehicleType,
-      gateId: 'main',
-      direction: 'entering',
-    }
-
-    vehicleEntries.value = [
-      ...vehicleEntries.value,
-      {
-        id: vehicleId,
-        plateNumber: result.plateNumber,
-        vehicleType: result.vehicleType,
-        timestamp: Date.now(),
-      },
-    ].slice(-MAX_VEHICLE_ENTRIES)
-
-    const vehicle = vehicles3D.spawnVehicleAtPosition(
-      detection,
-      GATE_ENTRY_PATH.spawn.x,
-      GATE_ENTRY_PATH.spawn.y,
-      GATE_ENTRY_PATH.end
-    )
-    if (!vehicle) return
-
-    activeVehicleCount.value = vehicles3D.getAllVehicles().length
-
-    await new Promise(r => setTimeout(r, 500))
-    await vehicles3D.animateVehicleToPosition(
-      vehicle,
-      GATE_ENTRY_PATH.end.x,
-      GATE_ENTRY_PATH.end.y
-    )
-
-    await new Promise(r => setTimeout(r, 500))
-    await vehicles3D.fadeOutVehicle(vehicleId, 1500)
-
-    activeVehicleCount.value = vehicles3D.getAllVehicles().length
-  } finally {
-    animatingPlates.delete(result.plateNumber)
-  }
+/** Handle exit camera detection -- saves to DB, deduplicates, and animates */
+async function onExitDetected(result: VehicleDetectionResult): Promise<void> {
+  gatePoller.addCameraPlate(result.plateNumber)
+  await animateExit(result.plateNumber, result.vehicleType, { saveToDB: true })
 }
 
 // Watch for YardView3D to be ready
@@ -421,6 +446,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  gatePoller.stop()
   disposeDebugMode()
   disposeDrawMode()
   window.removeEventListener('keydown', handleTestKeydown)
@@ -546,28 +572,6 @@ onUnmounted(() => {
           :active="isDrawMode"
         />
 
-        <!-- Active Vehicle Badge -->
-        <Transition name="badge-pop">
-          <div v-if="activeVehicleCount > 0" class="active-vehicle-badge">
-            <span class="badge-pulse"></span>
-            <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M5 17H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1"/>
-              <path d="M19 17h1a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2h-1"/>
-              <path d="M5 9V7a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/>
-              <rect x="5" y="9" width="14" height="8" rx="2"/>
-              <circle cx="8" cy="17" r="2"/>
-              <circle cx="16" cy="17" r="2"/>
-            </svg>
-            <span class="badge-count">{{ activeVehicleCount }}</span>
-            <span class="badge-label">на воротах</span>
-          </div>
-        </Transition>
-
-        <!-- Vehicle Stats Panel -->
-        <VehicleStatsOverlay
-          :entries="vehicleEntries"
-          :visible="vehicleEntries.length > 0"
-        />
       </div>
 
       <!-- Gate Camera Widgets (docked to right side) -->
@@ -705,7 +709,8 @@ onUnmounted(() => {
 
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* Account for AppLayout: header(64px) + content margin(32px) + footer(~50px) */
+  height: calc(100vh - 160px);
   background: var(--color-bg);
   font-family: var(--font-sans);
   color: var(--color-text-primary);
@@ -717,11 +722,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 64px;
-  padding: 0 20px;
+  height: 48px;
+  padding: 0 12px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   z-index: 100;
+  flex-shrink: 0;
 }
 
 .header-left,
@@ -743,23 +749,23 @@ onUnmounted(() => {
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .brand-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   background: linear-gradient(135deg, var(--color-accent) 0%, #1d4ed8 100%);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   color: white;
 }
 
 .brand-icon svg {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
 }
 
 .brand-text {
@@ -768,14 +774,14 @@ onUnmounted(() => {
 }
 
 .brand-name {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--color-text-primary);
   letter-spacing: -0.02em;
 }
 
 .brand-sub {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   color: var(--color-text-muted);
   text-transform: uppercase;
@@ -784,35 +790,35 @@ onUnmounted(() => {
 
 .header-time {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  padding: 6px 12px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
   background: var(--color-bg);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 
 .time-value {
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
 }
 
 .time-date {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--color-text-muted);
 }
 
 .debug-pill {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 4px;
+  padding: 3px 8px;
   background: var(--color-warning-light);
   border: 1px solid #fcd34d;
   border-radius: 100px;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 600;
   color: var(--color-warning);
   text-transform: uppercase;
@@ -838,8 +844,8 @@ onUnmounted(() => {
   display: flex;
   position: relative;
   min-height: 0;
-  padding: 16px;
-  gap: 16px;
+  padding: 8px;
+  gap: 8px;
 }
 
 .yard-viewport {
@@ -875,65 +881,6 @@ onUnmounted(() => {
   justify-content: center;
   background: var(--color-surface);
   border-radius: var(--radius-xl);
-}
-
-/* Active Vehicle Badge */
-.active-vehicle-badge {
-  position: absolute;
-  top: 16px;
-  left: 240px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  background: var(--color-surface);
-  border: 2px solid var(--color-success);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg), 0 0 0 4px var(--color-success-light);
-  z-index: 50;
-}
-
-.badge-pulse {
-  position: absolute;
-  inset: -4px;
-  border: 2px solid var(--color-success);
-  border-radius: calc(var(--radius-lg) + 4px);
-  animation: pulse-ring 2s ease-out infinite;
-  pointer-events: none;
-}
-
-@keyframes pulse-ring {
-  0% { transform: scale(1); opacity: 0.8; }
-  100% { transform: scale(1.15); opacity: 0; }
-}
-
-.badge-icon {
-  width: 24px;
-  height: 24px;
-  color: var(--color-success);
-}
-
-.badge-count {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-success);
-  font-variant-numeric: tabular-nums;
-}
-
-.badge-label {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-}
-
-.badge-pop-enter-active,
-.badge-pop-leave-active {
-  transition: all var(--transition-base);
-}
-
-.badge-pop-enter-from,
-.badge-pop-leave-to {
-  opacity: 0;
-  transform: scale(0.9) translateY(-8px);
 }
 
 /* ============ DEBUG PANEL ============ */
@@ -1146,11 +1093,11 @@ kbd {
 /* ============ Gate Camera Widgets Dock ============ */
 .gate-widgets-dock {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
+  right: 12px;
+  bottom: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   z-index: 50;
 }
 </style>

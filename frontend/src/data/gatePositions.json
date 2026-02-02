@@ -15,6 +15,14 @@
       },
       "rotation": 65,
       "direction": "bidirectional",
+      "vehicleSpawn": {
+        "x": 12866,
+        "y": 73398
+      },
+      "vehicleDestination": {
+        "x": 12925,
+        "y": 73382
+      },
       "lanes": {
         "entry": {
           "offset": { "x": -5, "y": 0 },

@@ -11,6 +11,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { ToolOutlined, CameraOutlined, ScanOutlined, DownOutlined, UpOutlined } from '@ant-design/icons-vue'
 import { useGateDetection, type VehicleDetectionResult } from '@/composables/useGateDetection'
+import { gateVehicleService } from '@/services/gateVehicleService'
 import type { VehicleType } from '@/composables/useVehicleModels'
 
 type CameraSource = 'webcam' | 'mock'
@@ -98,15 +99,11 @@ const modeConfig = computed(() => {
     return {
       badgeClass: 'gate-badge--exit',
       modeLabel: 'ВЫЕЗД',
-      detectionLabel: 'Выезд ТС',
-      scanButtonText: 'Сканировать выезд',
     }
   }
   return {
     badgeClass: 'gate-badge--entry',
     modeLabel: 'ВЪЕЗД',
-    detectionLabel: 'Въезд ТС',
-    scanButtonText: 'Сканировать',
   }
 })
 
@@ -203,14 +200,41 @@ async function captureFrame(): Promise<Blob | null> {
   })
 }
 
+/** Mock exit: pick a random on-terminal vehicle from the DB */
+async function mockExitDetection(): Promise<VehicleDetectionResult | null> {
+  try {
+    const onTerminal = await gateVehicleService.getOnTerminal()
+    if (!onTerminal || onTerminal.length === 0) {
+      message.warning('Нет транспорта на терминале для выезда')
+      return null
+    }
+    const pick = onTerminal[Math.floor(Math.random() * onTerminal.length)]
+    const typeMap: Record<string, VehicleType> = { LIGHT: 'CAR', CARGO: 'TRUCK' }
+    return {
+      plateNumber: pick.license_plate,
+      vehicleType: typeMap[pick.vehicle_type] ?? 'TRUCK',
+      confidence: 0.85 + Math.random() * 0.14,
+      timestamp: new Date().toISOString(),
+      source: 'mock',
+    }
+  } catch {
+    message.error('Не удалось загрузить транспорт на терминале')
+    return null
+  }
+}
+
 async function handleCapture(): Promise<void> {
   if (!canCapture.value) return
 
   let result: VehicleDetectionResult | null = null
 
   if (currentSource.value === 'mock') {
-    result = useMockDetection()
-    message.info(`Тест: ${result.plateNumber}`)
+    if (props.mode === 'exit') {
+      result = await mockExitDetection()
+    } else {
+      result = useMockDetection()
+    }
+    if (result) message.info(`Тест: ${result.plateNumber}`)
   } else {
     const imageBlob = await captureFrame()
 
@@ -404,10 +428,6 @@ onUnmounted(() => {
         </a-button>
       </div>
 
-      <!-- Footer -->
-      <footer v-show="!isMinimized" class="widget-footer">
-        <span class="footer-hint">Нажмите на заголовок для сворачивания</span>
-      </footer>
     </div>
   </Transition>
 </template>
@@ -453,10 +473,10 @@ onUnmounted(() => {
   --transition-base: 200ms ease;
   --transition-slow: 300ms ease;
 
-  width: 260px;
+  width: 200px;
   background: var(--widget-bg);
   border: 1px solid var(--widget-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   user-select: none;
@@ -509,7 +529,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 6px 8px;
   background: var(--surface-1);
   border-bottom: 1px solid var(--widget-border);
   cursor: pointer;
@@ -670,7 +690,7 @@ onUnmounted(() => {
 /* ============ VIDEO CONTAINER ============ */
 .video-container {
   position: relative;
-  height: 130px;
+  height: 90px;
   background: var(--text-primary);
   overflow: hidden;
   /* Inset shadow for depth - video appears recessed */
@@ -715,20 +735,20 @@ onUnmounted(() => {
 }
 
 .mock-icon {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   color: var(--text-muted);
   opacity: 0.5;
 }
 
 .mock-text {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 500;
   color: rgba(255,255,255,0.7);
 }
 
 .mock-hint {
-  font-size: 10px;
+  font-size: 9px;
   color: rgba(255,255,255,0.4);
 }
 
@@ -845,7 +865,7 @@ onUnmounted(() => {
 
 /* ============ RESULT PANEL ============ */
 .result-panel {
-  padding: 12px;
+  padding: 8px;
   background: linear-gradient(to bottom, rgba(16, 185, 129, 0.05), transparent);
   border-top: 1px solid rgba(16, 185, 129, 0.2);
 }
@@ -853,8 +873,8 @@ onUnmounted(() => {
 .result-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: 4px;
+  margin-bottom: 6px;
 }
 
 .result-check {
@@ -881,24 +901,24 @@ onUnmounted(() => {
 .result-plate {
   display: flex;
   justify-content: center;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .plate-number {
   display: inline-block;
-  padding: 8px 16px;
+  padding: 4px 10px;
   background: var(--text-primary);
-  border-radius: var(--radius-md);
-  font-size: 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
   font-weight: 700;
   color: white;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
   font-family: 'SF Mono', 'Consolas', 'Liberation Mono', monospace;
 }
 
 .result-details {
   display: flex;
-  gap: 16px;
+  gap: 10px;
   justify-content: center;
 }
 
@@ -931,34 +951,14 @@ onUnmounted(() => {
 .controls-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 6px 8px;
   background: var(--surface-1);
   border-top: 1px solid var(--widget-border);
 }
 
 .scan-btn {
   margin-top: 2px;
-}
-
-/* ============ FOOTER ============ */
-.widget-footer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--surface-2);
-  border-top: 1px solid var(--widget-border);
-}
-
-.footer-hint {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.footer-divider {
-  color: var(--surface-3);
 }
 
 /* ============ TRANSITIONS ============ */
