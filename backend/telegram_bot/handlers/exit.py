@@ -28,6 +28,7 @@ from telegram_bot.handlers.photos import (
 from telegram_bot.keyboards import inline, reply
 from telegram_bot.middleware import require_manager_access
 from telegram_bot.services.entry_service import BotEntryService
+from telegram_bot.services.owner_notification_service import OwnerNotificationService
 from telegram_bot.services.plate_recognizer_service import PlateRecognizerService
 from telegram_bot.states.entry import ExitForm
 from telegram_bot.translations import (
@@ -47,6 +48,7 @@ exit_router = Router()
 entry_service = BotEntryService()
 activity_log_service = ActivityLogService()
 plate_recognizer_service = PlateRecognizerService()
+owner_notification_service = OwnerNotificationService()
 
 # Valid callback data values for validation
 VALID_TRANSPORT_TYPES = {"TRUCK", "WAGON"}
@@ -210,12 +212,6 @@ async def build_exit_summary(entry_data: dict, lang: str) -> str:
         if entry_data.get("exit_train_number"):
             lines.append(
                 f"<b>🚂 {get_text('summary_exit_train_num', lang)}:</b> <code>{html.escape(entry_data['exit_train_number'])}</code> ✅"
-            )
-
-        # Destination station (optional)
-        if entry_data.get("destination_station"):
-            lines.append(
-                f"<b>🎯 {get_text('summary_destination', lang)}:</b> {html.escape(entry_data['destination_station'])} ✅"
             )
 
         # Photos - only show if 'show_photos' flag is True (when user has reached photo step)
@@ -398,93 +394,34 @@ async def process_exit_transport_number(message: Message, state: FSMContext, use
         return
 
     await state.update_data(exit_transport_number=transport_number)
-    await state.set_state(ExitForm.destination_station)
 
-    # Show updated summary
     data = await state.get_data()
-    summary = await build_exit_summary(data, lang)
-    await message.answer(
-        f"{summary}\n\n{get_text('ask_destination_station', lang)}",
-        reply_markup=inline.get_skip_optional_field_keyboard(lang),
-        parse_mode="HTML",
-    )
+    transport_type = data.get("exit_transport_type")
 
+    if transport_type == "TRUCK":
+        # TRUCK: photos already taken during plate recognition step
+        await state.update_data(show_photos=True)
+        await state.set_state(ExitForm.confirmation)
 
-@exit_router.message(ExitForm.destination_station)
-@require_manager_access
-async def process_destination_station(message: Message, state: FSMContext, user=None):
-    """Process destination station"""
-    lang = await get_user_language(state)
-
-    if message.text:
-        destination = message.text.strip()
-        await state.update_data(destination_station=destination)
+        data = await state.get_data()
+        summary = await build_exit_summary(data, lang)
+        await message.answer(
+            f"{get_text('exit_confirmation_header', lang)}\n\n{summary}\n\n{get_text('exit_confirmation_question', lang)}",
+            reply_markup=inline.get_confirmation_keyboard(lang),
+            parse_mode="HTML",
+        )
     else:
-        await state.update_data(destination_station="")
+        # WAGON: ask for exit photos
+        await state.update_data(show_photos=True)
+        await state.set_state(ExitForm.photos)
 
-    await state.update_data(crane_operations=[], show_photos=True)
-    await state.set_state(ExitForm.photos)
-
-    # Show updated summary
-    data = await state.get_data()
-    summary = await build_exit_summary(data, lang)
-    await message.answer(
-        f"{summary}\n\n{get_text('ask_exit_photos', lang)}",
-        reply_markup=inline.get_photo_skip_keyboard(lang, has_photos=False),
-        parse_mode="HTML",
-    )
-
-
-@exit_router.callback_query(
-    F.data == "skip_optional_field", ExitForm.destination_station
-)
-@require_manager_access
-async def skip_destination_station(
-    callback: CallbackQuery, state: FSMContext, user=None
-):
-    """Skip destination station and crane operations"""
-    lang = await get_user_language(state)
-
-    await state.update_data(
-        destination_station="", crane_operations=[], show_photos=True
-    )
-    await state.set_state(ExitForm.photos)
-
-    data = await state.get_data()
-    summary = await build_exit_summary(data, lang)
-    await callback.message.edit_text(
-        f"{summary}\n\n{get_text('ask_exit_photos', lang)}",
-        reply_markup=inline.get_photo_skip_keyboard(lang, has_photos=False),
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@exit_router.callback_query(
-    F.data == "done_optional_field", ExitForm.destination_station
-)
-@require_manager_access
-async def done_destination_station(
-    callback: CallbackQuery, state: FSMContext, user=None
-):
-    """Confirm destination station and skip crane operations"""
-    lang = await get_user_language(state)
-
-    data = await state.get_data()
-    if not data.get("destination_station"):
-        await state.update_data(destination_station="")
-
-    await state.update_data(crane_operations=[], show_photos=True)
-    await state.set_state(ExitForm.photos)
-
-    data = await state.get_data()
-    summary = await build_exit_summary(data, lang)
-    await callback.message.edit_text(
-        f"{summary}\n\n{get_text('ask_exit_photos', lang)}",
-        reply_markup=inline.get_photo_skip_keyboard(lang, has_photos=False),
-        parse_mode="HTML",
-    )
-    await callback.answer()
+        data = await state.get_data()
+        summary = await build_exit_summary(data, lang)
+        await message.answer(
+            f"{summary}\n\n{get_text('ask_exit_photos', lang)}",
+            reply_markup=inline.get_photo_skip_keyboard(lang, has_photos=False),
+            parse_mode="HTML",
+        )
 
 
 @exit_router.message(ExitForm.photos, F.photo)
@@ -678,15 +615,15 @@ async def confirm_exit_detected_plate(
 
     # Save detected plate as exit transport number
     detected_plate = data.get("detected_plate_number", "")
-    await state.update_data(exit_transport_number=detected_plate)
-    await state.set_state(ExitForm.destination_station)
+    await state.update_data(exit_transport_number=detected_plate, show_photos=True)
+    await state.set_state(ExitForm.confirmation)
 
-    # Show updated summary and ask for destination
+    # Show confirmation summary
     data = await state.get_data()
     summary = await build_exit_summary(data, lang)
     await callback.message.edit_text(
-        f"{summary}\n\n{get_text('ask_destination_station', lang)}",
-        reply_markup=inline.get_skip_optional_field_keyboard(lang),
+        f"{get_text('exit_confirmation_header', lang)}\n\n{summary}\n\n{get_text('exit_confirmation_question', lang)}",
+        reply_markup=inline.get_confirmation_keyboard(lang),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -798,7 +735,6 @@ async def confirm_exit(callback: CallbackQuery, state: FSMContext, user=None):
             "exit_transport_type": data.get("exit_transport_type"),
             "exit_transport_number": data.get("exit_transport_number", ""),
             "exit_train_number": data.get("exit_train_number", ""),
-            "destination_station": data.get("destination_station", ""),
         }
 
         # Download photos from Telegram using shared utility
@@ -829,6 +765,14 @@ async def confirm_exit(callback: CallbackQuery, state: FSMContext, user=None):
             user=user,
             telegram_user_id=callback.from_user.id,
             container_entry=updated_entry,
+        )
+
+        # Send notification to container owner's Telegram group
+        await owner_notification_service.notify_container_exit(
+            bot=callback.bot,
+            entry=updated_entry,
+            manager=user,
+            photo_file_ids=photo_file_ids if photo_file_ids else None,
         )
 
         # Extract data in synchronous context to avoid async database access

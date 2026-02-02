@@ -208,7 +208,7 @@ class BotEntryService:
         # Calculate dwell time if both dates are present
         if entry.exit_date and entry.entry_time:
             dwell_time = (entry.exit_date.date() - entry.entry_time.date()).days
-            entry.dwell_time_days = max(0, dwell_time)
+            entry.dwell_time_days = max(1, dwell_time)
 
         entry.save(
             update_fields=[
