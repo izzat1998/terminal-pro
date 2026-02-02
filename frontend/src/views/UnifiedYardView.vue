@@ -302,6 +302,7 @@ function handleUnknownVehicleExit(plateNumber: string, result: ExitDetectionResu
     console.log(`[UnifiedYardView] Unknown exit: ${plateNumber}`)
   }
   exitDetection?.notifyBackendExit(null, plateNumber, result.confidence)
+}
 
 function onError(message: string): void {
   if (import.meta.env.DEV) console.error('Yard error:', message)
@@ -311,11 +312,6 @@ function onError(message: string): void {
 function onCameraClick(): void {
   isCameraWidgetVisible.value = !isCameraWidgetVisible.value
   isWidgetOpen.value = isCameraWidgetVisible.value
-}
-
-function onWidgetClose(): void {
-  isCameraWidgetVisible.value = false
-  isWidgetOpen.value = false
 }
 
 // Gate entry path coordinates (DXF)

@@ -100,7 +100,7 @@
           <template v-else-if="statementDetails[record.id]">
             <!-- Billing Method -->
             <a-alert
-              :message="`Метод расчёта: ${statementDetails[record.id].billing_method_display}`"
+              :message="`Метод расчёта: ${statementDetails[record.id]?.billing_method_display}`"
               type="info"
               show-icon
               style="margin-bottom: 12px;"
@@ -149,7 +149,7 @@
             <h4 style="margin: 12px 0 8px;">Хранение</h4>
             <a-table
               :columns="storageColumns"
-              :data-source="statementDetails[record.id].line_items"
+              :data-source="statementDetails[record.id]?.line_items"
               :pagination="false"
               row-key="id"
               :scroll="{ x: 1000 }"
@@ -190,21 +190,21 @@
                 <a-table-summary-row>
                   <a-table-summary-cell :col-span="4"><strong>Итого хранение</strong></a-table-summary-cell>
                   <a-table-summary-cell align="right">
-                    <strong class="amount-usd">${{ formatNumber(statementDetails[record.id].summary.total_storage_usd) }}</strong>
+                    <strong class="amount-usd">${{ formatNumber(statementDetails[record.id]?.summary?.total_storage_usd ?? '') }}</strong>
                   </a-table-summary-cell>
                   <a-table-summary-cell align="right">
-                    <strong class="amount-uzs">{{ formatNumber(statementDetails[record.id].summary.total_storage_uzs, 0) }} сум</strong>
+                    <strong class="amount-uzs">{{ formatNumber(statementDetails[record.id]?.summary?.total_storage_uzs ?? '', 0) }} сум</strong>
                   </a-table-summary-cell>
                 </a-table-summary-row>
               </template>
             </a-table>
 
             <!-- Service Items -->
-            <template v-if="statementDetails[record.id].service_items?.length">
+            <template v-if="statementDetails[record.id]?.service_items?.length">
               <h4 style="margin: 16px 0 8px;">Услуги</h4>
               <a-table
                 :columns="serviceColumns"
-                :data-source="statementDetails[record.id].service_items"
+                :data-source="statementDetails[record.id]?.service_items"
                 :pagination="false"
                 row-key="id"
                 size="small"
@@ -227,10 +227,10 @@
                   <a-table-summary-row>
                     <a-table-summary-cell :col-span="3"><strong>Итого услуги</strong></a-table-summary-cell>
                     <a-table-summary-cell align="right">
-                      <strong class="amount-usd">${{ formatNumber(statementDetails[record.id].summary.total_services_usd) }}</strong>
+                      <strong class="amount-usd">${{ formatNumber(statementDetails[record.id]?.summary?.total_services_usd ?? '') }}</strong>
                     </a-table-summary-cell>
                     <a-table-summary-cell align="right">
-                      <strong class="amount-uzs">{{ formatNumber(statementDetails[record.id].summary.total_services_uzs, 0) }} сум</strong>
+                      <strong class="amount-uzs">{{ formatNumber(statementDetails[record.id]?.summary?.total_services_uzs ?? '', 0) }} сум</strong>
                     </a-table-summary-cell>
                   </a-table-summary-row>
                 </template>
@@ -240,16 +240,16 @@
             <!-- Grand Total -->
             <a-card size="small" style="margin-top: 12px;" :body-style="{ display: 'flex', gap: '16px', alignItems: 'center', fontSize: '16px', fontWeight: 600 }">
               <span>Итого:</span>
-              <span class="amount-usd">${{ formatNumber(statementDetails[record.id].summary.total_usd) }}</span>
-              <span class="amount-uzs">{{ formatNumber(statementDetails[record.id].summary.total_uzs, 0) }} сум</span>
+              <span class="amount-usd">${{ formatNumber(statementDetails[record.id]?.summary?.total_usd ?? '') }}</span>
+              <span class="amount-uzs">{{ formatNumber(statementDetails[record.id]?.summary?.total_uzs ?? '', 0) }} сум</span>
             </a-card>
 
             <!-- Pending Containers (informational) -->
-            <template v-if="statementDetails[record.id].pending_containers_data?.length">
+            <template v-if="statementDetails[record.id]?.pending_containers_data?.length">
               <h4 style="margin: 16px 0 8px; color: #999;">Контейнеры на терминале (не включены в итого)</h4>
               <a-table
                 :columns="pendingColumns"
-                :data-source="statementDetails[record.id].pending_containers_data"
+                :data-source="statementDetails[record.id]?.pending_containers_data"
                 :pagination="false"
                 row-key="container_number"
                 size="small"
@@ -272,7 +272,7 @@
 
             <!-- Generation Info -->
             <div style="margin-top: 8px; color: #999; font-size: 12px;">
-              Сформировано: {{ formatDateTime(statementDetails[record.id].generated_at) }}
+              Сформировано: {{ formatDateTime(statementDetails[record.id]?.generated_at ?? '') }}
               <template v-if="record.finalized_at">
                 &nbsp;·&nbsp; Утверждено: {{ formatDateTime(record.finalized_at) }}
                 <template v-if="record.finalized_by_name"> ({{ record.finalized_by_name }})</template>

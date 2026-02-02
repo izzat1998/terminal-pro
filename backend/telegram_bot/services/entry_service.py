@@ -203,21 +203,12 @@ class BotEntryService:
         entry.exit_transport_type = exit_data.get("exit_transport_type")
         entry.exit_transport_number = exit_data.get("exit_transport_number", "")
         entry.exit_train_number = exit_data.get("exit_train_number", "")
-        entry.destination_station = exit_data.get("destination_station", "")
-
-        # Calculate dwell time if both dates are present
-        if entry.exit_date and entry.entry_time:
-            dwell_time = (entry.exit_date.date() - entry.entry_time.date()).days
-            entry.dwell_time_days = max(1, dwell_time)
-
         entry.save(
             update_fields=[
                 "exit_date",
                 "exit_transport_type",
                 "exit_transport_number",
                 "exit_train_number",
-                "destination_station",
-                "dwell_time_days",
             ]
         )
 
