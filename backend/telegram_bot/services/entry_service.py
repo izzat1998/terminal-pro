@@ -15,7 +15,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.containers.models import Container
-from apps.core.exceptions import DuplicateEntryError
+from apps.core.exceptions import BusinessLogicError, DuplicateEntryError
 from apps.files.models import File, FileAttachment
 from apps.terminal_operations.models import ContainerEntry, CraneOperation
 
@@ -155,6 +155,25 @@ class BotEntryService:
 
         return active_entry
 
+    def check_exited_entry(self, container_number: str) -> ContainerEntry | None:
+        """
+        Check if container has a recent exited entry (exit_date is set).
+        Returns the most recent exited entry if found, otherwise None.
+        """
+        container_number = container_number.upper()
+
+        exited_entry = (
+            ContainerEntry.objects.filter(
+                container__container_number=container_number,
+                exit_date__isnull=False,
+            )
+            .select_related("container")
+            .order_by("-exit_date")
+            .first()
+        )
+
+        return exited_entry
+
     @transaction.atomic
     def update_exit(
         self,
@@ -186,16 +205,24 @@ class BotEntryService:
             ContainerEntry.DoesNotExist: If entry not found
         """
         try:
-            entry = ContainerEntry.objects.get(id=entry_id)
+            entry = ContainerEntry.objects.select_for_update().get(id=entry_id)
         except ContainerEntry.DoesNotExist:
             logger.error(f"Entry with id {entry_id} not found")
             raise
 
+        # Guard against double-exit (race condition between two managers)
+        if entry.exit_date is not None:
+            raise BusinessLogicError(
+                "Выезд для этого контейнера уже зарегистрирован",
+                code="ALREADY_EXITED",
+            )
+
         # Validate exit_date is not before entry_time
         exit_date = exit_data.get("exit_date")
         if exit_date and exit_date < entry.entry_time:
-            raise ValueError(
-                f"Exit date {exit_date} cannot be before entry date {entry.entry_time}"
+            raise BusinessLogicError(
+                "Дата выезда не может быть раньше даты въезда",
+                code="EXIT_BEFORE_ENTRY",
             )
 
         # Update exit fields

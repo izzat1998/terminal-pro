@@ -209,6 +209,7 @@ async function mockExitDetection(): Promise<VehicleDetectionResult | null> {
       return null
     }
     const pick = onTerminal[Math.floor(Math.random() * onTerminal.length)]
+    if (!pick) return null
     const typeMap: Record<string, VehicleType> = { LIGHT: 'CAR', CARGO: 'TRUCK' }
     return {
       plateNumber: pick.license_plate,

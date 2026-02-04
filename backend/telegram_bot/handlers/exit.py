@@ -19,7 +19,6 @@ from apps.core.exceptions import (
 )
 from apps.core.services import ActivityLogService
 
-# Import shared photo handling utilities
 from telegram_bot.handlers.photos import (
     cancel_photo_confirmation_task,
     download_photos_from_telegram,
@@ -41,17 +40,35 @@ from telegram_bot.utils import format_container_number
 
 logger = logging.getLogger(__name__)
 
-# Create router for exit handlers
 exit_router = Router()
 
-# Service instances
 entry_service = BotEntryService()
 activity_log_service = ActivityLogService()
 plate_recognizer_service = PlateRecognizerService()
 owner_notification_service = OwnerNotificationService()
 
-# Valid callback data values for validation
 VALID_TRANSPORT_TYPES = {"TRUCK", "WAGON"}
+
+
+async def _handle_exit_error(callback: CallbackQuery, state: FSMContext, lang: str, error_text: str) -> None:
+    """Show error message, reset state, and return to main menu"""
+    await callback.message.edit_text(error_text)
+    await state.clear()
+    await state.update_data(language=lang)
+    await callback.message.answer(
+        get_text("choose_action", lang), reply_markup=reply.get_main_keyboard(lang)
+    )
+
+
+async def _show_exit_confirmation(callback: CallbackQuery, state: FSMContext, lang: str) -> None:
+    """Build exit summary and show the confirmation screen"""
+    data = await state.get_data()
+    summary = await build_exit_summary(data, lang)
+    await callback.message.edit_text(
+        f"{get_text('exit_confirmation_header', lang)}\n\n{summary}\n\n{get_text('exit_confirmation_question', lang)}",
+        reply_markup=inline.get_confirmation_keyboard(lang),
+        parse_mode="HTML",
+    )
 
 
 def extract_entry_info(active_entry) -> dict:
@@ -103,18 +120,19 @@ async def build_exit_summary(entry_data: dict, lang: str) -> str:
     """Build a formatted HTML summary of collected exit data with entry information"""
     lines = []
 
-    # Entry information section
-    if entry_data.get("entry_info"):
-        entry_info = entry_data["entry_info"]
-        # Format container number as PREFIX | POSTFIX for better readability
+    # Entry information section (supports 1 or 2 containers)
+    entries_info = entry_data.get("entries_info", [])
+    multi = len(entries_info) > 1
+
+    for idx, entry_info in enumerate(entries_info, 1):
         formatted_container = format_container_number(str(entry_info.get('container_number', '')))
-        lines.append(f"<b>📦 {get_text('summary_container', lang)}:</b>")
+        header = f"{get_text('summary_container', lang)} {idx}" if multi else get_text('summary_container', lang)
+        lines.append(f"<b>📦 {header}:</b>")
         lines.append(
             f"<code>{html.escape(formatted_container)}</code> ({html.escape(str(entry_info.get('iso_type')))})"
         )
         lines.append("")
 
-        # Entry entry details
         lines.append(f"<b>🕐 {get_text('summary_transport', lang)}:</b>")
         entry_date_str = entry_info.get("entry_date", "")
         lines.append(f"<i>{html.escape(entry_date_str)}</i>")
@@ -127,7 +145,6 @@ async def build_exit_summary(entry_data: dict, lang: str) -> str:
         if entry_info.get("transport_number"):
             lines.append(f"#{html.escape(str(entry_info.get('transport_number')))}")
 
-        # Business info (with HTML escaping for user data)
         if entry_info.get("client_name"):
             lines.append(
                 f"<b>👤 {get_text('exit_entry_client', lang)}:</b> {html.escape(str(entry_info.get('client_name')))}"
@@ -153,7 +170,6 @@ async def build_exit_summary(entry_data: dict, lang: str) -> str:
                 f"<b>⚖️ {get_text('exit_entry_weight', lang)}:</b> {html.escape(str(entry_info.get('cargo_weight')))} т"
             )
 
-        # Container status
         status = entry_info.get("status", "")
         if status:
             display_status = get_status_display(status, lang)
@@ -161,7 +177,6 @@ async def build_exit_summary(entry_data: dict, lang: str) -> str:
                 f"<b>📊 {get_text('summary_status', lang)}:</b> {display_status}"
             )
 
-        # Entry photos (photos from when container entered terminal)
         entry_photos_count = entry_info.get("entry_photos_count", 0)
         if entry_photos_count > 0:
             lines.append(
@@ -248,7 +263,7 @@ async def cmd_exit_container(message: Message, state: FSMContext, user=None):
 @exit_router.message(ExitForm.container_number)
 @require_manager_access
 async def process_exit_container_number(message: Message, state: FSMContext, user=None):
-    """Process container number for exit"""
+    """Process container number(s) for exit (supports 1-2 containers per line)"""
     lang = await get_user_language(state)
 
     if not message.text:
@@ -258,54 +273,91 @@ async def process_exit_container_number(message: Message, state: FSMContext, use
         )
         return
 
-    raw_input = message.text.strip()
+    # Parse input lines (1 or 2 container numbers)
+    raw_lines = [line.strip() for line in message.text.strip().splitlines() if line.strip()]
 
-    # Validate format (accepts with or without spaces)
-    # Note: validate_container_number is pure Python regex, no DB access
-    if not entry_service.validate_container_number(raw_input):
+    if not raw_lines:
         await message.answer(
             get_text("invalid_container_format", lang),
             reply_markup=reply.get_cancel_keyboard(lang),
         )
         return
 
-    # Normalize: remove spaces and uppercase (e.g., "MSKU 1234567" -> "MSKU1234567")
-    container_number = entry_service.normalize_container_number(raw_input)
-
-    # Check if container has active entry
-    active_entry = await sync_to_async(entry_service.check_active_entry)(
-        container_number
-    )
-
-    if not active_entry:
+    if len(raw_lines) > 2:
         await message.answer(
-            get_text("container_not_found", lang, container_number=container_number),
+            get_text("max_containers_exceeded", lang),
             reply_markup=reply.get_cancel_keyboard(lang),
         )
         return
 
-    # Extract entry info in synchronous context to avoid async database access issues
-    entry_info = await sync_to_async(extract_entry_info)(active_entry)
+    # Validate and normalize each container number
+    container_numbers = []
+    for raw_input in raw_lines:
+        if not entry_service.validate_container_number(raw_input):
+            await message.answer(
+                get_text("invalid_container_format", lang),
+                reply_markup=reply.get_cancel_keyboard(lang),
+            )
+            return
+        container_numbers.append(entry_service.normalize_container_number(raw_input))
+
+    # Check for duplicates
+    if len(container_numbers) == 2 and container_numbers[0] == container_numbers[1]:
+        await message.answer(
+            get_text("duplicate_container_exit", lang),
+            reply_markup=reply.get_cancel_keyboard(lang),
+        )
+        return
+
+    # Check each container has an active entry
+    entries_info = []
+    for container_number in container_numbers:
+        active_entry = await sync_to_async(entry_service.check_active_entry)(
+            container_number
+        )
+        if not active_entry:
+            # Distinguish "already exited" from "never entered"
+            exited_entry = await sync_to_async(entry_service.check_exited_entry)(
+                container_number
+            )
+            if exited_entry:
+                exit_date_str = await sync_to_async(
+                    lambda: exited_entry.exit_date.strftime("%Y-%m-%d %H:%M")
+                )()
+                await message.answer(
+                    get_text(
+                        "container_already_exited",
+                        lang,
+                        container_number=container_number,
+                        exit_date=exit_date_str,
+                    ),
+                    reply_markup=reply.get_cancel_keyboard(lang),
+                )
+            else:
+                await message.answer(
+                    get_text("container_not_found", lang, container_number=container_number),
+                    reply_markup=reply.get_cancel_keyboard(lang),
+                )
+            return
+        entry_info = await sync_to_async(extract_entry_info)(active_entry)
+        entries_info.append(entry_info)
 
     # Auto-set exit date to current time (skip manual entry)
     from django.utils import timezone
 
     exit_date = timezone.now()
-    # Store ISO format to preserve timezone information
     exit_date_str = exit_date.isoformat()
 
     await state.update_data(
-        entry_info=entry_info,
-        container_number=container_number,
+        entries_info=entries_info,
+        container_numbers=container_numbers,
         exit_date=exit_date_str,
         photos=[],
     )
     await state.set_state(ExitForm.exit_transport_type)
 
-    # Show entry info and ask for exit transport type
-    # (skip exit date step - auto-set to current time)
     summary = await build_exit_summary(
-        {"entry_info": entry_info, "exit_date": exit_date_str, "photos": []}, lang
+        {"entries_info": entries_info, "exit_date": exit_date_str, "photos": []}, lang
     )
     await message.answer(
         f"{summary}\n\n{get_text('ask_exit_transport_type', lang)}",
@@ -471,24 +523,13 @@ async def process_exit_photo(
 @require_manager_access
 async def done_exit_photos(callback: CallbackQuery, state: FSMContext, user=None):
     """Complete photo upload and move to confirmation"""
-    user_id = callback.from_user.id
     lang = await get_user_language(state)
 
-    # Cancel any pending photo confirmation task
-    cancel_photo_confirmation_task(user_id)
-
-    # Clear photo loading state
+    cancel_photo_confirmation_task(callback.from_user.id)
     await state.update_data(last_photo_timestamp=None, photo_loading_msg_id=None)
     await state.set_state(ExitForm.confirmation)
 
-    data = await state.get_data()
-    summary = await build_exit_summary(data, lang)
-
-    await callback.message.edit_text(
-        f"{get_text('exit_confirmation_header', lang)}\n\n{summary}\n\n{get_text('exit_confirmation_question', lang)}",
-        reply_markup=inline.get_confirmation_keyboard(lang),
-        parse_mode="HTML",
-    )
+    await _show_exit_confirmation(callback, state, lang)
     await callback.answer()
 
 
@@ -496,12 +537,9 @@ async def done_exit_photos(callback: CallbackQuery, state: FSMContext, user=None
 @require_manager_access
 async def skip_exit_photos(callback: CallbackQuery, state: FSMContext, user=None):
     """Skip photos and go to confirmation"""
-    user_id = callback.from_user.id
     lang = await get_user_language(state)
 
-    # Cancel any pending photo confirmation task
-    cancel_photo_confirmation_task(user_id)
-
+    cancel_photo_confirmation_task(callback.from_user.id)
     await state.update_data(
         photos=[],
         show_photos=True,
@@ -510,14 +548,7 @@ async def skip_exit_photos(callback: CallbackQuery, state: FSMContext, user=None
     )
     await state.set_state(ExitForm.confirmation)
 
-    data = await state.get_data()
-    summary = await build_exit_summary(data, lang)
-
-    await callback.message.edit_text(
-        f"{get_text('exit_confirmation_header', lang)}\n\n{summary}\n\n{get_text('exit_confirmation_question', lang)}",
-        reply_markup=inline.get_confirmation_keyboard(lang),
-        parse_mode="HTML",
-    )
+    await _show_exit_confirmation(callback, state, lang)
     await callback.answer()
 
 
@@ -618,14 +649,7 @@ async def confirm_exit_detected_plate(
     await state.update_data(exit_transport_number=detected_plate, show_photos=True)
     await state.set_state(ExitForm.confirmation)
 
-    # Show confirmation summary
-    data = await state.get_data()
-    summary = await build_exit_summary(data, lang)
-    await callback.message.edit_text(
-        f"{get_text('exit_confirmation_header', lang)}\n\n{summary}\n\n{get_text('exit_confirmation_question', lang)}",
-        reply_markup=inline.get_confirmation_keyboard(lang),
-        parse_mode="HTML",
-    )
+    await _show_exit_confirmation(callback, state, lang)
     await callback.answer()
 
 
@@ -717,17 +741,17 @@ async def back_to_exit_photos(
 @exit_router.callback_query(F.data == "confirm_yes", ExitForm.confirmation)
 @require_manager_access
 async def confirm_exit(callback: CallbackQuery, state: FSMContext, user=None):
-    """Confirm and create exit record"""
+    """Confirm and create exit record(s) for 1-2 containers"""
     lang = await get_user_language(state)
 
     data = await state.get_data()
+    container_numbers_display = ", ".join(data.get("container_numbers", []))
 
     try:
         from datetime import datetime as dt
 
-        # Prepare exit data
+        # Prepare shared exit data
         exit_date_str = data.get("exit_date", "")
-        # Parse ISO format datetime (preserves timezone from when it was created)
         exit_date = dt.fromisoformat(exit_date_str)
 
         exit_data = {
@@ -737,8 +761,7 @@ async def confirm_exit(callback: CallbackQuery, state: FSMContext, user=None):
             "exit_train_number": data.get("exit_train_number", ""),
         }
 
-        # Download photos from Telegram using shared utility
-        # Normalize photo data (handle both old dict format and new file_id format)
+        # Download photos from Telegram (shared across all containers)
         raw_photos = data.get("photos", [])
         photo_file_ids = [
             p.get("file_id") if isinstance(p, dict) else p for p in raw_photos
@@ -747,56 +770,92 @@ async def confirm_exit(callback: CallbackQuery, state: FSMContext, user=None):
         if photos:
             logger.info(f"Downloaded {len(photos)} exit photos from Telegram")
 
-        # Get crane operations if any
         crane_ops = data.get("crane_operations")
+        entries_info = data.get("entries_info", [])
 
-        # Call service to update exit
-        entry_id = data.get("entry_info", {}).get("entry_id")
-        updated_entry = await sync_to_async(entry_service.update_exit)(
-            entry_id=entry_id,
-            exit_data=exit_data,
-            photos=photos if photos else None,  # Pass None if no photos
-            crane_operations=crane_ops,
-            manager=user,  # Pass user who recorded this exit
-        )
+        # Update all containers in a single atomic transaction
+        def update_all_exits():
+            from django.db import transaction
 
-        # Log activity
-        await sync_to_async(activity_log_service.log_container_exit_recorded)(
-            user=user,
-            telegram_user_id=callback.from_user.id,
-            container_entry=updated_entry,
-        )
+            with transaction.atomic():
+                updated = []
+                for info in entries_info:
+                    # Reset photo stream positions so each entry gets full file data
+                    if photos:
+                        for photo_file in photos:
+                            photo_file.seek(0)
+                    entry = entry_service.update_exit(
+                        entry_id=info["entry_id"],
+                        exit_data=exit_data,
+                        photos=photos or None,
+                        crane_operations=crane_ops,
+                        manager=user,
+                    )
+                    updated.append(entry)
+                return updated
 
-        # Send notification to container owner's Telegram group
-        await owner_notification_service.notify_container_exit(
-            bot=callback.bot,
-            entry=updated_entry,
-            manager=user,
-            photo_file_ids=photo_file_ids if photo_file_ids else None,
-        )
+        updated_entries = await sync_to_async(update_all_exits)()
 
-        # Extract data in synchronous context to avoid async database access
-        def get_exit_display_info(entry):
-            return {
-                "container": format_container_number(entry.container.container_number),
-                "exit_date": entry.exit_date.strftime("%Y-%m-%d %H:%M"),
-                "dwell_time": entry.dwell_time_days or 0,
-            }
+        # Log activity for each container (separate events)
+        # These run after DB commit — failures here should not mask a successful exit
+        for updated_entry in updated_entries:
+            try:
+                await sync_to_async(activity_log_service.log_container_exit_recorded)(
+                    user=user,
+                    telegram_user_id=callback.from_user.id,
+                    container_entry=updated_entry,
+                )
+            except Exception as e:
+                logger.error(f"Failed to log exit activity: {e}", exc_info=True)
 
-        display_info = await sync_to_async(get_exit_display_info)(updated_entry)
+        # Send owner notifications (combined per owner group)
+        try:
+            await owner_notification_service.notify_container_exits_batch(
+                bot=callback.bot,
+                entries=updated_entries,
+                manager=user,
+                photo_file_ids=photo_file_ids or None,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send exit notifications: {e}", exc_info=True)
 
-        await callback.message.edit_text(
-            get_text(
+        # Build success message
+        def get_all_display_infos(entries):
+            return [
+                {
+                    "container": format_container_number(e.container.container_number),
+                    "exit_date": e.exit_date.strftime("%Y-%m-%d %H:%M"),
+                    "dwell_time": e.dwell_time_days or 0,
+                }
+                for e in entries
+            ]
+
+        display_infos = await sync_to_async(get_all_display_infos)(updated_entries)
+
+        if len(display_infos) == 1:
+            success_msg = get_text(
                 "exit_created",
                 lang,
-                container=display_info["container"],
-                exit_date=display_info["exit_date"],
-                dwell_time=display_info["dwell_time"],
+                container=display_infos[0]["container"],
+                exit_date=display_infos[0]["exit_date"],
+                dwell_time=display_infos[0]["dwell_time"],
             )
-        )
+        else:
+            # Multi-container success message
+            days_unit = get_text("days_short", lang)
+            container_lines = []
+            for info in display_infos:
+                container_lines.append(
+                    f"📦 {info['container']} — ⏱️ {info['dwell_time']} {days_unit}"
+                )
+            success_msg = (
+                f"{get_text('exit_created_multi_header', lang)}\n\n"
+                + "\n".join(container_lines)
+                + f"\n\n📅 {display_infos[0]['exit_date']}"
+            )
 
-        # Clear state and show main menu
-        lang = await get_user_language(state)
+        await callback.message.edit_text(success_msg)
+
         await state.clear()
         await state.update_data(language=lang)
 
@@ -806,65 +865,24 @@ async def confirm_exit(callback: CallbackQuery, state: FSMContext, user=None):
 
     except DuplicateEntryError as e:
         logger.warning(f"Duplicate entry error on exit: {e.message}")
-        await callback.message.edit_text(
-            get_text(
-                "duplicate_entry",
-                lang,
-                container_number=data.get("container_number", ""),
-            )
-        )
-        await state.clear()
-        await state.update_data(language=lang)
-        await callback.message.answer(
-            get_text("choose_action", lang), reply_markup=reply.get_main_keyboard(lang)
-        )
+        error_text = get_text("duplicate_entry", lang, container_number=container_numbers_display)
+        await _handle_exit_error(callback, state, lang, error_text)
     except ContainerNotFoundError as e:
         logger.warning(f"Container not found on exit: {e.message}")
-        await callback.message.edit_text(
-            get_text(
-                "container_not_found",
-                lang,
-                container_number=data.get("container_number", ""),
-            )
-        )
-        await state.clear()
-        await state.update_data(language=lang)
-        await callback.message.answer(
-            get_text("choose_action", lang), reply_markup=reply.get_main_keyboard(lang)
-        )
+        error_text = get_text("container_not_found", lang, container_number=container_numbers_display)
+        await _handle_exit_error(callback, state, lang, error_text)
     except ValidationError as e:
         logger.warning(f"Validation error on exit: {e!s}")
-        error_msg = str(e)[:100]  # Truncate long error messages
-        await callback.message.edit_text(
-            get_text("error_exit_creating", lang, error=error_msg)
-        )
-        await state.clear()
-        await state.update_data(language=lang)
-        await callback.message.answer(
-            get_text("choose_action", lang), reply_markup=reply.get_main_keyboard(lang)
-        )
+        error_text = get_text("error_exit_creating", lang, error=str(e)[:100])
+        await _handle_exit_error(callback, state, lang, error_text)
     except BusinessLogicError as e:
         logger.warning(f"Business logic error on exit: {e.message}")
-        await callback.message.edit_text(
-            get_text("error_exit_creating", lang, error=e.message)
-        )
-        await state.clear()
-        await state.update_data(language=lang)
-        await callback.message.answer(
-            get_text("choose_action", lang), reply_markup=reply.get_main_keyboard(lang)
-        )
+        error_text = get_text("error_exit_creating", lang, error=e.message)
+        await _handle_exit_error(callback, state, lang, error_text)
     except Exception as e:
         logger.error(f"Unexpected error creating exit: {e!s}", exc_info=True)
-        await callback.message.edit_text(
-            get_text(
-                "error_exit_creating", lang, error=get_text("error_unexpected", lang)
-            )
-        )
-        await state.clear()
-        await state.update_data(language=lang)
-        await callback.message.answer(
-            get_text("choose_action", lang), reply_markup=reply.get_main_keyboard(lang)
-        )
+        error_text = get_text("error_exit_creating", lang, error=get_text("error_unexpected", lang))
+        await _handle_exit_error(callback, state, lang, error_text)
 
     await callback.answer()
 

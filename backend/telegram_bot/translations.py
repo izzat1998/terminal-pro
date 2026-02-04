@@ -59,7 +59,7 @@ TRANSLATIONS = {
         "ask_truck_plate_photo": "📸 Отправьте фото номерного знака автомобиля для автоматического распознавания:",
         "ask_all_photos_truck": "📸 Отправьте фотографии (авто и контейнер).\nНомер авто будет распознан автоматически.\nКогда закончите, нажмите 'Готово':",
         "plate_recognizing": "🔍 Распознаю номер...",
-        "plate_recognized": "✅ Распознан номер: <b>{plate}</b>\n\nУверенность: {confidence}%\n\nВсё верно?",
+        "plate_recognized": "✅ Распознан номер: <b>{plate}</b>\n\nУверенность: {confidence}\n\nВсё верно?",
         "plate_recognition_failed": "❌ Не удалось распознать номер автоматически.\n\nПожалуйста, введите номер вручную:",
         "ask_photos": "📸 Отправьте фотографии контейнера (можно несколько).\nКогда закончите, нажмите 'Готово' или 'Пропустить':",
         # Confirmation
@@ -158,7 +158,9 @@ TRANSLATIONS = {
         # Exit container flow
         "btn_exit_container": "🚚 Выезд",
         "btn_train": "Поезд",
-        "start_exit": "Начинаем регистрацию выезда контейнера.\n\n📝 Введите номер контейнера:",
+        "start_exit": "Начинаем регистрацию выезда контейнера.\n\n📝 Введите номер контейнера\n(или два номера, каждый на новой строке):",
+        "max_containers_exceeded": "❌ Максимум 2 контейнера за один выезд!\n\nВведите 1 или 2 номера контейнеров:",
+        "duplicate_container_exit": "❌ Вы ввели один и тот же номер контейнера дважды!\n\nВведите два разных номера контейнеров:",
         "container_not_found": "❌ Контейнер {container_number} не найден на терминале!\n\nПожалуйста, проверьте номер контейнера и попробуйте ещё раз:",
         "container_already_exited": "❌ Контейнер {container_number} уже выехал с терминала!\n\n📅 Дата выезда: {exit_date}\n\nПожалуйста, введите другой номер контейнера:",
         "ask_exit_date": "📅 Введите дату выезда контейнера (форматы: 2025-10-28 или 28.10.2025 или 28/10/2025 или 28-10-2025).\nЧасы и минуты опциональны (например: 2025-10-28 14:30):",
@@ -198,6 +200,8 @@ TRANSLATIONS = {
         "exit_confirmation_header": "📋 Проверьте данные выезда:",
         "exit_confirmation_question": "Всё верно? Подтвердить выезд?",
         "exit_created": "✅ Выезд успешно зарегистрирован!\n\nКонтейнер: {container}\nДата выезда: {exit_date}\n⏱️ Время стоянки: {dwell_time} дней",
+        "exit_created_multi_header": "✅ Выезд успешно зарегистрирован!",
+        "days_short": "дн.",
         "error_exit_creating": "❌ Ошибка при регистрации выезда:\n{error}",
         "exit_cancelled": "❌ Регистрация выезда отменена",
         # Crane operation flow
@@ -275,7 +279,6 @@ TRANSLATIONS = {
         "container_list_header": "📦 <b>Контейнеры на терминале</b>\n\nВсего: {count}",
         "container_list_empty": "📋 На терминале нет контейнеров вашей компании",
         "container_no_company": "❌ Вы не привязаны к компании. Обратитесь к администратору.",
-        "days_short": "дн.",
         "btn_search_container": "🔍 Поиск",
         "btn_photos": "Фото",
         "btn_back_to_list": "◀️ К списку",
@@ -402,7 +405,7 @@ TRANSLATIONS = {
         "ask_truck_plate_photo": "📸 Avtomobil raqamining rasmini yuboring (avtomatik tanib olish uchun):",
         "ask_all_photos_truck": "📸 Rasmlarni yuboring (avtomobil va konteyner).\nAvtomobil raqami avtomatik tanib olinadi.\nTugagach, 'Tayyor' tugmasini bosing:",
         "plate_recognizing": "🔍 Raqamni taniyapman...",
-        "plate_recognized": "✅ Tanilgan raqam: <b>{plate}</b>\n\nIshonch: {confidence}%\n\nTo'g'rimi?",
+        "plate_recognized": "✅ Tanilgan raqam: <b>{plate}</b>\n\nIshonch: {confidence}\n\nTo'g'rimi?",
         "plate_recognition_failed": "❌ Raqamni avtomatik tanib bo'lmadi.\n\nIltimos, raqamni qo'lda kiriting:",
         "ask_photos": "📸 Konteyner fotosuratlarini yuboring (bir nechta bo'lishi mumkin).\nTugagach, 'Tayyor' yoki 'O'tkazib yuborish' tugmasini bosing:",
         # Confirmation
@@ -501,7 +504,9 @@ TRANSLATIONS = {
         # Exit container flow
         "btn_exit_container": "🚚 Chiqish",
         "btn_train": "Poyezd",
-        "start_exit": "Konteyner chiqishini ro'yxatdan o'tkkazishni boshlaymiz.\n\n📝 Konteyner raqamini kiriting:",
+        "start_exit": "Konteyner chiqishini ro'yxatdan o'tkazishni boshlaymiz.\n\n📝 Konteyner raqamini kiriting\n(yoki ikkita raqamni, har birini yangi qatorga):",
+        "max_containers_exceeded": "❌ Bitta chiqish uchun maksimum 2 ta konteyner!\n\n1 yoki 2 ta konteyner raqamini kiriting:",
+        "duplicate_container_exit": "❌ Siz bir xil konteyner raqamini ikki marta kiritdingiz!\n\nIkkita turli konteyner raqamini kiriting:",
         "container_not_found": "❌ Konteyner {container_number} terminalda topilmadi!\n\nKonteyner raqamini tekshiring va qaytadan urinib ko'ring:",
         "container_already_exited": "❌ Konteyner {container_number} allaqachon terminaldan chiqgan!\n\n📅 Chiqish sanasi: {exit_date}\n\nBoshqa konteyner raqamini kiriting:",
         "ask_exit_date": "📅 Konteyner chiqish sanasini kiriting (formatlar: 2025-10-28 yoki 28.10.2025 yoki 28/10/2025 yoki 28-10-2025).\nSoatlar va daqiqalar ixtiyoriy (masalan: 2025-10-28 14:30):",
@@ -541,6 +546,8 @@ TRANSLATIONS = {
         "exit_confirmation_header": "📋 Chiqish ma'lumotlarini tekshiring:",
         "exit_confirmation_question": "Hammasi to'g'rimi? Chiqishni tasdiqlaysizmi?",
         "exit_created": "✅ Chiqish muvaffaqiyatli ro'yxatdan o'tdi!\n\nKonteyner: {container}\nChiqish sanasi: {exit_date}\n⏱️ Turish vaqti: {dwell_time} kun",
+        "exit_created_multi_header": "✅ Chiqish muvaffaqiyatli ro'yxatdan o'tdi!",
+        "days_short": "kun",
         "error_exit_creating": "❌ Chiqishni ro'yxatdan o'tkazishda xatolik:\n{error}",
         "exit_cancelled": "❌ Chiqishni ro'yxatdan o'tkazish bekor qilindi",
         # Crane operation flow
@@ -618,7 +625,6 @@ TRANSLATIONS = {
         "container_list_header": "📦 <b>Terminaldagi konteynerlar</b>\n\nJami: {count}",
         "container_list_empty": "📋 Terminalda kompaniyangizning konteynerlari yo'q",
         "container_no_company": "❌ Siz kompaniyaga biriktirilmagansiz. Administratorga murojaat qiling.",
-        "days_short": "kun",
         "btn_search_container": "🔍 Qidirish",
         "btn_photos": "Rasmlar",
         "btn_back_to_list": "◀️ Ro'yxatga",

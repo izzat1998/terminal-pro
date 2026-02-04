@@ -297,6 +297,124 @@ class OwnerNotificationService:
 
         return "\n".join(lines)
 
+    def _build_combined_exit_message(self, data_list: list[ExitNotificationData]) -> str:
+        """Build combined exit notification for multiple containers belonging to same owner."""
+        count = len(data_list)
+        lines = [f"<b>🚪 Выезд контейнеров ({count} шт.)</b>"]
+
+        for idx, data in enumerate(data_list, 1):
+            container_num = data.container_number
+            if len(container_num) >= 4:
+                display_container = f"{container_num[:4]} {container_num[4:]}"
+            else:
+                display_container = container_num
+
+            lines.append("")
+            lines.append(f"📋 Контейнер {idx}: <code>{escape(display_container)}</code>")
+            lines.append(f"📐 ISO тип: {escape(data.iso_type)} | 📊 {escape(data.status_display)}")
+
+            if data.client_name:
+                lines.append(f"👤 Клиент: {escape(data.client_name)}")
+
+            entry_transport = escape(data.entry_transport_display)
+            if data.entry_transport_number:
+                entry_transport += f" ({escape(data.entry_transport_number)})"
+            lines.append(f"🚛 Въезд: {entry_transport} — {data.entry_time_str}")
+            lines.append(f"⏱️ На терминале: <b>{data.dwell_time_days} дн.</b>")
+
+        # Shared exit info from the first entry (all share same exit transport)
+        first = data_list[0]
+        lines.append("")
+        lines.append(
+            f"🚛 Выезд: {escape(first.exit_transport_display)} "
+            f"({escape(first.exit_transport_number)}) — {first.exit_time_str}"
+        )
+        lines.append(f"👤 Менеджер: {escape(first.manager_name)}")
+
+        return "\n".join(lines)
+
+    async def notify_container_exits_batch(
+        self,
+        bot: Bot,
+        entries: list[ContainerEntry],
+        manager: CustomUser,
+        photo_file_ids: list[str] | None = None,
+    ) -> list[NotificationResult]:
+        """
+        Send exit notifications for multiple entries, combining entries that share
+        the same owner group into a single message.
+
+        Args:
+            bot: aiogram Bot instance
+            entries: list of ContainerEntry objects with exit info
+            manager: CustomUser (manager) who processed the exit
+            photo_file_ids: Optional list of Telegram photo file_ids (exit photos)
+
+        Returns:
+            List of NotificationResult for each owner group notified
+        """
+        # Extract data for all entries in sync context
+        def extract_all():
+            return [self._extract_exit_notification_data(e, manager) for e in entries]
+
+        all_data = await sync_to_async(extract_all)()
+
+        # Group by owner_telegram_group_id
+        groups: dict[str, list[ExitNotificationData]] = {}
+        results: list[NotificationResult] = []
+
+        for data in all_data:
+            if not data.owner_name:
+                logger.debug(f"No container owner for entry {data.entry_id}, skipping exit notification")
+                results.append(NotificationResult(status="skipped", error_message="Владелец не указан"))
+                continue
+            if not data.owner_notifications_enabled:
+                logger.debug(f"Notifications disabled for owner {data.owner_name}, skipping exit notification")
+                results.append(NotificationResult(status="skipped", error_message="Уведомления отключены"))
+                continue
+            if not data.owner_telegram_group_id:
+                logger.debug(f"No telegram_group_id for owner {data.owner_name}, skipping exit notification")
+                results.append(NotificationResult(status="skipped", error_message="Группа не настроена"))
+                continue
+
+            group_id = data.owner_telegram_group_id.strip()
+            groups.setdefault(group_id, []).append(data)
+
+        # Send one message per owner group
+        for chat_id, data_list in groups.items():
+            if len(data_list) == 1:
+                message = self._build_exit_message_from_data(data_list[0])
+            else:
+                message = self._build_combined_exit_message(data_list)
+
+            try:
+                if photo_file_ids:
+                    await self._send_with_photos(bot, chat_id, message, photo_file_ids)
+                else:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=message,
+                        parse_mode=ParseMode.HTML,
+                    )
+
+                entry_ids = [d.entry_id for d in data_list]
+                owner_name = data_list[0].owner_name
+                logger.info(
+                    f"Sent combined exit notification to {owner_name} "
+                    f"(group: {chat_id}) for entries {entry_ids}"
+                )
+                results.append(NotificationResult(status="sent"))
+
+            except Exception as e:
+                owner_name = data_list[0].owner_name
+                logger.error(
+                    f"Failed to send exit notification to owner {owner_name} "
+                    f"(group: {chat_id}): {e}"
+                )
+                results.append(NotificationResult(status="error", error_message=str(e)))
+
+        return results
+
     async def notify_container_exit(
         self,
         bot: Bot,
