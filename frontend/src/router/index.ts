@@ -312,10 +312,14 @@ router.beforeEach(async (to, _from, next) => {
       return;
     }
 
-    // If authenticated user visits landing page, redirect to app
-    if (to.name === 'Landing' && isAuthenticated.value) {
-      const redirectPath = user.value?.user_type === 'customer' ? '/customer' : '/containers';
-      next({ path: redirectPath });
+    // Landing page: redirect based on auth status
+    if (to.name === 'Landing') {
+      if (isAuthenticated.value) {
+        const redirectPath = user.value?.user_type === 'customer' ? '/customer' : '/containers';
+        next({ path: redirectPath });
+      } else {
+        next({ name: 'Login' });
+      }
       return;
     }
 
