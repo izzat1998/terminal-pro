@@ -203,8 +203,9 @@ def create_dispatcher() -> Dispatcher:
         redis_host = os.getenv("REDIS_HOST", "localhost")
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
         redis_db = int(os.getenv("REDIS_DB", "1"))
+        redis_password = os.getenv("REDIS_PASSWORD")
 
-        redis = Redis(host=redis_host, port=redis_port, db=redis_db)
+        redis = Redis(host=redis_host, port=redis_port, db=redis_db, password=redis_password)
         storage = RedisStorage(redis)
         logger.info(f"Using Redis storage: {redis_host}:{redis_port}/{redis_db}")
     except Exception as e:

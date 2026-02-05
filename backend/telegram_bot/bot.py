@@ -64,8 +64,9 @@ async def main():
         redis_host = os.getenv("REDIS_HOST", "localhost")
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
         redis_db = int(os.getenv("REDIS_DB", "1"))
+        redis_password = os.getenv("REDIS_PASSWORD")
 
-        redis = Redis(host=redis_host, port=redis_port, db=redis_db)
+        redis = Redis(host=redis_host, port=redis_port, db=redis_db, password=redis_password)
         await redis.ping()
         storage = RedisStorage(redis)
         logger.info("Using Redis storage for FSM")
