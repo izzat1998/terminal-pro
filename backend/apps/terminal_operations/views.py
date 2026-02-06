@@ -367,7 +367,7 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
         container_number = request.query_params.get("container_number")
         if not container_number:
             raise BusinessLogicError(
-                message="container_number parameter required",
+                message="Параметр container_number обязателен",
                 error_code="MISSING_PARAMETER",
             )
 
@@ -472,7 +472,7 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
         uploaded_file = request.FILES.get("file")
         if not uploaded_file:
             raise BusinessLogicError(
-                message="No file provided",
+                message="Файл не предоставлен",
                 error_code="MISSING_FILE",
             )
 
@@ -578,7 +578,7 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
             )
         except FileAttachment.DoesNotExist:
             raise BusinessLogicError(
-                message="Attachment not found",
+                message="Вложение не найдено",
                 error_code="NOT_FOUND",
             )
 
@@ -597,7 +597,7 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
             file_obj.save(update_fields=["is_active"])
 
         return Response(
-            {"success": True, "message": "File removed successfully"},
+            {"success": True, "message": "Файл успешно удалён"},
             status=status.HTTP_200_OK,
         )
 

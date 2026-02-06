@@ -50,4 +50,7 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
             return True
 
         # Write permissions only for owner or staff
-        return obj.uploaded_by == request.user or request.user.is_staff
+        owner = getattr(obj, "uploaded_by", None)
+        if owner is None and hasattr(obj, "file"):
+            owner = getattr(obj.file, "uploaded_by", None)
+        return owner == request.user or request.user.is_staff

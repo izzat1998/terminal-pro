@@ -5,10 +5,9 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_sche
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from apps.core.exceptions import BusinessLogicError
 
 from .models import CustomUser
 from .serializers import (
@@ -138,33 +137,20 @@ class ManagerViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            manager = self.service.create_manager(
-                phone_number=serializer.validated_data["phone_number"],
-                first_name=serializer.validated_data["first_name"],
-                bot_access=serializer.validated_data.get("bot_access", False),
-                gate_access=serializer.validated_data.get("gate_access", False),
-                is_active=serializer.validated_data.get("is_active", True),
-                password=serializer.validated_data.get("password"),
-                telegram_user_id=serializer.validated_data.get("telegram_user_id"),
-            )
+        manager = self.service.create_manager(
+            phone_number=serializer.validated_data["phone_number"],
+            first_name=serializer.validated_data["first_name"],
+            bot_access=serializer.validated_data.get("bot_access", False),
+            gate_access=serializer.validated_data.get("gate_access", False),
+            is_active=serializer.validated_data.get("is_active", True),
+            password=serializer.validated_data.get("password"),
+            telegram_user_id=serializer.validated_data.get("telegram_user_id"),
+        )
 
-            return Response(
-                {"success": True, "data": ManagerSerializer(manager).data},
-                status=status.HTTP_201_CREATED,
-            )
-        except BusinessLogicError as e:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": e.error_code,
-                        "message": e.message,
-                        "details": e.details,
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        return Response(
+            {"success": True, "data": ManagerSerializer(manager).data},
+            status=status.HTTP_201_CREATED,
+        )
 
     @extend_schema(
         summary="Update manager",
@@ -184,24 +170,11 @@ class ManagerViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(manager, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            updated_manager = self.service.update_manager(
-                manager_id=manager.id, **serializer.validated_data
-            )
+        updated_manager = self.service.update_manager(
+            manager_id=manager.id, **serializer.validated_data
+        )
 
-            return Response({"success": True, "data": ManagerSerializer(updated_manager).data})
-        except BusinessLogicError as e:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": e.error_code,
-                        "message": e.message,
-                        "details": e.details,
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        return Response({"success": True, "data": ManagerSerializer(updated_manager).data})
 
     @extend_schema(
         summary="Grant manager access",
@@ -221,27 +194,14 @@ class ManagerViewSet(viewsets.ModelViewSet):
         """
         manager = self.get_object()
 
-        try:
-            updated_manager = self.service.grant_access(manager.id)
-            return Response(
-                {
-                    "success": True,
-                    "message": f"Доступ предоставлен менеджеру {updated_manager.first_name}",
-                    "data": ManagerSerializer(updated_manager).data,
-                }
-            )
-        except BusinessLogicError as e:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": e.error_code,
-                        "message": e.message,
-                        "details": e.details,
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        updated_manager = self.service.grant_access(manager.id)
+        return Response(
+            {
+                "success": True,
+                "message": f"Доступ предоставлен менеджеру {updated_manager.first_name}",
+                "data": ManagerSerializer(updated_manager).data,
+            }
+        )
 
     @extend_schema(
         summary="Revoke manager access",
@@ -261,27 +221,14 @@ class ManagerViewSet(viewsets.ModelViewSet):
         """
         manager = self.get_object()
 
-        try:
-            updated_manager = self.service.revoke_access(manager.id)
-            return Response(
-                {
-                    "success": True,
-                    "message": f"Доступ отозван у менеджера {updated_manager.first_name}",
-                    "data": ManagerSerializer(updated_manager).data,
-                }
-            )
-        except BusinessLogicError as e:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": e.error_code,
-                        "message": e.message,
-                        "details": e.details,
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        updated_manager = self.service.revoke_access(manager.id)
+        return Response(
+            {
+                "success": True,
+                "message": f"Доступ отозван у менеджера {updated_manager.first_name}",
+                "data": ManagerSerializer(updated_manager).data,
+            }
+        )
 
     # Access requests endpoint removed - simplified workflow
 
@@ -358,6 +305,7 @@ class GateAccessCheckView(APIView):
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [AnonRateThrottle]
     service = ManagerService()
 
     @extend_schema(

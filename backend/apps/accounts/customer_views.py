@@ -41,8 +41,12 @@ class CustomerViewSet(viewsets.ModelViewSet):
         Uses select_related to prefetch profile data for better performance.
         Filters check both profile fields and legacy fields during migration.
         """
+        from django.db.models import Count
+
         queryset = CustomUser.objects.filter(user_type="customer").select_related(
             "customer_profile", "customer_profile__company"
+        ).annotate(
+            _orders_count=Count("pre_orders"),
         )
 
         # Filter by active status
