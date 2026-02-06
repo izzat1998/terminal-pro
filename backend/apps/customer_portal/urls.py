@@ -9,10 +9,15 @@ from apps.billing.views import (
     CustomerAdditionalChargeView,
     CustomerAvailablePeriodsView,
     CustomerBulkStorageCostView,
+    CustomerStatementExportActHtmlPreviewView,
+    CustomerStatementExportActPreviewView,
+    CustomerStatementExportActView,
     CustomerStatementExportExcelView,
+    CustomerStatementExportHtmlPreviewView,
     CustomerStatementExportPdfView,
     CustomerStatementListView,
     CustomerStatementView,
+    CustomerStorageCostExportView,
     CustomerStorageCostView,
 )
 
@@ -38,6 +43,12 @@ router.register(
 router.register(r"preorders", CustomerPreOrderViewSet, basename="customer-preorders")
 
 urlpatterns = router.urls + [
+    # Storage costs export: /api/customer/storage-costs/export/
+    path(
+        "storage-costs/export/",
+        CustomerStorageCostExportView.as_view(),
+        name="customer-storage-costs-export",
+    ),
     # Storage costs endpoint: /api/customer/storage-costs/
     path(
         "storage-costs/",
@@ -76,6 +87,26 @@ urlpatterns = router.urls + [
         "billing/statements/<int:year>/<int:month>/export/pdf/",
         CustomerStatementExportPdfView.as_view(),
         name="customer-statement-export-pdf",
+    ),
+    path(
+        "billing/statements/<int:year>/<int:month>/export/act/",
+        CustomerStatementExportActView.as_view(),
+        name="customer-statement-export-act",
+    ),
+    path(
+        "billing/statements/<int:year>/<int:month>/export/act-preview/",
+        CustomerStatementExportActPreviewView.as_view(),
+        name="customer-statement-export-act-preview",
+    ),
+    path(
+        "billing/statements/<int:year>/<int:month>/export/html-preview/",
+        CustomerStatementExportHtmlPreviewView.as_view(),
+        name="customer-statement-export-html-preview",
+    ),
+    path(
+        "billing/statements/<int:year>/<int:month>/export/act-html-preview/",
+        CustomerStatementExportActHtmlPreviewView.as_view(),
+        name="customer-statement-export-act-html-preview",
     ),
     # Additional charges endpoint: /api/customer/additional-charges/
     path(

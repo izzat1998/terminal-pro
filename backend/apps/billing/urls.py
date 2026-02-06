@@ -9,11 +9,17 @@ from .views import (
     AdditionalChargeViewSet,
     BulkGenerateDraftsView,
     BulkStorageCostView,
+    CompanyStatementExportActHtmlPreviewView,
+    CompanyStatementExportActPreviewView,
+    CompanyStatementExportActView,
+    CompanyStatementExportHtmlPreviewView,
     CustomerAdditionalChargeView,
     CustomerStorageCostView,
+    ExchangeRateView,
     ExpenseTypeViewSet,
     StorageCostView,
     TariffViewSet,
+    TerminalSettingsView,
 )
 
 
@@ -40,6 +46,38 @@ urlpatterns = [
         "generate-all-drafts/",
         BulkGenerateDraftsView.as_view(),
         name="bulk-generate-drafts",
+    ),
+    path(
+        "terminal-settings/",
+        TerminalSettingsView.as_view(),
+        name="terminal-settings",
+    ),
+    # Exchange rate from CBU
+    path(
+        "exchange-rate/",
+        ExchangeRateView.as_view(),
+        name="exchange-rate",
+    ),
+    # Счёт-фактура export (admin, per company)
+    path(
+        "companies/<slug:slug>/statements/<int:year>/<int:month>/export/act/",
+        CompanyStatementExportActView.as_view(),
+        name="company-statement-export-act",
+    ),
+    path(
+        "companies/<slug:slug>/statements/<int:year>/<int:month>/export/act-preview/",
+        CompanyStatementExportActPreviewView.as_view(),
+        name="company-statement-export-act-preview",
+    ),
+    path(
+        "companies/<slug:slug>/statements/<int:year>/<int:month>/export/html-preview/",
+        CompanyStatementExportHtmlPreviewView.as_view(),
+        name="company-statement-export-html-preview",
+    ),
+    path(
+        "companies/<slug:slug>/statements/<int:year>/<int:month>/export/act-html-preview/",
+        CompanyStatementExportActHtmlPreviewView.as_view(),
+        name="company-statement-export-act-html-preview",
     ),
 ]
 

@@ -90,6 +90,26 @@
             {{ statusLabel(record.status) }}
           </a-tag>
         </template>
+
+        <template v-if="column.key === 'actions'">
+          <a-space :size="4">
+            <a-tooltip title="Excel">
+              <a-button type="text" size="small" @click.stop="openPreview(record, 'excel')">
+                <template #icon><FileExcelOutlined style="color: #52c41a;" /></template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip title="PDF">
+              <a-button type="text" size="small" @click.stop="openPreview(record, 'pdf')">
+                <template #icon><FilePdfOutlined style="color: #ff4d4f;" /></template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip title="Счёт-фактура">
+              <a-button type="text" size="small" @click.stop="openPreview(record, 'act')">
+                <template #icon><AuditOutlined style="color: #1677ff;" /></template>
+              </a-button>
+            </a-tooltip>
+          </a-space>
+        </template>
       </template>
 
       <!-- Expanded Row: Detail view -->
@@ -108,40 +128,63 @@
               <template #icon><InfoCircleOutlined /></template>
             </a-alert>
 
-            <!-- Action Buttons -->
-            <a-space style="margin-bottom: 12px;" wrap>
-              <a-button type="primary" size="small" @click="exportExcel(record)">
-                <template #icon><FileExcelOutlined /></template>
-                Excel
-              </a-button>
-              <a-button size="small" @click="exportPdf(record)">
-                <template #icon><FilePdfOutlined /></template>
-                PDF
-              </a-button>
+            <!-- Exchange Rate (editable for drafts, read-only otherwise) -->
+            <div v-if="isAdmin" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 13px; color: #666;">Курс ЦБ (USD/UZS):</span>
+              <template v-if="record.status === 'draft'">
+                <a-input-number
+                  v-model:value="exchangeRates[record.id]"
+                  :min="0"
+                  :step="0.01"
+                  :precision="2"
+                  size="small"
+                  style="width: 150px;"
+                  placeholder="Загрузить..."
+                />
+                <a-button size="small" :loading="fetchingRate[record.id]" @click="fetchCbuRate(record)">
+                  <template #icon><CloudDownloadOutlined /></template>
+                  ЦБ
+                </a-button>
+                <a-button
+                  v-if="exchangeRates[record.id] && exchangeRates[record.id] !== Number(record.exchange_rate)"
+                  type="link"
+                  size="small"
+                  :loading="savingRate[record.id]"
+                  @click="saveExchangeRate(record)"
+                >
+                  Сохранить
+                </a-button>
+              </template>
+              <template v-else>
+                <span style="font-weight: 600;">
+                  {{ record.exchange_rate ? Number(record.exchange_rate).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—' }}
+                </span>
+              </template>
+            </div>
 
-              <template v-if="isAdmin">
-                <!-- Draft actions -->
-                <template v-if="record.status === 'draft'">
-                  <a-button size="small" :loading="regeneratingId === record.id" @click="regenerateStatement(record)">
-                    <template #icon><ReloadOutlined /></template>
-                    Пересчитать
+            <!-- Admin Action Buttons -->
+            <a-space v-if="isAdmin" style="margin-bottom: 12px;" wrap>
+              <!-- Draft actions -->
+              <template v-if="record.status === 'draft'">
+                <a-button size="small" :loading="regeneratingId === record.id" @click="regenerateStatement(record)">
+                  <template #icon><ReloadOutlined /></template>
+                  Пересчитать
+                </a-button>
+                <a-popconfirm title="Утвердить выписку? После утверждения изменение невозможно." @confirm="finalizeStatement(record)">
+                  <a-button type="primary" size="small" :loading="finalizingId === record.id">
+                    <template #icon><CheckOutlined /></template>
+                    Утвердить
                   </a-button>
-                  <a-popconfirm title="Утвердить выписку? После утверждения изменение невозможно." @confirm="finalizeStatement(record)">
-                    <a-button type="primary" size="small" :loading="finalizingId === record.id">
-                      <template #icon><CheckOutlined /></template>
-                      Утвердить
-                    </a-button>
-                  </a-popconfirm>
-                </template>
+                </a-popconfirm>
+              </template>
 
-                <!-- Finalized/Paid actions -->
-                <template v-if="record.status === 'finalized' || record.status === 'paid'">
-                  <a-popconfirm title="Создать корректировку? Исходный документ будет отменён." @confirm="createCreditNote(record)">
-                    <a-button danger size="small" :loading="creditNoteId === record.id">
-                      Корректировка
-                    </a-button>
-                  </a-popconfirm>
-                </template>
+              <!-- Finalized/Paid actions -->
+              <template v-if="record.status === 'finalized' || record.status === 'paid'">
+                <a-popconfirm title="Создать корректировку? Исходный документ будет отменён." @confirm="createCreditNote(record)">
+                  <a-button danger size="small" :loading="creditNoteId === record.id">
+                    Корректировка
+                  </a-button>
+                </a-popconfirm>
               </template>
             </a-space>
 
@@ -291,6 +334,14 @@
         <a-empty :description="selectedYear ? 'Нет сформированных выписок за этот год' : 'Выберите год'" />
       </template>
     </a-table>
+
+    <!-- Document Preview Modal -->
+    <DocumentPreviewModal
+      v-model:open="previewOpen"
+      :record="previewRecord"
+      :billing-base-url="billingBaseUrl"
+      :initial-tab="previewTab"
+    />
   </div>
 </template>
 
@@ -304,13 +355,15 @@ import {
   InfoCircleOutlined,
   FileExcelOutlined,
   FilePdfOutlined,
+  AuditOutlined,
   CheckOutlined,
+  CloudDownloadOutlined,
 } from '@ant-design/icons-vue';
 import { http } from '../../utils/httpClient';
 import { formatDateLocale, formatDateTime as formatDateTimeTz } from '../../utils/dateFormat';
-import { downloadBlob } from '../../utils/download';
-import { getCookie } from '../../utils/storage';
-import { API_BASE_URL } from '../../config/api';
+import DocumentPreviewModal from './DocumentPreviewModal.vue';
+
+defineOptions({ inheritAttrs: false });
 
 interface Props {
   companySlug?: string;
@@ -363,6 +416,7 @@ interface StatementListItem {
   paid_at: string | null;
   paid_marked_by_name: string;
   company_name: string;
+  exchange_rate: string | null;
   summary: StatementSummary;
   generated_at: string;
 }
@@ -427,6 +481,12 @@ const detailLoading = reactive<Record<number, boolean>>({});
 const expandedRowKeys = ref<number[]>([]);
 const selectedYear = ref<number | null>(null);
 const selectedMonth = ref<number | null>(null);
+const previewOpen = ref(false);
+const previewRecord = ref<StatementListItem | null>(null);
+const previewTab = ref<'excel' | 'pdf' | 'act'>('pdf');
+const exchangeRates = reactive<Record<number, number | null>>({});
+const fetchingRate = reactive<Record<number, boolean>>({});
+const savingRate = reactive<Record<number, boolean>>({});
 
 const availableYears = computed(() => {
   const currentYear = new Date().getFullYear();
@@ -441,10 +501,10 @@ const availableYears = computed(() => {
 
 const statusColor = (status: string): string => {
   const map: Record<string, string> = {
-    draft: 'blue',
-    finalized: 'green',
-    paid: 'gold',
-    cancelled: 'red',
+    draft: 'default',
+    finalized: 'warning',
+    paid: 'success',
+    cancelled: 'error',
   };
   return map[status] || 'default';
 };
@@ -452,7 +512,7 @@ const statusColor = (status: string): string => {
 const statusLabel = (status: string): string => {
   const map: Record<string, string> = {
     draft: 'Черновик',
-    finalized: 'Выставлен',
+    finalized: 'Проведён',
     paid: 'Оплачен',
     cancelled: 'Отменён',
   };
@@ -468,6 +528,7 @@ const masterColumns: TableProps['columns'] = [
   { title: 'Итого USD', key: 'total_usd', width: 150, align: 'right' },
   { title: 'Итого UZS', key: 'total_uzs', width: 180, align: 'right' },
   { title: 'Статус', key: 'status', width: 130, align: 'center' },
+  { title: '', key: 'actions', width: 110, align: 'center' },
 ];
 
 const storageColumns: TableProps['columns'] = [
@@ -555,8 +616,53 @@ const handleExpand = (expanded: boolean, record: StatementListItem) => {
   if (expanded) {
     expandedRowKeys.value = [record.id];
     fetchStatementDetail(record);
+    // Initialize exchange rate from record data for the input field
+    if (record.exchange_rate && exchangeRates[record.id] === undefined) {
+      exchangeRates[record.id] = Number(record.exchange_rate);
+    }
   } else {
     expandedRowKeys.value = [];
+  }
+};
+
+const fetchCbuRate = async (record: StatementListItem) => {
+  fetchingRate[record.id] = true;
+  try {
+    // Get last day of the statement month for CBU rate
+    const lastDay = new Date(record.year, record.month, 0);
+    const dateStr = lastDay.toISOString().split('T')[0];
+    const result = await http.get<{ success: boolean; data: { rate: string; date: string } }>(
+      `/billing/exchange-rate/?date=${dateStr}`
+    );
+    exchangeRates[record.id] = Number(result.data.rate);
+    message.success(`Курс ЦБ на ${result.data.date}: ${result.data.rate}`);
+  } catch {
+    message.error('Не удалось получить курс ЦБ');
+  } finally {
+    fetchingRate[record.id] = false;
+  }
+};
+
+const saveExchangeRate = async (record: StatementListItem) => {
+  const rate = exchangeRates[record.id];
+  if (!rate) return;
+
+  savingRate[record.id] = true;
+  try {
+    await http.post(
+      `${billingBaseUrl.value}/statements/${record.id}/set-exchange-rate/`,
+      { exchange_rate: rate }
+    );
+    // Update the record in the list so the "Сохранить" button disappears
+    const idx = statements.value.findIndex(s => s.id === record.id);
+    if (idx !== -1) {
+      statements.value[idx] = { ...statements.value[idx], exchange_rate: String(rate) };
+    }
+    message.success('Курс сохранён');
+  } catch {
+    message.error('Не удалось сохранить курс');
+  } finally {
+    savingRate[record.id] = false;
   }
 };
 
@@ -642,33 +748,11 @@ const createCreditNote = async (record: StatementListItem) => {
   }
 };
 
-const exportFile = async (record: StatementListItem, format: 'excel' | 'pdf') => {
-  const token = getCookie('access_token');
-  const url = `${API_BASE_URL}${billingBaseUrl.value}/statements/${record.year}/${record.month}/export/${format}/`;
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    const ext = format === 'excel' ? 'xlsx' : 'pdf';
-    const filename = `statement_${record.year}_${String(record.month).padStart(2, '0')}.${ext}`;
-    downloadBlob(blob, filename);
-    message.success('Файл скачан');
-  } catch {
-    message.error('Не удалось скачать файл');
-  }
+const openPreview = (record: StatementListItem, tab: 'excel' | 'pdf' | 'act') => {
+  previewRecord.value = record;
+  previewTab.value = tab;
+  previewOpen.value = true;
 };
-
-const exportExcel = (record: StatementListItem) => exportFile(record, 'excel');
-const exportPdf = (record: StatementListItem) => exportFile(record, 'pdf');
 
 // --- Init ---
 

@@ -4,8 +4,8 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.core.exceptions import BusinessLogicError
 from apps.core.pagination import StandardResultsSetPagination
+from apps.core.utils import safe_int_param
 
 from .manager_views import IsAdminUser
 from .models import Company
@@ -34,13 +34,32 @@ class CompanyViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Get queryset with optional filtering.
-        Annotates counts for efficient serialization.
+        Annotates counts and outstanding balance for efficient serialization.
         """
-        from django.db.models import Count
+        from decimal import Decimal
+
+        from django.db.models import Count, DecimalField, Sum
+        from django.db.models.functions import Coalesce
 
         queryset = Company.objects.annotate(
             _customers_count=Count("customers", distinct=True),
             _entries_count=Count("container_entries", distinct=True),
+            _balance_usd=Coalesce(
+                Sum(
+                    "statements__total_usd",
+                    filter=Q(statements__status="finalized"),
+                ),
+                Decimal("0"),
+                output_field=DecimalField(),
+            ),
+            _balance_uzs=Coalesce(
+                Sum(
+                    "statements__total_uzs",
+                    filter=Q(statements__status="finalized"),
+                ),
+                Decimal("0"),
+                output_field=DecimalField(),
+            ),
         )
 
         # Filter by active status
@@ -48,10 +67,12 @@ class CompanyViewSet(viewsets.ModelViewSet):
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == "true")
 
-        # Search by name or slug
-        search = self.request.query_params.get("search")
-        if search:
-            queryset = queryset.filter(Q(name__icontains=search) | Q(slug__icontains=search))
+        # Search by name or slug - only for list action, not nested actions
+        # (nested actions like storage_costs may use 'search' for their own filtering)
+        if self.action == "list":
+            search = self.request.query_params.get("search")
+            if search:
+                queryset = queryset.filter(Q(name__icontains=search) | Q(slug__icontains=search))
 
         return queryset.order_by("name")
 
@@ -142,27 +163,14 @@ class CompanyViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            company = self.service.create_company(
-                name=serializer.validated_data["name"],
-            )
+        company = self.service.create_company(
+            name=serializer.validated_data["name"],
+        )
 
-            return Response(
-                {"success": True, "data": CompanySerializer(company).data},
-                status=status.HTTP_201_CREATED,
-            )
-        except BusinessLogicError as e:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": e.error_code,
-                        "message": e.message,
-                        "details": e.details,
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        return Response(
+            {"success": True, "data": CompanySerializer(company).data},
+            status=status.HTTP_201_CREATED,
+        )
 
     @extend_schema(
         summary="Update company",
@@ -182,22 +190,9 @@ class CompanyViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(company, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            updated_company = self.service.update_company(company_id=company.id, **serializer.validated_data)
+        updated_company = self.service.update_company(company_id=company.id, **serializer.validated_data)
 
-            return Response({"success": True, "data": CompanySerializer(updated_company).data})
-        except BusinessLogicError as e:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": e.error_code,
-                        "message": e.message,
-                        "details": e.details,
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        return Response({"success": True, "data": CompanySerializer(updated_company).data})
 
     @extend_schema(
         summary="Deactivate company",
@@ -215,26 +210,13 @@ class CompanyViewSet(viewsets.ModelViewSet):
         """
         company = self.get_object()
 
-        try:
-            result = self.service.delete_company(company.id, hard_delete=False)
-            return Response(
-                {
-                    "success": True,
-                    "message": f"Компания '{result['name']}' деактивирована",
-                }
-            )
-        except BusinessLogicError as e:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": e.error_code,
-                        "message": e.message,
-                        "details": e.details,
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        result = self.service.delete_company(company.id, hard_delete=False)
+        return Response(
+            {
+                "success": True,
+                "message": f"Компания '{result['name']}' деактивирована",
+            }
+        )
 
     @extend_schema(
         summary="Activate company",
@@ -252,27 +234,14 @@ class CompanyViewSet(viewsets.ModelViewSet):
         """
         company = self.get_object()
 
-        try:
-            updated_company = self.service.update_company(company.id, is_active=True)
-            return Response(
-                {
-                    "success": True,
-                    "message": f"Компания '{updated_company.name}' активирована",
-                    "data": CompanySerializer(updated_company).data,
-                }
-            )
-        except BusinessLogicError as e:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": e.error_code,
-                        "message": e.message,
-                        "details": e.details,
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        updated_company = self.service.update_company(company.id, is_active=True)
+        return Response(
+            {
+                "success": True,
+                "message": f"Компания '{updated_company.name}' активирована",
+                "data": CompanySerializer(updated_company).data,
+            }
+        )
 
     @extend_schema(
         summary="Get company statistics",
@@ -305,6 +274,8 @@ class CompanyViewSet(viewsets.ModelViewSet):
         """
         Get all customers belonging to this company.
         """
+        from django.db.models import Count
+
         from .models import CustomUser
 
         company = self.get_object()
@@ -314,6 +285,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
             CustomUser.objects.filter(user_type="customer")
             .filter(Q(customer_profile__company=company) | Q(customer_profile__isnull=True, company=company))
             .select_related("customer_profile", "customer_profile__company")
+            .annotate(orders_count=Count("pre_orders"))
             .order_by("-created_at")
         )
 
@@ -551,43 +523,22 @@ class CompanyViewSet(viewsets.ModelViewSet):
         Get storage costs for company containers (mirrors customer storage-costs endpoint).
         """
         from apps.billing.services.storage_cost_service import StorageCostService
+        from apps.billing.utils import filter_storage_cost_entries
         from apps.terminal_operations.models import ContainerEntry
 
         company = self.get_object()
 
-        # Build base queryset
         entries = ContainerEntry.objects.filter(
             company=company,
         ).select_related("container", "company")
-
-        # Apply filters
-        status_filter = request.query_params.get("status")
-        if status_filter == "active":
-            entries = entries.filter(exit_date__isnull=True)
-        elif status_filter == "exited":
-            entries = entries.filter(exit_date__isnull=False)
-
-        search = request.query_params.get("search", "").strip()
-        if search:
-            entries = entries.filter(container__container_number__icontains=search)
-
-        entry_date_from = request.query_params.get("entry_date_from")
-        if entry_date_from:
-            entries = entries.filter(entry_time__date__gte=entry_date_from)
-
-        entry_date_to = request.query_params.get("entry_date_to")
-        if entry_date_to:
-            entries = entries.filter(entry_time__date__lte=entry_date_to)
-
-        # Order by entry time descending
-        entries = entries.order_by("-entry_time")
+        entries = filter_storage_cost_entries(entries, request.query_params)
 
         # Get total count before pagination
         total_count = entries.count()
 
         # Pagination
-        page = int(request.query_params.get("page", 1))
-        page_size = int(request.query_params.get("page_size", 20))
+        page = safe_int_param(request.query_params.get("page"), default=1, min_val=1)
+        page_size = safe_int_param(request.query_params.get("page_size"), default=20, min_val=1, max_val=100)
         offset = (page - 1) * page_size
         paginated_entries = entries[offset : offset + page_size]
 
@@ -595,27 +546,13 @@ class CompanyViewSet(viewsets.ModelViewSet):
         cost_service = StorageCostService()
         cost_results = cost_service.calculate_bulk_costs(paginated_entries)
 
-        # Build response items
-        results = []
-        for result in cost_results:
-            results.append(
-                {
-                    "container_entry_id": result.container_entry_id,
-                    "container_number": result.container_number,
-                    "company_name": result.company_name,
-                    "container_size": result.container_size,
-                    "container_status": result.container_status,
-                    "entry_date": result.entry_date.isoformat(),
-                    "end_date": result.end_date.isoformat(),
-                    "is_active": result.is_active,
-                    "total_days": result.total_days,
-                    "free_days_applied": result.free_days_applied,
-                    "billable_days": result.billable_days,
-                    "total_usd": str(result.total_usd),
-                    "total_uzs": str(result.total_uzs),
-                    "calculated_at": result.calculated_at.isoformat(),
-                }
-            )
+        # Build response items with on-demand invoice flags
+        from apps.billing.views import build_storage_cost_row, get_invoiced_entry_ids
+
+        entry_ids = [r.container_entry_id for r in cost_results]
+        invoiced_entry_ids = get_invoiced_entry_ids(entry_ids)
+
+        results = [build_storage_cost_row(r, invoiced_entry_ids) for r in cost_results]
 
         # Calculate summary for ALL matching entries (not just paginated)
         all_cost_results = cost_service.calculate_bulk_costs(entries) if total_count <= 500 else cost_results
@@ -626,6 +563,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
 
         return Response(
             {
+                "success": True,
                 "results": results,
                 "count": total_count,
                 "summary": {
@@ -636,6 +574,46 @@ class CompanyViewSet(viewsets.ModelViewSet):
                 },
             }
         )
+
+    @extend_schema(
+        summary="Export storage costs to Excel",
+        parameters=[
+            OpenApiParameter(name="status", type=str, description="Filter: active / exited"),
+            OpenApiParameter(name="entry_date_from", type=str, description="YYYY-MM-DD"),
+            OpenApiParameter(name="entry_date_to", type=str, description="YYYY-MM-DD"),
+        ],
+        responses={200: OpenApiResponse(description="Excel file download")},
+    )
+    @action(detail=True, methods=["get"], url_path="storage-costs/export")
+    def storage_costs_export(self, request, slug=None):
+        """Export storage costs for company containers to Excel."""
+        from django.http import HttpResponse
+
+        from apps.billing.services.export_service import StatementExportService
+        from apps.billing.services.storage_cost_service import StorageCostService
+        from apps.billing.utils import filter_storage_cost_entries
+        from apps.terminal_operations.models import ContainerEntry
+
+        company = self.get_object()
+
+        entries = ContainerEntry.objects.filter(
+            company=company,
+        ).select_related("container", "company")
+        entries = filter_storage_cost_entries(entries, request.query_params)
+
+        cost_service = StorageCostService()
+        cost_results = cost_service.calculate_bulk_costs(entries)
+
+        export_service = StatementExportService()
+        excel_file = export_service.export_storage_costs_to_excel(cost_results, company.name)
+
+        response = HttpResponse(
+            excel_file.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        filename = f"storage_costs_{company.slug or 'company'}.xlsx"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     @extend_schema(
         summary="List company billing statements",
@@ -734,14 +712,11 @@ class CompanyViewSet(viewsets.ModelViewSet):
     )
     def billing_mark_paid(self, request, slug=None, statement_id=None):
         """Toggle payment status on a monthly statement."""
-        from apps.billing.models import MonthlyStatement
         from apps.billing.serializers import MonthlyStatementListSerializer
         from apps.billing.services.statement_service import MonthlyStatementService
 
         company = self.get_object()
-        statement = MonthlyStatement.objects.filter(
-            id=statement_id, company=company
-        ).select_related("paid_marked_by").first()
+        statement = self._get_monthly_statement(statement_id, company)
 
         if not statement:
             return Response(
@@ -751,6 +726,58 @@ class CompanyViewSet(viewsets.ModelViewSet):
 
         service = MonthlyStatementService()
         statement = service.mark_paid(statement, request.user)
+
+        serializer = MonthlyStatementListSerializer(statement)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Set exchange rate on a draft statement",
+        responses={200: OpenApiResponse(description="Updated statement")},
+        description="Set or update the CBU exchange rate on a draft statement",
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"billing/statements/(?P<statement_id>[0-9]+)/set-exchange-rate",
+    )
+    def billing_set_exchange_rate(self, request, slug=None, statement_id=None):
+        """Set exchange rate on a draft statement (admin only)."""
+        from decimal import Decimal, InvalidOperation
+
+        from apps.billing.models import StatementStatus
+        from apps.billing.serializers import MonthlyStatementListSerializer
+
+        company = self.get_object()
+        statement = self._get_monthly_statement(statement_id, company)
+
+        if not statement:
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "Выписка не найдена"}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if statement.status != StatementStatus.DRAFT:
+            return Response(
+                {"success": False, "error": {"code": "NOT_DRAFT", "message": "Курс можно изменить только у черновика"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        rate_str = request.data.get("exchange_rate")
+        if not rate_str:
+            return Response(
+                {"success": False, "error": {"code": "MISSING_RATE", "message": "Укажите exchange_rate"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            statement.exchange_rate = Decimal(str(rate_str))
+        except (InvalidOperation, ValueError):
+            return Response(
+                {"success": False, "error": {"code": "INVALID_RATE", "message": "Некорректный курс"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement.save(update_fields=["exchange_rate"])
 
         serializer = MonthlyStatementListSerializer(statement)
         return Response({"success": True, "data": serializer.data})
@@ -766,21 +793,36 @@ class CompanyViewSet(viewsets.ModelViewSet):
         url_path=r"billing/statements/(?P<statement_id>[0-9]+)/finalize",
     )
     def billing_finalize(self, request, slug=None, statement_id=None):
-        """Finalize a draft statement."""
-        from apps.billing.models import MonthlyStatement
+        """Finalize a draft statement.
+
+        Accepts optional `exchange_rate` in request body to freeze the
+        CBU rate on the statement. If not provided, the service will
+        auto-fetch from cbu.uz or fall back to TerminalSettings default.
+        """
+        from decimal import Decimal, InvalidOperation
+
         from apps.billing.serializers import MonthlyStatementListSerializer
         from apps.billing.services.statement_service import MonthlyStatementService
 
         company = self.get_object()
-        statement = MonthlyStatement.objects.filter(
-            id=statement_id, company=company
-        ).first()
+        statement = self._get_monthly_statement(statement_id, company)
 
         if not statement:
             return Response(
                 {"success": False, "error": {"code": "NOT_FOUND", "message": "Выписка не найдена"}},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        # Allow admin to set exchange rate before finalization
+        rate_str = request.data.get("exchange_rate")
+        if rate_str:
+            try:
+                statement.exchange_rate = Decimal(str(rate_str))
+            except (InvalidOperation, ValueError):
+                return Response(
+                    {"success": False, "error": {"code": "INVALID_RATE", "message": "Некорректный курс"}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         service = MonthlyStatementService()
         statement = service.finalize_statement(statement, request.user)
@@ -800,14 +842,11 @@ class CompanyViewSet(viewsets.ModelViewSet):
     )
     def billing_credit_note(self, request, slug=None, statement_id=None):
         """Create a credit note for a finalized/paid statement."""
-        from apps.billing.models import MonthlyStatement
         from apps.billing.serializers import MonthlyStatementListSerializer
         from apps.billing.services.statement_service import MonthlyStatementService
 
         company = self.get_object()
-        statement = MonthlyStatement.objects.filter(
-            id=statement_id, company=company
-        ).first()
+        statement = self._get_monthly_statement(statement_id, company)
 
         if not statement:
             return Response(
@@ -835,39 +874,31 @@ class CompanyViewSet(viewsets.ModelViewSet):
 
         company = self.get_object()
 
-        # Get distinct year-month combinations from entries
-        entries = ContainerEntry.objects.filter(company=company).order_by("-entry_time")
+        # Get distinct year-month combinations from entries using DB-level aggregation
+        from django.db.models.functions import TruncMonth
 
-        periods = set()
-        for entry in entries:
-            periods.add((entry.entry_time.year, entry.entry_time.month))
+        periods_qs = (
+            ContainerEntry.objects.filter(company=company)
+            .annotate(month=TruncMonth("entry_time"))
+            .values_list("month", flat=True)
+            .distinct()
+            .order_by("-month")
+        )
 
-        # Sort periods descending (newest first)
-        sorted_periods = sorted(periods, reverse=True)
+        sorted_periods = [(p.year, p.month) for p in periods_qs]
 
         # Format for dropdown
+        month_names = [
+            "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+            "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+        ]
         result = []
         for year, month in sorted_periods:
-            month_names = [
-                "",
-                "Январь",
-                "Февраль",
-                "Март",
-                "Апрель",
-                "Май",
-                "Июнь",
-                "Июль",
-                "Август",
-                "Сентябрь",
-                "Октябрь",
-                "Ноябрь",
-                "Декабрь",
-            ]
             result.append(
                 {
                     "year": year,
                     "month": month,
-                    "label": f"{month_names[month]} {year}",
+                    "label": f"{month_names[month - 1]} {year}",
                 }
             )
 
@@ -953,6 +984,176 @@ class CompanyViewSet(viewsets.ModelViewSet):
         return response
 
     @extend_schema(
+        summary="Export statement as Счёт-фактура (act)",
+        responses={200: OpenApiResponse(description="Excel file download")},
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"billing/statements/(?P<year>[0-9]+)/(?P<month>[0-9]+)/export/act",
+    )
+    def billing_export_act(self, request, slug=None, year=None, month=None):
+        """Export a monthly statement as formal Счёт-фактура Excel."""
+        from django.http import HttpResponse
+
+        from apps.billing.models import TerminalSettings
+        from apps.billing.services.export_service import StatementExportService
+        from apps.billing.services.statement_service import MonthlyStatementService
+
+        company = self.get_object()
+        year, month = int(year), int(month)
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company, year=year, month=month, user=request.user,
+        )
+
+        settings = TerminalSettings.load()
+        export_service = StatementExportService()
+        excel_file = export_service.export_to_schet_factura(
+            statement, settings, exchange_rate=statement.exchange_rate,
+        )
+        filename = export_service.get_schet_factura_filename(statement)
+
+        response = HttpResponse(
+            excel_file.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+    @extend_schema(
+        summary="Preview statement Счёт-фактура as PDF",
+        responses={200: OpenApiResponse(description="PDF file for preview")},
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"billing/statements/(?P<year>[0-9]+)/(?P<month>[0-9]+)/export/act-preview",
+    )
+    def billing_export_act_preview(self, request, slug=None, year=None, month=None):
+        """Export a monthly statement Счёт-фактура as PDF for preview."""
+        from django.http import HttpResponse
+
+        from apps.billing.models import TerminalSettings
+        from apps.billing.services.export_service import StatementExportService
+        from apps.billing.services.statement_service import MonthlyStatementService
+
+        company = self.get_object()
+        year, month = int(year), int(month)
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company, year=year, month=month, user=request.user,
+        )
+
+        settings = TerminalSettings.load()
+        export_service = StatementExportService()
+        pdf_file = export_service.export_to_schet_factura_pdf(
+            statement, settings, exchange_rate=statement.exchange_rate,
+        )
+
+        response = HttpResponse(pdf_file.getvalue(), content_type="application/pdf")
+        response["Content-Disposition"] = 'inline; filename="act_preview.pdf"'
+        return response
+
+    @extend_schema(
+        summary="Preview statement as HTML table",
+        responses={200: OpenApiResponse(description="HTML page for preview")},
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"billing/statements/(?P<year>[0-9]+)/(?P<month>[0-9]+)/export/html-preview",
+    )
+    def billing_export_html_preview(self, request, slug=None, year=None, month=None):
+        """Render a monthly statement as HTML table for preview."""
+        from django.http import HttpResponse
+        from django.template.loader import render_to_string
+
+        from apps.billing.services.statement_service import MonthlyStatementService
+
+        company = self.get_object()
+        year, month = int(year), int(month)
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company, year=year, month=month, user=request.user,
+        )
+
+        line_items = statement.line_items.all()
+        service_items = statement.service_items.all() if hasattr(statement, "service_items") else []
+
+        storage_total_usd = sum(i.amount_usd for i in line_items)
+        storage_total_uzs = sum(i.amount_uzs for i in line_items)
+        services_total_usd = sum(s.amount_usd for s in service_items)
+        services_total_uzs = sum(s.amount_uzs for s in service_items)
+
+        html = render_to_string("billing/statement_html_preview.html", {
+            "statement": statement,
+            "line_items": line_items,
+            "service_items": service_items,
+            "storage_total_usd": storage_total_usd,
+            "storage_total_uzs": storage_total_uzs,
+            "services_total_usd": services_total_usd,
+            "services_total_uzs": services_total_uzs,
+        })
+        return HttpResponse(html, content_type="text/html; charset=utf-8")
+
+    @extend_schema(
+        summary="Preview Счёт-фактура as HTML table",
+        responses={200: OpenApiResponse(description="HTML page for preview")},
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"billing/statements/(?P<year>[0-9]+)/(?P<month>[0-9]+)/export/act-html-preview",
+    )
+    def billing_export_act_html_preview(self, request, slug=None, year=None, month=None):
+        """Render Счёт-фактура as HTML table for preview."""
+        from django.http import HttpResponse
+
+        from apps.billing.models import TerminalSettings
+        from apps.billing.services.statement_service import MonthlyStatementService
+        from apps.billing.views import _render_act_html_preview
+
+        company = self.get_object()
+        year, month = int(year), int(month)
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company, year=year, month=month, user=request.user,
+        )
+
+        settings_obj = TerminalSettings.load()
+        html = _render_act_html_preview(statement, settings_obj)
+        return HttpResponse(html, content_type="text/html; charset=utf-8")
+
+    @extend_schema(
         summary="Get company additional charges",
         parameters=[
             OpenApiParameter(
@@ -1021,3 +1222,320 @@ class CompanyViewSet(viewsets.ModelViewSet):
                 "total_uzs": str(totals["total_uzs"] or 0),
             },
         })
+
+    # =========================================================================
+    # On-demand invoice endpoints
+    # =========================================================================
+
+    def _get_monthly_statement(self, statement_id, company=None):
+        """Look up a monthly statement scoped to the company, or return None."""
+        from apps.billing.models import MonthlyStatement
+
+        if company is None:
+            company = self.get_object()
+        return (
+            MonthlyStatement.objects
+            .filter(id=statement_id, company=company)
+            .select_related("company", "paid_marked_by", "finalized_by", "original_statement")
+            .first()
+        )
+
+    def _get_on_demand_invoice(self, invoice_id, company=None):
+        """Look up an on-demand invoice scoped to the company, or return None."""
+        from apps.billing.models import OnDemandInvoice
+
+        if company is None:
+            company = self.get_object()
+        return (
+            OnDemandInvoice.objects
+            .filter(id=invoice_id, company=company)
+            .select_related("company", "created_by", "finalized_by", "paid_marked_by")
+            .prefetch_related("items", "service_items")
+            .first()
+        )
+
+    @extend_schema(
+        summary="Create on-demand invoice",
+        request={"application/json": {"type": "object", "properties": {
+            "container_entry_ids": {"type": "array", "items": {"type": "integer"}},
+            "notes": {"type": "string"},
+        }}},
+        responses={201: OpenApiResponse(description="Created on-demand invoice")},
+        description="Create an on-demand invoice for specific exited containers",
+    )
+    @action(detail=True, methods=["post"], url_path="on-demand-invoices")
+    def on_demand_invoice_create(self, request, slug=None):
+        """Create an on-demand invoice for specific exited containers."""
+        from apps.billing.serializers import (
+            OnDemandInvoiceCreateSerializer,
+            OnDemandInvoiceDetailSerializer,
+        )
+        from apps.billing.services.on_demand_invoice_service import (
+            OnDemandInvoiceService,
+        )
+
+        company = self.get_object()
+        serializer = OnDemandInvoiceCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        service = OnDemandInvoiceService()
+        invoice = service.create_invoice(
+            company=company,
+            container_entry_ids=serializer.validated_data["container_entry_ids"],
+            user=request.user,
+            notes=serializer.validated_data.get("notes", ""),
+        )
+
+        return Response(
+            {
+                "success": True,
+                "data": OnDemandInvoiceDetailSerializer(invoice).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        summary="List on-demand invoices",
+        responses={200: OpenApiResponse(description="List of on-demand invoices")},
+        description="List all on-demand invoices for the company",
+    )
+    @action(detail=True, methods=["get"], url_path="on-demand-invoices/list")
+    def on_demand_invoice_list(self, request, slug=None):
+        """List all on-demand invoices for the company."""
+        from apps.billing.models import OnDemandInvoiceItem
+        from apps.billing.serializers import OnDemandInvoiceListSerializer
+        from apps.billing.services.on_demand_invoice_service import (
+            OnDemandInvoiceService,
+        )
+
+        company = self.get_object()
+        status_filter = request.query_params.get("status")
+        service = OnDemandInvoiceService()
+        invoices = service.list_invoices(company, status=status_filter)
+
+        # Count containers invoiced while active that still haven't exited
+        # exit_date=NULL on item means it was active at invoice time
+        pending_exit_count = OnDemandInvoiceItem.objects.filter(
+            invoice__company=company,
+            invoice__status__in=["draft", "finalized", "paid"],
+            exit_date__isnull=True,
+            container_entry__exit_date__isnull=True,
+        ).count()
+
+        serializer = OnDemandInvoiceListSerializer(invoices, many=True)
+        return Response({
+            "success": True,
+            "data": serializer.data,
+            "pending_exit_count": pending_exit_count,
+        })
+
+    @extend_schema(
+        summary="Get or delete on-demand invoice",
+        responses={
+            200: OpenApiResponse(description="On-demand invoice with items (GET) or deletion confirmation (DELETE)"),
+            400: OpenApiResponse(description="Cannot delete non-draft invoice"),
+        },
+        description="GET: Get on-demand invoice detail with line items. DELETE: Delete a draft invoice (hard delete).",
+    )
+    @action(
+        detail=True,
+        methods=["get", "delete"],
+        url_path=r"on-demand-invoices/(?P<invoice_id>[0-9]+)",
+    )
+    def on_demand_invoice_detail(self, request, slug=None, invoice_id=None):
+        """Get or delete an on-demand invoice."""
+        invoice = self._get_on_demand_invoice(invoice_id)
+        if not invoice:
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "Счёт не найден"}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if request.method == "DELETE":
+            # Delete draft invoice
+            from apps.billing.services.on_demand_invoice_service import OnDemandInvoiceService
+
+            service = OnDemandInvoiceService()
+            service.delete_invoice(invoice, request.user)
+            return Response({"success": True, "message": "Черновик удалён"})
+
+        # GET - return invoice detail
+        from apps.billing.serializers import OnDemandInvoiceDetailSerializer
+
+        serializer = OnDemandInvoiceDetailSerializer(invoice)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Finalize on-demand invoice",
+        responses={200: OpenApiResponse(description="Finalized invoice")},
+        description="Finalize a draft on-demand invoice, assigning an invoice number",
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"on-demand-invoices/(?P<invoice_id>[0-9]+)/finalize",
+    )
+    def on_demand_invoice_finalize(self, request, slug=None, invoice_id=None):
+        """Finalize a draft on-demand invoice."""
+        from apps.billing.serializers import OnDemandInvoiceListSerializer
+        from apps.billing.services.on_demand_invoice_service import OnDemandInvoiceService
+
+        invoice = self._get_on_demand_invoice(invoice_id)
+        if not invoice:
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "Счёт не найден"}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        service = OnDemandInvoiceService()
+        invoice = service.finalize_invoice(invoice, request.user)
+
+        serializer = OnDemandInvoiceListSerializer(invoice)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Toggle on-demand invoice payment",
+        request={"application/json": {"type": "object", "properties": {
+            "payment_reference": {"type": "string", "description": "Bank transaction ID, check number, etc."},
+            "payment_date": {"type": "string", "format": "date", "description": "Actual payment date (YYYY-MM-DD)"},
+        }}},
+        responses={200: OpenApiResponse(description="Updated invoice")},
+        description="Mark an on-demand invoice as paid or unpaid. Optional payment details can be provided.",
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"on-demand-invoices/(?P<invoice_id>[0-9]+)/mark-paid",
+    )
+    def on_demand_invoice_mark_paid(self, request, slug=None, invoice_id=None):
+        """Toggle payment status on an on-demand invoice."""
+        from datetime import datetime
+
+        from apps.billing.serializers import OnDemandInvoiceListSerializer
+        from apps.billing.services.on_demand_invoice_service import OnDemandInvoiceService
+
+        invoice = self._get_on_demand_invoice(invoice_id)
+        if not invoice:
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "Счёт не найден"}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Parse optional payment details
+        payment_reference = request.data.get("payment_reference", "")
+        payment_date_str = request.data.get("payment_date")
+        payment_date = None
+        if payment_date_str:
+            try:
+                payment_date = datetime.strptime(payment_date_str, "%Y-%m-%d").date()
+            except ValueError:
+                return Response(
+                    {"success": False, "error": {"code": "INVALID_DATE", "message": "Неверный формат даты. Используйте YYYY-MM-DD"}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        service = OnDemandInvoiceService()
+        invoice = service.mark_paid(
+            invoice, request.user,
+            payment_reference=payment_reference,
+            payment_date=payment_date,
+        )
+
+        serializer = OnDemandInvoiceListSerializer(invoice)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Cancel on-demand invoice",
+        request={"application/json": {"type": "object", "properties": {
+            "reason": {"type": "string", "description": "Cancellation reason (required for finalized invoices)"},
+        }}},
+        responses={200: OpenApiResponse(description="Cancelled invoice")},
+        description="Cancel an on-demand invoice, releasing containers back to monthly billing. Finalized invoices require a cancellation reason.",
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"on-demand-invoices/(?P<invoice_id>[0-9]+)/cancel",
+    )
+    def on_demand_invoice_cancel(self, request, slug=None, invoice_id=None):
+        """Cancel an on-demand invoice."""
+        from apps.billing.serializers import OnDemandInvoiceListSerializer
+        from apps.billing.services.on_demand_invoice_service import OnDemandInvoiceService
+
+        invoice = self._get_on_demand_invoice(invoice_id)
+        if not invoice:
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "Счёт не найден"}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        reason = request.data.get("reason", "")
+
+        service = OnDemandInvoiceService()
+        invoice = service.cancel_invoice(invoice, request.user, reason=reason)
+
+        serializer = OnDemandInvoiceListSerializer(invoice)
+        return Response({"success": True, "data": serializer.data})
+
+    @extend_schema(
+        summary="Export on-demand invoice to Excel",
+        responses={200: OpenApiResponse(description="Excel file download")},
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"on-demand-invoices/(?P<invoice_id>[0-9]+)/export/excel",
+    )
+    def on_demand_invoice_export_excel(self, request, slug=None, invoice_id=None):
+        """Export an on-demand invoice to Excel."""
+        from django.http import HttpResponse
+
+        from apps.billing.services.export_service import StatementExportService
+
+        invoice = self._get_on_demand_invoice(invoice_id)
+        if not invoice:
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "Счёт не найден"}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        export_service = StatementExportService()
+        excel_file = export_service.export_on_demand_to_excel(invoice)
+        filename = export_service.get_on_demand_excel_filename(invoice)
+
+        response = HttpResponse(
+            excel_file.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+    @extend_schema(
+        summary="Export on-demand invoice to PDF",
+        responses={200: OpenApiResponse(description="PDF file download")},
+    )
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"on-demand-invoices/(?P<invoice_id>[0-9]+)/export/pdf",
+    )
+    def on_demand_invoice_export_pdf(self, request, slug=None, invoice_id=None):
+        """Export an on-demand invoice to PDF."""
+        from django.http import HttpResponse
+
+        from apps.billing.services.export_service import StatementExportService
+
+        invoice = self._get_on_demand_invoice(invoice_id)
+        if not invoice:
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "Счёт не найден"}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        export_service = StatementExportService()
+        pdf_file = export_service.export_on_demand_to_pdf(invoice)
+        filename = export_service.get_on_demand_pdf_filename(invoice)
+
+        response = HttpResponse(pdf_file.getvalue(), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response

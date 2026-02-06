@@ -10,6 +10,9 @@ BACKEND_PYTHON := backend/.venv/bin/python
 BACKEND_PIP := backend/.venv/bin/pip
 BACKEND_PYTEST := backend/.venv/bin/pytest
 
+# macOS: WeasyPrint needs Homebrew C libraries (pango, glib, cairo)
+export DYLD_FALLBACK_LIBRARY_PATH := /opt/homebrew/lib
+
 # Default target
 help:
 	@echo "MTT Combined Project - Available Commands"
@@ -84,7 +87,7 @@ lint:
 	cd backend && .venv/bin/python -m ruff check apps/ || .venv/bin/python -m flake8 apps/ --max-line-length=120
 	@echo ""
 	@echo "=== Linting frontend ==="
-	cd frontend && npm run lint
+	cd frontend && npm run lint --if-present
 	@echo ""
 	@echo "=== Linting telegram-miniapp ==="
 	cd telegram-miniapp && npm run lint

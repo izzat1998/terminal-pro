@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Выписка {{ statement.month_name }} {{ statement.year }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #333;
+            padding: 24px;
+            background: #fff;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+            border-bottom: 2px solid #4472C4;
+            padding-bottom: 12px;
+        }
+        .header h1 {
+            color: #4472C4;
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+        .header p { color: #666; }
+        .info-row {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .info-row span { white-space: nowrap; }
+        .info-row strong { color: #555; }
+        .summary {
+            background: #f0f5ff;
+            border: 1px solid #d6e4ff;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 32px;
+            flex-wrap: wrap;
+        }
+        .summary-item .label { font-size: 11px; color: #888; }
+        .summary-item .value { font-size: 18px; font-weight: 700; }
+        .summary-item .value.usd { color: #52c41a; }
+        .summary-item .value.uzs { color: #722ed1; }
+        h3 {
+            color: #4472C4;
+            font-size: 14px;
+            margin: 20px 0 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th {
+            background: #4472C4;
+            color: #fff;
+            padding: 8px 6px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        td {
+            padding: 6px;
+            border-bottom: 1px solid #e8e8e8;
+            font-size: 12px;
+        }
+        tr:nth-child(even) { background: #fafafa; }
+        tr:hover { background: #f0f5ff; }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .on-terminal { color: #52c41a; font-weight: 600; }
+        .total-row td {
+            font-weight: 700;
+            border-top: 2px solid #4472C4;
+            border-bottom: none;
+            padding-top: 10px;
+        }
+        .footer {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 11px;
+            color: #999;
+            border-top: 1px solid #e8e8e8;
+            padding-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Выписка за {{ statement.month_name }} {{ statement.year }}</h1>
+        <p>{{ statement.company.name }}</p>
+    </div>
+
+    <div class="info-row">
+        <span><strong>Метод:</strong> {{ statement.billing_method_display }}</span>
+        <span><strong>Сформировано:</strong> {{ statement.generated_at|date:"d.m.Y H:i" }}</span>
+        {% if statement.invoice_number %}
+        <span><strong>№:</strong> {{ statement.invoice_number }}</span>
+        {% endif %}
+    </div>
+
+    <div class="summary">
+        <div class="summary-item">
+            <div class="label">Контейнеров</div>
+            <div class="value">{{ statement.total_containers }}</div>
+        </div>
+        <div class="summary-item">
+            <div class="label">Оплачиваемых дней</div>
+            <div class="value">{{ statement.total_billable_days }}</div>
+        </div>
+        <div class="summary-item">
+            <div class="label">Итого USD</div>
+            <div class="value usd">${{ statement.total_usd|floatformat:2 }}</div>
+        </div>
+        <div class="summary-item">
+            <div class="label">Итого UZS</div>
+            <div class="value uzs">{{ statement.total_uzs|floatformat:0 }} сум</div>
+        </div>
+    </div>
+
+    <h3>Хранение</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Контейнер</th>
+                <th>Размер</th>
+                <th>Статус</th>
+                <th>Начало</th>
+                <th>Конец</th>
+                <th class="num">Всего</th>
+                <th class="num">Льгот.</th>
+                <th class="num">Опл.</th>
+                <th class="num">Ставка</th>
+                <th class="num">USD</th>
+                <th class="num">UZS</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in line_items %}
+            <tr>
+                <td>{{ item.container_number }}</td>
+                <td>{{ item.container_size_display }}</td>
+                <td>{{ item.container_status_display }}</td>
+                <td>{{ item.period_start|date:"d.m.Y" }}</td>
+                <td>
+                    {% if item.is_still_on_terminal %}
+                    <span class="on-terminal">На терминале</span>
+                    {% else %}
+                    {{ item.period_end|date:"d.m.Y" }}
+                    {% endif %}
+                </td>
+                <td class="num">{{ item.total_days }}</td>
+                <td class="num">{{ item.free_days }}</td>
+                <td class="num">{{ item.billable_days }}</td>
+                <td class="num">${{ item.daily_rate_usd|floatformat:2 }}</td>
+                <td class="num">${{ item.amount_usd|floatformat:2 }}</td>
+                <td class="num">{{ item.amount_uzs|floatformat:0 }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td colspan="9">Итого хранение</td>
+                <td class="num">${{ storage_total_usd|floatformat:2 }}</td>
+                <td class="num">{{ storage_total_uzs|floatformat:0 }} сум</td>
+            </tr>
+        </tbody>
+    </table>
+
+    {% if service_items %}
+    <h3>Услуги</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Контейнер</th>
+                <th>Описание</th>
+                <th>Дата</th>
+                <th class="num">USD</th>
+                <th class="num">UZS</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for svc in service_items %}
+            <tr>
+                <td>{{ svc.container_number }}</td>
+                <td>{{ svc.description }}</td>
+                <td>{{ svc.charge_date|date:"d.m.Y" }}</td>
+                <td class="num">${{ svc.amount_usd|floatformat:2 }}</td>
+                <td class="num">{{ svc.amount_uzs|floatformat:0 }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td colspan="3">Итого услуги</td>
+                <td class="num">${{ services_total_usd|floatformat:2 }}</td>
+                <td class="num">{{ services_total_uzs|floatformat:0 }} сум</td>
+            </tr>
+        </tbody>
+    </table>
+    {% endif %}
+
+    <div class="footer">
+        Сформировано системой MTT Container Terminal · Предварительный просмотр
+    </div>
+</body>
+</html>

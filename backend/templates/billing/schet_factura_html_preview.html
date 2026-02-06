@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Счёт-фактура {{ statement.month_name }} {{ statement.year }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #333;
+            padding: 24px;
+            background: #fff;
+        }
+
+        /* --- Part 1: АКТ --- */
+        .act-title {
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        .act-date {
+            text-align: center;
+            font-size: 12px;
+            margin-bottom: 12px;
+            color: #666;
+        }
+        .act-text {
+            text-align: justify;
+            margin-bottom: 16px;
+            padding: 10px 12px;
+            background: #fafafa;
+            border: 1px solid #e8e8e8;
+            border-radius: 4px;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+
+        /* АКТ summary table */
+        .act-summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 12px;
+        }
+        .act-summary-table th {
+            background: #f0f0f0;
+            padding: 6px 8px;
+            text-align: center;
+            font-size: 11px;
+            border: 1px solid #d9d9d9;
+        }
+        .act-summary-table td {
+            padding: 5px 8px;
+            border: 1px solid #d9d9d9;
+            font-size: 11px;
+        }
+        .act-summary-table .num { text-align: right; }
+        .act-summary-table .total-row td { font-weight: 700; background: #f5f5f5; }
+
+        .signatures-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 12px 0 20px;
+            padding-top: 8px;
+        }
+        .signatures-row .side {
+            width: 45%;
+        }
+        .sig-label { font-weight: bold; font-size: 12px; color: #555; }
+        .sig-line {
+            border-bottom: 1px solid #999;
+            display: inline-block;
+            min-width: 150px;
+            margin-left: 8px;
+        }
+
+        /* --- Divider --- */
+        .section-divider {
+            border-top: 2px solid #4472C4;
+            margin: 20px 0;
+        }
+
+        /* --- Part 2: Счёт-фактура --- */
+        .sf-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+        .sf-ref {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 16px;
+        }
+
+        /* Parties block */
+        .parties {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 16px;
+        }
+        .party {
+            flex: 1;
+            border: 1px solid #e8e8e8;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 11px;
+        }
+        .party-title {
+            font-weight: 700;
+            font-size: 12px;
+            color: #4472C4;
+            margin-bottom: 6px;
+            border-bottom: 1px solid #e8e8e8;
+            padding-bottom: 4px;
+        }
+        .party-row {
+            display: flex;
+            margin-bottom: 2px;
+        }
+        .party-row .label {
+            color: #888;
+            width: 70px;
+            flex-shrink: 0;
+            font-size: 10px;
+        }
+        .party-row .val { font-size: 11px; }
+
+        /* Exchange rate */
+        .exchange-rate {
+            margin-bottom: 16px;
+            padding: 8px 12px;
+            background: #f0f5ff;
+            border: 1px solid #d6e4ff;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .exchange-rate strong { color: #4472C4; }
+
+        /* Detail table */
+        .detail-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+        }
+        .detail-table th {
+            background: #4472C4;
+            color: #fff;
+            padding: 7px 5px;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 600;
+            border: 1px solid #3562a6;
+            white-space: nowrap;
+        }
+        .detail-table td {
+            padding: 5px;
+            border: 1px solid #d9d9d9;
+            font-size: 11px;
+        }
+        .detail-table .usd-row td { background: #fff; }
+        .detail-table .usd-row:hover td { background: #f0f5ff; }
+        .detail-table .uzs-row td {
+            background: #fafafa;
+            font-size: 10px;
+            color: #722ed1;
+        }
+        .detail-table .number {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+        .detail-table .center { text-align: center; }
+        .detail-table .total-row td {
+            font-weight: 700;
+            background: #f0f5ff;
+            border-top: 2px solid #4472C4;
+        }
+        .detail-table .total-row.uzs td { color: #722ed1; }
+
+        /* Bottom signatures */
+        .bottom-signatures {
+            margin-top: 20px;
+            padding-top: 12px;
+            border-top: 1px solid #e8e8e8;
+        }
+        .bottom-signatures table {
+            width: 100%;
+            border: none;
+        }
+        .bottom-signatures td {
+            padding: 6px;
+            border: none;
+            vertical-align: top;
+            font-size: 11px;
+        }
+
+        .footer {
+            margin-top: 16px;
+            text-align: center;
+            font-size: 10px;
+            color: #bbb;
+        }
+    </style>
+</head>
+<body>
+    <!-- ============================================================ -->
+    <!-- PART 1: АКТ ПРИЕМКИ-СДАЧИ ВЫПОЛНЕННЫХ РАБОТ                  -->
+    <!-- ============================================================ -->
+    <div class="act-title">АКТ приемки-сдачи выполненных работ</div>
+    <div class="act-date">от {{ act_date }}</div>
+
+    <div class="act-text">
+        Мы, нижеподписавшиеся, {{ settings.company_name }} в лице {{ settings.director_title }} {{ settings.director_name }},
+        действующее на основании Устава, и &laquo;{{ statement.company.name }}&raquo;,
+        составили настоящий акт в том, что работы на сумму
+        <strong>{{ grand_total_usd }} долларов США</strong>,
+        выполненные Исполнителем, полностью удовлетворяют условиям Договора хранения контейнеров.
+        Заказчик претензий и замечаний к Исполнителю не имеет.
+    </div>
+
+    <table class="act-summary-table">
+        <thead>
+            <tr>
+                <th style="width: 35px;">№</th>
+                <th>Наименование услуг</th>
+                <th style="width: 110px;">Стоимость поставки</th>
+                <th style="width: 60px;">Ст. НДС</th>
+                <th style="width: 100px;">Сумма НДС</th>
+                <th style="width: 120px;">Стоимость с НДС</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in grouped_items %}
+            <tr>
+                <td class="center">{{ item.number }}</td>
+                <td>{{ item.label }}</td>
+                <td class="num">{{ item.total_usd }}</td>
+                <td class="center">12%</td>
+                <td class="num">{{ item.vat_usd }}</td>
+                <td class="num">{{ item.total_with_vat_usd }}</td>
+            </tr>
+            {% endfor %}
+            {% for svc in service_items %}
+            <tr>
+                <td class="center">{{ svc.number }}</td>
+                <td>{{ svc.label }}</td>
+                <td class="num">{{ svc.total_usd }}</td>
+                <td class="center">12%</td>
+                <td class="num">{{ svc.vat_usd }}</td>
+                <td class="num">{{ svc.total_with_vat_usd }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td></td>
+                <td>Всего</td>
+                <td class="num">{{ grand_total_usd }}</td>
+                <td></td>
+                <td class="num">{{ grand_vat_usd }}</td>
+                <td class="num">{{ grand_total_with_vat_usd }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="signatures-row">
+        <div class="side">
+            <span class="sig-label">Исполнитель</span><br>
+            <span class="sig-line"></span>
+        </div>
+        <div class="side" style="text-align: right;">
+            <span class="sig-label">Заказчик</span><br>
+            <span class="sig-line"></span>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- PART 2: СЧЁТ-ФАКТУРА                                         -->
+    <!-- ============================================================ -->
+    <div class="section-divider"></div>
+
+    <div class="sf-title">
+        Счёт-фактура {% if statement.invoice_number %}№ {{ statement.invoice_number }}{% endif %}
+        от {{ act_date }}
+    </div>
+    <div class="sf-ref">к товаро-отгрузочным документам: Договор хранения контейнеров</div>
+
+    <div class="parties">
+        <div class="party">
+            <div class="party-title">Поставщик</div>
+            <div style="font-weight: 600; margin-bottom: 4px;">{{ settings.company_name }}</div>
+            <div class="party-row"><span class="label">Адрес:</span> <span class="val">{{ settings.legal_address|default:"—" }}</span></div>
+            <div class="party-row"><span class="label">Телефон:</span> <span class="val">{{ settings.phone|default:"—" }}</span></div>
+            <div class="party-row"><span class="label">Р/с:</span> <span class="val">{{ settings.bank_account|default:"—" }}</span></div>
+            <div class="party-row"><span class="label">Банк:</span> <span class="val">{{ settings.bank_name|default:"—" }}</span></div>
+            <div class="party-row"><span class="label">МФО:</span> <span class="val">{{ settings.mfo|default:"—" }}</span></div>
+            <div class="party-row"><span class="label">ИНН:</span> <span class="val">{{ settings.inn|default:"—" }}</span></div>
+            <div class="party-row"><span class="label">НДС:</span> <span class="val">{{ settings.vat_registration_code|default:"—" }}</span></div>
+        </div>
+        <div class="party">
+            <div class="party-title">Покупатель</div>
+            <div style="font-weight: 600; margin-bottom: 4px;">{{ statement.company.name }}</div>
+            {% if statement.company.legal_address %}
+            <div class="party-row"><span class="label">Адрес:</span> <span class="val">{{ statement.company.legal_address }}</span></div>
+            {% endif %}
+            {% if statement.company.inn %}
+            <div class="party-row"><span class="label">ИНН:</span> <span class="val">{{ statement.company.inn }}</span></div>
+            {% endif %}
+            {% if statement.company.bank_account %}
+            <div class="party-row"><span class="label">Р/с:</span> <span class="val">{{ statement.company.bank_account }}</span></div>
+            {% endif %}
+            {% if statement.company.bank_name %}
+            <div class="party-row"><span class="label">Банк:</span> <span class="val">{{ statement.company.bank_name }}</span></div>
+            {% endif %}
+            {% if statement.company.mfo %}
+            <div class="party-row"><span class="label">МФО:</span> <span class="val">{{ statement.company.mfo }}</span></div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="exchange-rate">
+        <strong>Валюта USD &nbsp; Курс:</strong> 1 USD = {{ exchange_rate }} сум
+    </div>
+
+    <table class="detail-table">
+        <thead>
+            <tr>
+                <th style="width: 30px;">№</th>
+                <th>Наименование товаров (работ, услуг)</th>
+                <th style="width: 50px;">Ед.изм</th>
+                <th style="width: 50px;">Кол-во</th>
+                <th style="width: 85px;">Цена</th>
+                <th style="width: 90px;">Стоимость поставки</th>
+                <th style="width: 90px;">НДС (сумма)</th>
+                <th style="width: 100px;">Стоимость с НДС</th>
+                <th style="width: 75px;">Начало</th>
+                <th style="width: 75px;">Конец</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in grouped_items %}
+            <tr class="usd-row">
+                <td class="center">{{ item.number }}</td>
+                <td>{{ item.label }}</td>
+                <td class="center">{{ item.unit }}</td>
+                <td class="center">{{ item.qty }}</td>
+                <td class="number">{{ item.unit_price_usd }}</td>
+                <td class="number">{{ item.total_usd }}</td>
+                <td class="number">{{ item.vat_usd }}</td>
+                <td class="number">{{ item.total_with_vat_usd }}</td>
+                <td class="center">{{ item.period_start }}</td>
+                <td class="center">{{ item.period_end }}</td>
+            </tr>
+            <tr class="uzs-row">
+                <td></td>
+                <td>&nbsp;&nbsp;в т.ч. UZS</td>
+                <td class="center">{{ item.unit }}</td>
+                <td class="center">{{ item.qty }}</td>
+                <td class="number">{{ item.unit_price_uzs }}</td>
+                <td class="number">{{ item.total_uzs }}</td>
+                <td class="number">{{ item.vat_uzs }}</td>
+                <td class="number">{{ item.total_with_vat_uzs }}</td>
+                <td></td>
+                <td></td>
+            </tr>
+            {% endfor %}
+
+            {% for svc in service_items %}
+            <tr class="usd-row">
+                <td class="center">{{ svc.number }}</td>
+                <td>{{ svc.label }}</td>
+                <td class="center">{{ svc.unit }}</td>
+                <td class="center">{{ svc.qty }}</td>
+                <td class="number">{{ svc.unit_price_usd }}</td>
+                <td class="number">{{ svc.total_usd }}</td>
+                <td class="number">{{ svc.vat_usd }}</td>
+                <td class="number">{{ svc.total_with_vat_usd }}</td>
+                <td></td>
+                <td></td>
+            </tr>
+            <tr class="uzs-row">
+                <td></td>
+                <td>&nbsp;&nbsp;в т.ч. UZS</td>
+                <td class="center">{{ svc.unit }}</td>
+                <td class="center">{{ svc.qty }}</td>
+                <td class="number">{{ svc.unit_price_uzs }}</td>
+                <td class="number">{{ svc.total_uzs }}</td>
+                <td class="number">{{ svc.vat_uzs }}</td>
+                <td class="number">{{ svc.total_with_vat_uzs }}</td>
+                <td></td>
+                <td></td>
+            </tr>
+            {% endfor %}
+
+            <tr class="total-row">
+                <td></td>
+                <td class="number"><strong>Всего к оплате (USD):</strong></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td class="number">{{ grand_total_usd }}</td>
+                <td class="number">{{ grand_vat_usd }}</td>
+                <td class="number">{{ grand_total_with_vat_usd }}</td>
+                <td></td>
+                <td></td>
+            </tr>
+            <tr class="total-row uzs">
+                <td></td>
+                <td class="number"><strong>Всего к оплате (UZS):</strong></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td class="number">{{ grand_total_uzs }}</td>
+                <td class="number">{{ grand_vat_uzs }}</td>
+                <td class="number">{{ grand_total_with_vat_uzs }}</td>
+                <td></td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="bottom-signatures">
+        <table>
+            <tr>
+                <td>
+                    <span class="sig-label">{{ settings.director_title|default:"Руководитель" }}</span>
+                    <span class="sig-line"></span>
+                    {{ settings.director_name|default:"" }}
+                </td>
+                <td style="text-align: right;">
+                    (подпись покупателя)
+                    <span class="sig-line"></span>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <span class="sig-label">Гл. бухгалтер</span>
+                    <span class="sig-line"></span>
+                    {{ settings.accountant_name|default:"" }}
+                </td>
+                <td></td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="footer">Предварительный просмотр · Счёт-фактура</div>
+</body>
+</html>

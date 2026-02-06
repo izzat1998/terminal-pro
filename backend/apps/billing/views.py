@@ -2,6 +2,8 @@
 API views for billing and storage cost functionality.
 """
 
+from decimal import Decimal
+
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
@@ -11,11 +13,10 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.customer_portal.permissions import IsCustomer
 from apps.terminal_operations.models import ContainerEntry
 
-from .models import AdditionalCharge, ExpenseType, Tariff
-from apps.customer_portal.permissions import IsCustomer
-
+from .models import AdditionalCharge, ExpenseType, Tariff, TerminalSettings
 from .serializers import (
     AdditionalChargeCreateSerializer,
     AdditionalChargeSerializer,
@@ -29,6 +30,7 @@ from .serializers import (
     TariffCreateSerializer,
     TariffSerializer,
     TariffUpdateSerializer,
+    TerminalSettingsSerializer,
 )
 from .services import StatementExportService, StorageCostService
 from .services.statement_service import MonthlyStatementService
@@ -45,6 +47,39 @@ def _get_customer_company(user):
     if getattr(user, "company", None):
         return user.company
     return None
+
+
+def build_storage_cost_row(result, invoiced_entry_ids: set) -> dict:
+    """Build a single storage-cost response row with the is_on_demand_invoiced flag."""
+    return {
+        "container_entry_id": result.container_entry_id,
+        "container_number": result.container_number,
+        "company_name": result.company_name,
+        "container_size": result.container_size,
+        "container_status": result.container_status,
+        "entry_date": result.entry_date.isoformat(),
+        "end_date": result.end_date.isoformat(),
+        "is_active": result.is_active,
+        "total_days": result.total_days,
+        "free_days_applied": result.free_days_applied,
+        "billable_days": result.billable_days,
+        "total_usd": str(result.total_usd),
+        "total_uzs": str(result.total_uzs),
+        "calculated_at": result.calculated_at.isoformat(),
+        "is_on_demand_invoiced": result.container_entry_id in invoiced_entry_ids,
+    }
+
+
+def get_invoiced_entry_ids(container_entry_ids: list[int]) -> set[int]:
+    """Return set of container_entry_ids that are in active on-demand invoices."""
+    from .models import OnDemandInvoiceItem
+
+    return set(
+        OnDemandInvoiceItem.objects.filter(
+            container_entry_id__in=container_entry_ids,
+            invoice__status__in=["draft", "finalized", "paid"],
+        ).values_list("container_entry_id", flat=True)
+    )
 
 
 NO_COMPANY_RESPONSE = {
@@ -69,7 +104,7 @@ class TariffViewSet(viewsets.ModelViewSet):
     destroy: Delete tariff (only if not referenced)
     """
 
-    queryset = Tariff.objects.all().prefetch_related("rates").select_related("company")
+    queryset = Tariff.objects.all().prefetch_related("rates").select_related("company", "created_by")
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get_serializer_class(self):
@@ -245,6 +280,23 @@ class StorageCostView(APIView):
             id=entry_id,
         )
 
+        # Authorization: admins can access all entries, customers only their company's
+        user = request.user
+        is_admin = user.is_staff or getattr(user, "user_type", None) == "admin"
+        if not is_admin:
+            company = _get_customer_company(user)
+            if not company or entry.company_id != company.id:
+                return Response(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "NOT_FOUND",
+                            "message": "Запись не найдена",
+                        },
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
         # Parse optional as_of_date
         as_of_date = None
         as_of_date_str = request.query_params.get("as_of_date")
@@ -349,7 +401,7 @@ class CustomerBulkStorageCostView(APIView):
     Only allows calculation for containers belonging to the customer's company.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
 
     def post(self, request):
         """Calculate storage costs for customer's containers."""
@@ -367,7 +419,10 @@ class CustomerBulkStorageCostView(APIView):
             try:
                 as_of_date = datetime.strptime(as_of_date_str, "%Y-%m-%d").date()
             except ValueError:
-                pass
+                return Response(
+                    {"success": False, "error": {"code": "INVALID_DATE", "message": "Неверный формат даты. Используйте YYYY-MM-DD"}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         # Filter to only include containers from customer's company
         entries = ContainerEntry.objects.filter(
@@ -412,7 +467,7 @@ class CustomerStorageCostView(APIView):
         - entry_date_to: Filter by entry date (YYYY-MM-DD)
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
 
     def get(self, request):
         """Get storage costs for customer's company containers."""
@@ -420,32 +475,13 @@ class CustomerStorageCostView(APIView):
         if not company:
             return Response(NO_COMPANY_RESPONSE, status=status.HTTP_400_BAD_REQUEST)
 
-        # Build base queryset
+        # Build base queryset with shared filters
+        from apps.billing.utils import filter_storage_cost_entries
+
         entries = ContainerEntry.objects.filter(
             company=company,
         ).select_related("container", "company")
-
-        # Apply filters
-        status_filter = request.query_params.get("status")
-        if status_filter == "active":
-            entries = entries.filter(exit_date__isnull=True)
-        elif status_filter == "exited":
-            entries = entries.filter(exit_date__isnull=False)
-
-        search = request.query_params.get("search", "").strip()
-        if search:
-            entries = entries.filter(container__container_number__icontains=search)
-
-        entry_date_from = request.query_params.get("entry_date_from")
-        if entry_date_from:
-            entries = entries.filter(entry_time__date__gte=entry_date_from)
-
-        entry_date_to = request.query_params.get("entry_date_to")
-        if entry_date_to:
-            entries = entries.filter(entry_time__date__lte=entry_date_to)
-
-        # Order by entry time descending
-        entries = entries.order_by("-entry_time")
+        entries = filter_storage_cost_entries(entries, request.query_params)
 
         # Get total count before pagination
         total_count = entries.count()
@@ -462,35 +498,20 @@ class CustomerStorageCostView(APIView):
         service = StorageCostService()
         cost_results = service.calculate_bulk_costs(paginated_entries)
 
-        # Build response items
-        results = []
-        for result in cost_results:
-            results.append(
-                {
-                    "container_entry_id": result.container_entry_id,
-                    "container_number": result.container_number,
-                    "company_name": result.company_name,
-                    "container_size": result.container_size,
-                    "container_status": result.container_status,
-                    "entry_date": result.entry_date.isoformat(),
-                    "end_date": result.end_date.isoformat(),
-                    "is_active": result.is_active,
-                    "total_days": result.total_days,
-                    "free_days_applied": result.free_days_applied,
-                    "billable_days": result.billable_days,
-                    "total_usd": str(result.total_usd),
-                    "total_uzs": str(result.total_uzs),
-                    "calculated_at": result.calculated_at.isoformat(),
-                }
-            )
+        # Build response items with on-demand invoice flags
+        entry_ids = [r.container_entry_id for r in cost_results]
+        invoiced_entry_ids = get_invoiced_entry_ids(entry_ids)
 
-        # Summary from the current page only — avoids O(N) recalculation
+        results = [build_storage_cost_row(r, invoiced_entry_ids) for r in cost_results]
+
+        # Summary from the current page only -- avoids O(N) recalculation
         page_total_usd = sum(r.total_usd for r in cost_results)
         page_total_uzs = sum(r.total_uzs for r in cost_results)
         page_billable_days = sum(r.billable_days for r in cost_results)
 
         return Response(
             {
+                "success": True,
                 "results": results,
                 "count": total_count,
                 "summary": {
@@ -502,6 +523,45 @@ class CustomerStorageCostView(APIView):
                 },
             }
         )
+
+
+class CustomerStorageCostExportView(APIView):
+    """
+    Export storage costs to Excel for the authenticated customer's company.
+
+    GET /api/customer/storage-costs/export/
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request):
+        """Export storage costs for customer's company containers."""
+        from django.http import HttpResponse
+
+        company = _get_customer_company(request.user)
+        if not company:
+            return Response(NO_COMPANY_RESPONSE, status=status.HTTP_400_BAD_REQUEST)
+
+        from apps.billing.utils import filter_storage_cost_entries
+
+        entries = ContainerEntry.objects.filter(
+            company=company,
+        ).select_related("container", "company")
+        entries = filter_storage_cost_entries(entries, request.query_params)
+
+        service = StorageCostService()
+        cost_results = service.calculate_bulk_costs(entries)
+
+        export_service = StatementExportService()
+        excel_file = export_service.export_storage_costs_to_excel(cost_results, company.name)
+
+        response = HttpResponse(
+            excel_file.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        filename = f"storage_costs_{company.slug or 'company'}.xlsx"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 class CustomerStatementView(APIView):
@@ -691,6 +751,415 @@ class CustomerStatementExportPdfView(APIView):
         return response
 
 
+class CustomerStatementExportActView(APIView):
+    """
+    Export statement as formal Счёт-фактура (act) Excel.
+
+    GET /api/customer/billing/statements/{year}/{month}/export/act/
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request, year: int, month: int):
+        profile = request.user.get_profile()
+        if not profile or not profile.company:
+            return Response(
+                {"success": False, "error": {"code": "NO_COMPANY", "message": "Компания не найдена"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=profile.company,
+            year=year,
+            month=month,
+            user=request.user,
+        )
+
+        settings = TerminalSettings.load()
+        export_service = StatementExportService()
+        excel_file = export_service.export_to_schet_factura(
+            statement, settings, exchange_rate=statement.exchange_rate,
+        )
+        filename = export_service.get_schet_factura_filename(statement)
+
+        response = HttpResponse(
+            excel_file.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class CompanyStatementExportActView(APIView):
+    """
+    Export statement as formal Счёт-фактура (act) Excel — admin access via company slug.
+
+    GET /api/billing/companies/{slug}/statements/{year}/{month}/export/act/
+    """
+
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request, slug: str, year: int, month: int):
+        from apps.accounts.models import Company
+
+        company = get_object_or_404(Company, slug=slug)
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company,
+            year=year,
+            month=month,
+            user=request.user,
+        )
+
+        settings = TerminalSettings.load()
+        export_service = StatementExportService()
+        excel_file = export_service.export_to_schet_factura(
+            statement, settings, exchange_rate=statement.exchange_rate,
+        )
+        filename = export_service.get_schet_factura_filename(statement)
+
+        response = HttpResponse(
+            excel_file.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class CustomerStatementExportActPreviewView(APIView):
+    """
+    Export statement Счёт-фактура as PDF preview.
+
+    GET /api/customer/billing/statements/{year}/{month}/export/act-preview/
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request, year: int, month: int):
+        profile = request.user.get_profile()
+        if not profile or not profile.company:
+            return Response(
+                {"success": False, "error": {"code": "NO_COMPANY", "message": "Компания не найдена"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=profile.company,
+            year=year,
+            month=month,
+            user=request.user,
+        )
+
+        settings = TerminalSettings.load()
+        export_service = StatementExportService()
+        pdf_file = export_service.export_to_schet_factura_pdf(
+            statement, settings, exchange_rate=statement.exchange_rate,
+        )
+
+        response = HttpResponse(pdf_file.getvalue(), content_type="application/pdf")
+        response["Content-Disposition"] = 'inline; filename="act_preview.pdf"'
+        return response
+
+
+class CompanyStatementExportActPreviewView(APIView):
+    """
+    Export statement Счёт-фактура as PDF preview — admin access via company slug.
+
+    GET /api/billing/companies/{slug}/statements/{year}/{month}/export/act-preview/
+    """
+
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request, slug: str, year: int, month: int):
+        from apps.accounts.models import Company
+
+        company = get_object_or_404(Company, slug=slug)
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company,
+            year=year,
+            month=month,
+            user=request.user,
+        )
+
+        settings = TerminalSettings.load()
+        export_service = StatementExportService()
+        pdf_file = export_service.export_to_schet_factura_pdf(
+            statement, settings, exchange_rate=statement.exchange_rate,
+        )
+
+        response = HttpResponse(pdf_file.getvalue(), content_type="application/pdf")
+        response["Content-Disposition"] = 'inline; filename="act_preview.pdf"'
+        return response
+
+
+class CustomerStatementExportHtmlPreviewView(APIView):
+    """
+    Render statement as HTML table for preview (no WeasyPrint needed).
+
+    GET /api/customer/billing/statements/{year}/{month}/export/html-preview/
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request, year: int, month: int):
+        from django.template.loader import render_to_string
+
+        profile = request.user.get_profile()
+        if not profile or not profile.company:
+            return Response(
+                {"success": False, "error": {"code": "NO_COMPANY", "message": "Компания не найдена"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=profile.company, year=year, month=month, user=request.user,
+        )
+
+        line_items = statement.line_items.all()
+        service_items = statement.service_items.all() if hasattr(statement, "service_items") else []
+
+        storage_total_usd = sum(i.amount_usd for i in line_items)
+        storage_total_uzs = sum(i.amount_uzs for i in line_items)
+        services_total_usd = sum(s.amount_usd for s in service_items)
+        services_total_uzs = sum(s.amount_uzs for s in service_items)
+
+        html = render_to_string("billing/statement_html_preview.html", {
+            "statement": statement,
+            "line_items": line_items,
+            "service_items": service_items,
+            "storage_total_usd": storage_total_usd,
+            "storage_total_uzs": storage_total_uzs,
+            "services_total_usd": services_total_usd,
+            "services_total_uzs": services_total_uzs,
+        })
+        return HttpResponse(html, content_type="text/html; charset=utf-8")
+
+
+class CompanyStatementExportHtmlPreviewView(APIView):
+    """
+    Render statement as HTML table for preview — admin access via company slug.
+
+    GET /api/billing/companies/{slug}/statements/{year}/{month}/export/html-preview/
+    """
+
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request, slug: str, year: int, month: int):
+        from django.template.loader import render_to_string
+
+        from apps.accounts.models import Company
+
+        company = get_object_or_404(Company, slug=slug)
+
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company, year=year, month=month, user=request.user,
+        )
+
+        line_items = statement.line_items.all()
+        service_items = statement.service_items.all() if hasattr(statement, "service_items") else []
+
+        storage_total_usd = sum(i.amount_usd for i in line_items)
+        storage_total_uzs = sum(i.amount_uzs for i in line_items)
+        services_total_usd = sum(s.amount_usd for s in service_items)
+        services_total_uzs = sum(s.amount_uzs for s in service_items)
+
+        html = render_to_string("billing/statement_html_preview.html", {
+            "statement": statement,
+            "line_items": line_items,
+            "service_items": service_items,
+            "storage_total_usd": storage_total_usd,
+            "storage_total_uzs": storage_total_uzs,
+            "services_total_usd": services_total_usd,
+            "services_total_uzs": services_total_uzs,
+        })
+        return HttpResponse(html, content_type="text/html; charset=utf-8")
+
+
+def _render_act_html_preview(statement, settings_obj):
+    """Render Счёт-фактура as HTML preview (shared by customer and admin views)."""
+    import calendar
+
+    from django.template.loader import render_to_string
+
+    from .services.export_service import StatementExportService
+
+    rate = statement.exchange_rate or settings_obj.default_usd_uzs_rate or Decimal("0")
+    export_service = StatementExportService()
+
+    grouped = export_service._group_line_items(statement)
+    service_grouped = export_service._group_service_items(statement)
+    vat_rate = settings_obj.vat_rate or Decimal("12")
+
+    # Act date = last day of the billing month
+    last_day = calendar.monthrange(statement.year, statement.month)[1]
+    act_date = f"{last_day:02d}.{statement.month:02d}.{statement.year} г."
+
+    item_no = 0
+    grand_total_usd = Decimal("0")
+    grand_total_uzs = Decimal("0")
+    grand_vat_usd = Decimal("0")
+    grand_vat_uzs = Decimal("0")
+
+    grouped_items = []
+    for label, total_usd, qty, unit, period_start, period_end in grouped:
+        item_no += 1
+        total_uzs = total_usd * rate
+        # НДС inclusive: extract VAT from the total
+        vat_usd = total_usd * vat_rate / (Decimal("100") + vat_rate)
+        vat_uzs = total_uzs * vat_rate / (Decimal("100") + vat_rate)
+        grand_total_usd += total_usd
+        grand_total_uzs += total_uzs
+        grand_vat_usd += vat_usd
+        grand_vat_uzs += vat_uzs
+        grouped_items.append({
+            "number": item_no, "label": label, "unit": unit, "qty": qty,
+            "unit_price_usd": f"{total_usd / qty if qty else 0:,.2f}",
+            "total_usd": f"{total_usd:,.2f}", "vat_usd": f"{vat_usd:,.2f}",
+            "total_with_vat_usd": f"{total_usd:,.2f}",
+            "unit_price_uzs": f"{total_uzs / qty if qty else 0:,.0f}",
+            "total_uzs": f"{total_uzs:,.0f}", "vat_uzs": f"{vat_uzs:,.0f}",
+            "total_with_vat_uzs": f"{total_uzs:,.0f}",
+            "period_start": period_start, "period_end": period_end,
+        })
+
+    svc_items = []
+    for desc, svc_total_usd, svc_qty, svc_unit in service_grouped:
+        item_no += 1
+        svc_total_uzs = svc_total_usd * rate
+        svc_vat_usd = svc_total_usd * vat_rate / (Decimal("100") + vat_rate)
+        svc_vat_uzs = svc_total_uzs * vat_rate / (Decimal("100") + vat_rate)
+        grand_total_usd += svc_total_usd
+        grand_total_uzs += svc_total_uzs
+        grand_vat_usd += svc_vat_usd
+        grand_vat_uzs += svc_vat_uzs
+        svc_items.append({
+            "number": item_no, "label": desc, "unit": svc_unit, "qty": svc_qty,
+            "unit_price_usd": f"{svc_total_usd / svc_qty if svc_qty else 0:,.2f}",
+            "total_usd": f"{svc_total_usd:,.2f}", "vat_usd": f"{svc_vat_usd:,.2f}",
+            "total_with_vat_usd": f"{svc_total_usd:,.2f}",
+            "unit_price_uzs": f"{svc_total_uzs / svc_qty if svc_qty else 0:,.0f}",
+            "total_uzs": f"{svc_total_uzs:,.0f}", "vat_uzs": f"{svc_vat_uzs:,.0f}",
+            "total_with_vat_uzs": f"{svc_total_uzs:,.0f}",
+        })
+
+    return render_to_string("billing/schet_factura_html_preview.html", {
+        "statement": statement,
+        "settings": settings_obj,
+        "act_date": act_date,
+        "exchange_rate": f"{rate:,.2f}",
+        "grouped_items": grouped_items,
+        "service_items": svc_items,
+        "grand_total_usd": f"{grand_total_usd:,.2f}",
+        "grand_total_uzs": f"{grand_total_uzs:,.0f}",
+        "grand_vat_usd": f"{grand_vat_usd:,.2f}",
+        "grand_vat_uzs": f"{grand_vat_uzs:,.0f}",
+        "grand_total_with_vat_usd": f"{grand_total_usd:,.2f}",
+        "grand_total_with_vat_uzs": f"{grand_total_uzs:,.0f}",
+    })
+
+
+class CustomerStatementExportActHtmlPreviewView(APIView):
+    """
+    Render Счёт-фактура as HTML table for preview.
+
+    GET /api/customer/billing/statements/{year}/{month}/export/act-html-preview/
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request, year: int, month: int):
+        profile = request.user.get_profile()
+        if not profile or not profile.company:
+            return Response(
+                {"success": False, "error": {"code": "NO_COMPANY", "message": "Компания не найдена"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=profile.company, year=year, month=month, user=request.user,
+        )
+        settings_obj = TerminalSettings.load()
+        html = _render_act_html_preview(statement, settings_obj)
+        return HttpResponse(html, content_type="text/html; charset=utf-8")
+
+
+class CompanyStatementExportActHtmlPreviewView(APIView):
+    """
+    Render Счёт-фактура as HTML table for preview — admin access via company slug.
+
+    GET /api/billing/companies/{slug}/statements/{year}/{month}/export/act-html-preview/
+    """
+
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request, slug: str, year: int, month: int):
+        from apps.accounts.models import Company
+
+        company = get_object_or_404(Company, slug=slug)
+        if not 1 <= month <= 12:
+            return Response(
+                {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        statement_service = MonthlyStatementService()
+        statement = statement_service.get_or_generate_statement(
+            company=company, year=year, month=month, user=request.user,
+        )
+        settings_obj = TerminalSettings.load()
+        html = _render_act_html_preview(statement, settings_obj)
+        return HttpResponse(html, content_type="text/html; charset=utf-8")
+
+
 class AdditionalChargeViewSet(viewsets.ModelViewSet):
     """ViewSet for managing additional charges (admin only)."""
 
@@ -711,7 +1180,12 @@ class AdditionalChargeViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
 
         container_entry_id = self.request.query_params.get("container_entry_id")
-        if container_entry_id:
+        container_entry_ids = self.request.query_params.get("container_entry_ids")
+        if container_entry_ids:
+            ids = [int(x) for x in container_entry_ids.split(",") if x.strip().isdigit()]
+            if ids:
+                queryset = queryset.filter(container_entry_id__in=ids)
+        elif container_entry_id:
             queryset = queryset.filter(container_entry_id=container_entry_id)
 
         company_id = self.request.query_params.get("company_id")
@@ -776,7 +1250,7 @@ class AdditionalChargeViewSet(viewsets.ModelViewSet):
         container_entry_ids = request.data.get("container_entry_ids", [])
         if not container_entry_ids:
             return Response(
-                {"success": False, "error": {"code": "MISSING_IDS", "message": "container_entry_ids required"}},
+                {"success": False, "error": {"code": "MISSING_IDS", "message": "Параметр container_entry_ids обязателен"}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -810,9 +1284,20 @@ class AdditionalChargeViewSet(viewsets.ModelViewSet):
 
 
 class CustomerAdditionalChargeView(APIView):
-    """Customer view for their additional charges (read-only)."""
+    """
+    Customer view for their additional charges (read-only) with pagination.
 
-    permission_classes = [IsAuthenticated]
+    GET /api/customer/billing/additional-charges/
+
+    Query parameters:
+        - page: Page number (default: 1)
+        - page_size: Items per page (default: 20, max: 100)
+        - date_from: Filter by charge date (YYYY-MM-DD)
+        - date_to: Filter by charge date (YYYY-MM-DD)
+        - search: Search by container number
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
 
     def get(self, request):
         company = _get_customer_company(request.user)
@@ -839,16 +1324,27 @@ class CustomerAdditionalChargeView(APIView):
         if search:
             queryset = queryset.filter(container_entry__container__container_number__icontains=search)
 
+        # Compute totals across the full filtered queryset (before pagination)
         from django.db.models import Sum
         totals = queryset.aggregate(total_usd=Sum("amount_usd"), total_uzs=Sum("amount_uzs"))
+        total_count = queryset.count()
 
-        serializer = AdditionalChargeSerializer(queryset, many=True)
+        # Pagination
+        from apps.core.utils import safe_int_param
+
+        page = safe_int_param(request.query_params.get("page"), 1, min_val=1)
+        page_size = safe_int_param(request.query_params.get("page_size"), 20, min_val=1, max_val=100)
+        offset = (page - 1) * page_size
+        paginated_qs = queryset[offset : offset + page_size]
+
+        serializer = AdditionalChargeSerializer(paginated_qs, many=True)
 
         return Response({
             "success": True,
             "data": serializer.data,
+            "count": total_count,
             "summary": {
-                "total_charges": queryset.count(),
+                "total_charges": total_count,
                 "total_usd": str(totals["total_usd"] or 0),
                 "total_uzs": str(totals["total_uzs"] or 0),
             },
@@ -901,3 +1397,93 @@ class ExpenseTypeViewSet(viewsets.ModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         serializer = self.get_serializer(self.get_object())
         return Response({"success": True, "data": serializer.data})
+
+
+class TerminalSettingsView(APIView):
+    """
+    GET/PUT terminal operator settings (singleton).
+
+    Admin-only. Used for Счёт-фактура generation and formal documents.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request):
+        settings = TerminalSettings.load()
+        serializer = TerminalSettingsSerializer(settings)
+        return Response({"success": True, "data": serializer.data})
+
+    def put(self, request):
+        settings = TerminalSettings.load()
+        serializer = TerminalSettingsSerializer(settings, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"success": True, "data": serializer.data})
+
+
+class ExchangeRateView(APIView):
+    """
+    GET /api/billing/exchange-rate/?date=YYYY-MM-DD
+
+    Returns the CBU exchange rate for a given date.
+    Checks local cache first; fetches from cbu.uz if not cached.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request):
+        from datetime import datetime
+
+        from apps.billing.services import cbu_service
+
+        date_str = request.query_params.get("date")
+        if not date_str:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_DATE",
+                        "message": "Укажите параметр date (YYYY-MM-DD)",
+                    },
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_DATE",
+                        "message": "Неверный формат даты. Используйте YYYY-MM-DD",
+                    },
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            rate = cbu_service.get_rate(target_date)
+        except cbu_service.CBUServiceError as exc:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "CBU_FETCH_ERROR",
+                        "message": str(exc),
+                    },
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(
+            {
+                "success": True,
+                "data": {
+                    "currency": "USD",
+                    "date": date_str,
+                    "rate": str(rate),
+                },
+            }
+        )
