@@ -50,8 +50,11 @@ def _get_customer_company(user):
     return None
 
 
-def build_storage_cost_row(result, invoiced_entry_ids: set) -> dict:
-    """Build a single storage-cost response row with the is_on_demand_invoiced flag."""
+def build_storage_cost_row(result, invoiced_entry_ids: set, billed_amounts: dict | None = None) -> dict:
+    """Build a single storage-cost response row with invoiced flag and billed amounts."""
+    billed = billed_amounts.get(result.container_entry_id) if billed_amounts else None
+    billed_usd = billed["usd"] if billed else Decimal("0")
+    billed_uzs = billed["uzs"] if billed else Decimal("0")
     return {
         "container_entry_id": result.container_entry_id,
         "container_number": result.container_number,
@@ -66,6 +69,10 @@ def build_storage_cost_row(result, invoiced_entry_ids: set) -> dict:
         "billable_days": result.billable_days,
         "total_usd": str(result.total_usd),
         "total_uzs": str(result.total_uzs),
+        "billed_usd": str(billed_usd),
+        "billed_uzs": str(billed_uzs),
+        "unbilled_usd": str(result.total_usd - billed_usd),
+        "unbilled_uzs": str(result.total_uzs - billed_uzs),
         "calculated_at": result.calculated_at.isoformat(),
         "is_on_demand_invoiced": result.container_entry_id in invoiced_entry_ids,
     }
@@ -81,6 +88,32 @@ def get_invoiced_entry_ids(container_entry_ids: list[int]) -> set[int]:
             invoice__status__in=["draft", "finalized", "paid"],
         ).values_list("container_entry_id", flat=True)
     )
+
+
+def get_billed_amounts(container_entry_ids: list[int]) -> dict[int, dict]:
+    """Sum billed USD/UZS per container entry from non-cancelled monthly statements."""
+    from django.db.models import Sum
+
+    from .models import StatementLineItem
+
+    rows = (
+        StatementLineItem.objects.filter(
+            container_entry_id__in=container_entry_ids,
+            statement__status__in=["draft", "finalized", "paid"],
+        )
+        .values("container_entry_id")
+        .annotate(
+            billed_usd=Sum("amount_usd"),
+            billed_uzs=Sum("amount_uzs"),
+        )
+    )
+    return {
+        row["container_entry_id"]: {
+            "usd": row["billed_usd"] or Decimal("0"),
+            "uzs": row["billed_uzs"] or Decimal("0"),
+        }
+        for row in rows
+    }
 
 
 NO_COMPANY_RESPONSE = {

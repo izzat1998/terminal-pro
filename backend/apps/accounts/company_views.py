@@ -546,13 +546,18 @@ class CompanyViewSet(viewsets.ModelViewSet):
         cost_service = StorageCostService()
         cost_results = cost_service.calculate_bulk_costs(paginated_entries)
 
-        # Build response items with on-demand invoice flags
-        from apps.billing.views import build_storage_cost_row, get_invoiced_entry_ids
+        # Build response items with on-demand invoice flags and billed amounts
+        from apps.billing.views import (
+            build_storage_cost_row,
+            get_billed_amounts,
+            get_invoiced_entry_ids,
+        )
 
         entry_ids = [r.container_entry_id for r in cost_results]
         invoiced_entry_ids = get_invoiced_entry_ids(entry_ids)
+        billed_amounts = get_billed_amounts(entry_ids)
 
-        results = [build_storage_cost_row(r, invoiced_entry_ids) for r in cost_results]
+        results = [build_storage_cost_row(r, invoiced_entry_ids, billed_amounts) for r in cost_results]
 
         # Calculate summary for ALL matching entries (not just paginated)
         all_cost_results = cost_service.calculate_bulk_costs(entries) if total_count <= 500 else cost_results

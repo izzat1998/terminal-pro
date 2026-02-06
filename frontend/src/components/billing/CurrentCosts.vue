@@ -95,7 +95,7 @@
       }"
       row-key="container_entry_id"
       :row-selection="rowSelection"
-      :scroll="{ x: 1200 }"
+      :scroll="{ x: 1400 }"
       size="small"
       :custom-row="(record: StorageCostItem) => ({
         onDblclick: () => handleRowDoubleClick(record),
@@ -134,8 +134,13 @@
         <template v-if="column.key === 'total_usd'">
           <span class="amount-usd">${{ parseFloat(record.total_usd).toFixed(2) }}</span>
         </template>
-        <template v-if="column.key === 'total_uzs'">
-          <span class="amount-uzs">{{ formatUzs(record.total_uzs) }}</span>
+        <template v-if="column.key === 'billed_usd'">
+          <span v-if="parseFloat(record.billed_usd) > 0" class="amount-billed">${{ parseFloat(record.billed_usd).toFixed(2) }}</span>
+          <span v-else style="color: #bfbfbf;">—</span>
+        </template>
+        <template v-if="column.key === 'unbilled_usd'">
+          <span v-if="parseFloat(record.unbilled_usd) > 0" class="amount-unbilled">${{ parseFloat(record.unbilled_usd).toFixed(2) }}</span>
+          <span v-else style="color: #52c41a;">✓</span>
         </template>
         <template v-if="column.key === 'actions'">
           <a-space :size="0">
@@ -495,6 +500,10 @@ interface StorageCostItem {
   billable_days: number;
   total_usd: string;
   total_uzs: string;
+  billed_usd: string;
+  billed_uzs: string;
+  unbilled_usd: string;
+  unbilled_uzs: string;
   calculated_at: string;
   is_on_demand_invoiced?: boolean;
 }
@@ -567,18 +576,23 @@ const columns: TableProps['columns'] = [
     width: 200,
   },
   {
-    title: 'Сумма USD',
+    title: 'Итого USD',
     key: 'total_usd',
     width: 120,
     align: 'right',
     sorter: true,
   },
   {
-    title: 'Сумма UZS',
-    key: 'total_uzs',
-    width: 150,
+    title: 'Выставлено',
+    key: 'billed_usd',
+    width: 110,
     align: 'right',
-    sorter: true,
+  },
+  {
+    title: 'Не выставлено',
+    key: 'unbilled_usd',
+    width: 120,
+    align: 'right',
   },
   {
     title: '',
@@ -739,6 +753,15 @@ onMounted(() => {
 .amount-uzs {
   font-weight: 500;
   color: #722ed1;
+}
+
+.amount-billed {
+  color: #52c41a;
+}
+
+.amount-unbilled {
+  font-weight: 600;
+  color: #fa8c16;
 }
 
 .selection-bar {
