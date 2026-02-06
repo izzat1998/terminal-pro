@@ -435,7 +435,9 @@ const createOnDemandInvoice = async () => {
     invoiceModalVisible.value = false;
     selectedRowKeys.value = [];
     invoiceNotes.value = '';
-    router.replace({ query: { tab: 'on-demand' } });
+    // Navigate to invoices page so the accountant sees the new invoice
+    const basePath = router.currentRoute.value.path.replace(/\/billing\/current$/, '');
+    router.push(`${basePath}/billing/invoices`);
   } catch (err) {
     message.error(err instanceof Error ? err.message : 'Не удалось создать счёт');
   } finally {
