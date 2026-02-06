@@ -101,11 +101,12 @@ class LogoutView(APIView):
                 token = RefreshToken(refresh_token)
                 token.blacklist()
             return Response(
-                {"message": "Successfully logged out"}, status=status.HTTP_200_OK
+                {"success": True, "message": "Успешный выход из системы"}, status=status.HTTP_200_OK
             )
         except TokenError:
             return Response(
-                {"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST
+                {"success": False, "error": {"code": "INVALID_TOKEN", "message": "Недействительный токен"}},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
 
@@ -130,7 +131,7 @@ class ProfileView(APIView):
         else:
             # It's an API user
             serializer = UserSerializer(request.user)
-        return Response(serializer.data)
+        return Response({"success": True, "data": serializer.data})
 
 
 class ManagerProfileView(APIView):
@@ -162,7 +163,7 @@ class ManagerProfileView(APIView):
         """Get current manager's profile."""
         self._check_manager_permission(request.user)
         serializer = ManagerSerializer(request.user)
-        return Response(serializer.data)
+        return Response({"success": True, "data": serializer.data})
 
     @extend_schema(
         summary="Update manager profile",
@@ -177,7 +178,7 @@ class ManagerProfileView(APIView):
         serializer = ManagerUpdateSerializer(manager, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         updated_manager = serializer.save()
-        return Response(ManagerSerializer(updated_manager).data)
+        return Response({"success": True, "data": ManagerSerializer(updated_manager).data})
 
 
 class RegisterView(APIView):
@@ -200,12 +201,15 @@ class RegisterView(APIView):
     def post(self, request):
         if not request.user.is_admin:
             return Response(
-                {"error": "Only admin users can create new accounts"},
+                {"success": False, "error": {"code": "FORBIDDEN", "message": "Только администраторы могут создавать новые учётные записи"}},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"success": True, "data": UserSerializer(user).data}, status=status.HTTP_201_CREATED)
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": "Ошибка валидации", "details": serializer.errors}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )

@@ -144,7 +144,7 @@ class CustomerProfileViewSet(viewsets.ViewSet):
         company = self._get_user_company(request.user)
         if not company:
             return Response(
-                {"success": False, "error": "No company found"},
+                {"success": False, "error": {"code": "COMPANY_NOT_FOUND", "message": "Компания не найдена"}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -310,7 +310,7 @@ class CustomerPreOrderViewSet(viewsets.ModelViewSet):
             )
         except BusinessLogicError as e:
             return Response(
-                {"success": False, "error": str(e)},
+                {"success": False, "error": {"code": "ERROR", "message": str(e)}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -356,7 +356,7 @@ class CustomerPreOrderViewSet(viewsets.ModelViewSet):
             preorder_service.cancel_order(instance.id, request.user)
         except BusinessLogicError as e:
             return Response(
-                {"success": False, "error": str(e)},
+                {"success": False, "error": {"code": "ERROR", "message": str(e)}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

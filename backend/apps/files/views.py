@@ -2,6 +2,7 @@
 API views for file management.
 """
 
+from django.db.models import Q
 from django.http import FileResponse, Http404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -87,12 +88,11 @@ class FileViewSet(viewsets.ModelViewSet):
         # Open file for streaming
         try:
             response = FileResponse(
-                file_obj.file.open("rb"), content_type=file_obj.mime_type
+                file_obj.file.open("rb"),
+                content_type=file_obj.mime_type,
+                as_attachment=True,
+                filename=file_obj.original_filename,
             )
-            response["Content-Disposition"] = (
-                f'attachment; filename="{file_obj.original_filename}"'
-            )
-            response["Content-Length"] = file_obj.size
 
             # TODO: Log file access
             # FileAccessLog.objects.create(
@@ -111,7 +111,7 @@ class FileViewSet(viewsets.ModelViewSet):
         """Restore a soft-deleted file (staff only)."""
         if not request.user.is_staff:
             return Response(
-                {"success": False, "error": {"code": "FORBIDDEN", "message": "Only staff can restore files."}},
+                {"success": False, "error": {"code": "FORBIDDEN", "message": "Только сотрудники могут восстанавливать файлы."}},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -144,7 +144,7 @@ class FileViewSet(viewsets.ModelViewSet):
 
         if not category_code:
             return Response(
-                {"success": False, "error": {"code": "MISSING_PARAMETER", "message": "category parameter required"}},
+                {"success": False, "error": {"code": "MISSING_PARAMETER", "message": "Параметр category обязателен"}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -173,7 +173,13 @@ class FileAttachmentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filter attachments based on query parameters."""
+        user = self.request.user
         queryset = super().get_queryset()
+
+        if not user.is_staff:
+            queryset = queryset.filter(
+                Q(file__is_public=True) | Q(file__uploaded_by=user)
+            )
 
         # Filter by content type and object id if provided
         content_type = self.request.query_params.get("content_type")

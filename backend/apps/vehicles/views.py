@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.utils import safe_int_param
 from apps.files.models import File
 
 from .filters import VehicleEntryFilter
@@ -317,7 +318,7 @@ class VehicleEntryViewSet(viewsets.ModelViewSet):
         license_plate = request.query_params.get("license_plate", "").strip().upper()
 
         if not license_plate:
-            return Response({"on_terminal": False})
+            return Response({"success": True, "data": {"on_terminal": False}})
 
         entry = VehicleEntry.objects.filter(
             license_plate__iexact=license_plate,
@@ -327,17 +328,20 @@ class VehicleEntryViewSet(viewsets.ModelViewSet):
         if entry:
             return Response(
                 {
-                    "on_terminal": True,
-                    "entry": {
-                        "id": entry.id,
-                        "license_plate": entry.license_plate,
-                        "entry_time": entry.entry_time,
-                        "vehicle_type": entry.vehicle_type,
+                    "success": True,
+                    "data": {
+                        "on_terminal": True,
+                        "entry": {
+                            "id": entry.id,
+                            "license_plate": entry.license_plate,
+                            "entry_time": entry.entry_time,
+                            "vehicle_type": entry.vehicle_type,
+                        },
                     },
                 }
             )
 
-        return Response({"on_terminal": False})
+        return Response({"success": True, "data": {"on_terminal": False}})
 
 
 class PlateRecognizerAPIView(APIView):
@@ -363,8 +367,11 @@ class PlateRecognizerAPIView(APIView):
             return Response(
                 {
                     "success": False,
-                    "error_message": "Invalid request",
-                    "details": request_serializer.errors,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "Ошибка валидации",
+                        "details": request_serializer.errors,
+                    },
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -448,7 +455,7 @@ class VehicleStatisticsAPIView(APIView):
 
     def get(self, request):
         # Get configurable overstayer threshold (default: 24 hours)
-        overstayer_hours = int(request.query_params.get("overstayer_hours", 24))
+        overstayer_hours = safe_int_param(request.query_params.get("overstayer_hours"), default=24, min_val=1)
 
         stats_service = VehicleStatisticsService()
         statistics = stats_service.get_all_statistics(overstayer_hours)
