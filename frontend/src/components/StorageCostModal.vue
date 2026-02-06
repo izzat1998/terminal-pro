@@ -134,6 +134,22 @@ function getTariffTypeColor(type: 'general' | 'special'): string {
               />
             </a-col>
           </a-row>
+          <!-- Billed / Unbilled breakdown -->
+          <div v-if="costData.billed_usd" class="billed-bar">
+            <div class="billed-item">
+              <span class="billed-label">Выставлено</span>
+              <span class="billed-value billed-green">${{ parseFloat(costData.billed_usd).toFixed(2) }}</span>
+            </div>
+            <div class="billed-item">
+              <span class="billed-label">Не выставлено</span>
+              <span class="billed-value" :class="parseFloat(costData.unbilled_usd || '0') > 0 ? 'billed-orange' : 'billed-green'">
+                <template v-if="parseFloat(costData.unbilled_usd || '0') > 0">
+                  ${{ parseFloat(costData.unbilled_usd!).toFixed(2) }}
+                </template>
+                <template v-else>✓ Всё выставлено</template>
+              </span>
+            </div>
+          </div>
         </div>
 
         <!-- Details section -->
@@ -249,6 +265,38 @@ function getTariffTypeColor(type: 'general' | 'special'): string {
   padding: 20px;
   border-radius: 8px;
   margin-bottom: 8px;
+}
+
+.billed-bar {
+  display: flex;
+  gap: 24px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.billed-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.billed-label {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.billed-value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.billed-green {
+  color: #52c41a;
+}
+
+.billed-orange {
+  color: #fa8c16;
 }
 
 .calculation-note {

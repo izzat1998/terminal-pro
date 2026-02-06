@@ -91,6 +91,10 @@ export interface StorageCostResult {
   billable_days: number;
   total_usd: string;
   total_uzs: string;
+  billed_usd?: string;
+  billed_uzs?: string;
+  unbilled_usd?: string;
+  unbilled_uzs?: string;
   periods: StorageCostPeriod[];
   calculated_at: string;
 }

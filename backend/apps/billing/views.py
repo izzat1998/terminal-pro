@@ -368,7 +368,18 @@ class StorageCostView(APIView):
         result = service.calculate_cost(entry, as_of_date)
 
         serializer = StorageCostResultSerializer(result)
-        return Response({"success": True, "data": serializer.data})
+        data = serializer.data
+
+        # Add billed/unbilled amounts from monthly statements
+        billed = get_billed_amounts([entry.id]).get(entry.id)
+        billed_usd = billed["usd"] if billed else Decimal("0")
+        billed_uzs = billed["uzs"] if billed else Decimal("0")
+        data["billed_usd"] = str(billed_usd)
+        data["billed_uzs"] = str(billed_uzs)
+        data["unbilled_usd"] = str(result.total_usd - billed_usd)
+        data["unbilled_uzs"] = str(result.total_uzs - billed_uzs)
+
+        return Response({"success": True, "data": data})
 
 
 class BulkStorageCostView(APIView):
