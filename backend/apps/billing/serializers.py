@@ -9,7 +9,33 @@ from rest_framework import serializers
 
 from apps.accounts.models import Company
 
-from .models import AdditionalCharge, ContainerBillingStatus, ContainerSize, ExpenseType, MonthlyStatement, StatementLineItem, StatementServiceItem, Tariff, TariffRate
+from .models import AdditionalCharge, ContainerBillingStatus, ContainerSize, ExpenseType, MonthlyStatement, OnDemandInvoice, OnDemandInvoiceItem, OnDemandInvoiceServiceItem, StatementLineItem, StatementServiceItem, Tariff, TariffRate, TerminalSettings
+
+
+class TerminalSettingsSerializer(serializers.ModelSerializer):
+    """Serializer for the terminal operator's own company settings."""
+
+    class Meta:
+        model = TerminalSettings
+        fields = [
+            "id",
+            "company_name",
+            "legal_address",
+            "phone",
+            "bank_name",
+            "bank_account",
+            "mfo",
+            "inn",
+            "vat_registration_code",
+            "vat_rate",
+            "director_name",
+            "director_title",
+            "accountant_name",
+            "basis_document",
+            "default_usd_uzs_rate",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "updated_at"]
 
 
 def _get_user_display_name(user) -> str:
@@ -17,6 +43,26 @@ def _get_user_display_name(user) -> str:
     if user:
         return user.get_full_name() or user.username
     return ""
+
+
+class _AuditUserNamesMixin:
+    """Mixin providing display names for common audit user FKs.
+
+    DRF only calls get_<field> for fields listed in Meta.fields,
+    so serializers that don't declare a field simply ignore the extra methods.
+    """
+
+    def get_created_by_name(self, obj) -> str:
+        return _get_user_display_name(obj.created_by)
+
+    def get_finalized_by_name(self, obj) -> str:
+        return _get_user_display_name(obj.finalized_by)
+
+    def get_paid_marked_by_name(self, obj) -> str:
+        return _get_user_display_name(obj.paid_marked_by)
+
+    def get_cancelled_by_name(self, obj) -> str:
+        return _get_user_display_name(getattr(obj, "cancelled_by", None))
 
 
 def _get_statement_summary(obj: MonthlyStatement) -> dict:
@@ -354,7 +400,7 @@ class StatementServiceItemSerializer(serializers.ModelSerializer):
         ]
 
 
-class MonthlyStatementListSerializer(serializers.ModelSerializer):
+class MonthlyStatementListSerializer(_AuditUserNamesMixin, serializers.ModelSerializer):
     """Lightweight serializer for statement master table (no line_items)."""
 
     month_name = serializers.CharField(read_only=True)
@@ -389,6 +435,7 @@ class MonthlyStatementListSerializer(serializers.ModelSerializer):
             "paid_at",
             "paid_marked_by_name",
             "company_name",
+            "exchange_rate",
             "summary",
             "generated_at",
         ]
@@ -396,14 +443,8 @@ class MonthlyStatementListSerializer(serializers.ModelSerializer):
     def get_summary(self, obj: MonthlyStatement) -> dict:
         return _get_statement_summary(obj)
 
-    def get_paid_marked_by_name(self, obj: MonthlyStatement) -> str:
-        return _get_user_display_name(obj.paid_marked_by)
 
-    def get_finalized_by_name(self, obj: MonthlyStatement) -> str:
-        return _get_user_display_name(obj.finalized_by)
-
-
-class MonthlyStatementSerializer(serializers.ModelSerializer):
+class MonthlyStatementSerializer(_AuditUserNamesMixin, serializers.ModelSerializer):
     """Full serializer for monthly statements (with line_items and service_items)."""
 
     month_name = serializers.CharField(read_only=True)
@@ -439,6 +480,7 @@ class MonthlyStatementSerializer(serializers.ModelSerializer):
             "paid_at",
             "paid_marked_by_name",
             "summary",
+            "exchange_rate",
             "line_items",
             "service_items",
             "pending_containers_data",
@@ -447,12 +489,6 @@ class MonthlyStatementSerializer(serializers.ModelSerializer):
 
     def get_summary(self, obj: MonthlyStatement) -> dict:
         return _get_statement_summary(obj)
-
-    def get_paid_marked_by_name(self, obj: MonthlyStatement) -> str:
-        return _get_user_display_name(obj.paid_marked_by)
-
-    def get_finalized_by_name(self, obj: MonthlyStatement) -> str:
-        return _get_user_display_name(obj.finalized_by)
 
 
 class AvailablePeriodSerializer(serializers.Serializer):
@@ -536,3 +572,138 @@ class ExpenseTypeSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+
+# On-Demand Invoice Serializers
+
+
+class OnDemandInvoiceItemSerializer(serializers.ModelSerializer):
+    """Serializer for on-demand invoice line items."""
+
+    class Meta:
+        model = OnDemandInvoiceItem
+        fields = [
+            "id",
+            "container_number",
+            "container_size",
+            "container_status",
+            "entry_date",
+            "exit_date",
+            "total_days",
+            "free_days",
+            "billable_days",
+            "daily_rate_usd",
+            "daily_rate_uzs",
+            "amount_usd",
+            "amount_uzs",
+        ]
+
+
+class OnDemandInvoiceServiceItemSerializer(serializers.ModelSerializer):
+    """Serializer for on-demand invoice service (additional charge) items."""
+
+    class Meta:
+        model = OnDemandInvoiceServiceItem
+        fields = [
+            "id",
+            "container_number",
+            "description",
+            "charge_date",
+            "amount_usd",
+            "amount_uzs",
+        ]
+
+
+class OnDemandInvoiceListSerializer(_AuditUserNamesMixin, serializers.ModelSerializer):
+    """Lightweight serializer for on-demand invoice list (no items)."""
+
+    status_display = serializers.CharField(read_only=True)
+    company_name = serializers.CharField(source="company.name", read_only=True)
+    pending_exit_count = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+    finalized_by_name = serializers.SerializerMethodField()
+    paid_marked_by_name = serializers.SerializerMethodField()
+    cancelled_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OnDemandInvoice
+        fields = [
+            "id",
+            "invoice_number",
+            "status",
+            "status_display",
+            "notes",
+            "total_containers",
+            "pending_exit_count",
+            "total_usd",
+            "total_uzs",
+            "company_name",
+            "created_by_name",
+            "finalized_at",
+            "finalized_by_name",
+            "paid_at",
+            "paid_marked_by_name",
+            "payment_reference",
+            "payment_date",
+            "cancelled_at",
+            "cancelled_by_name",
+            "cancellation_reason",
+            "created_at",
+        ]
+
+    def get_pending_exit_count(self, obj: OnDemandInvoice) -> int:
+        """Count items where container hasn't exited yet (still on terminal)."""
+        if hasattr(obj, "_pending_exit_count"):
+            return obj._pending_exit_count
+        return obj.items.filter(exit_date__isnull=True).count()
+
+
+class OnDemandInvoiceDetailSerializer(_AuditUserNamesMixin, serializers.ModelSerializer):
+    """Full serializer for on-demand invoice with items."""
+
+    status_display = serializers.CharField(read_only=True)
+    company_name = serializers.CharField(source="company.name", read_only=True)
+    items = OnDemandInvoiceItemSerializer(many=True, read_only=True)
+    service_items = OnDemandInvoiceServiceItemSerializer(many=True, read_only=True)
+    created_by_name = serializers.SerializerMethodField()
+    finalized_by_name = serializers.SerializerMethodField()
+    paid_marked_by_name = serializers.SerializerMethodField()
+    cancelled_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OnDemandInvoice
+        fields = [
+            "id",
+            "invoice_number",
+            "status",
+            "status_display",
+            "notes",
+            "total_containers",
+            "total_usd",
+            "total_uzs",
+            "company_name",
+            "items",
+            "service_items",
+            "created_by_name",
+            "finalized_at",
+            "finalized_by_name",
+            "paid_at",
+            "paid_marked_by_name",
+            "payment_reference",
+            "payment_date",
+            "cancelled_at",
+            "cancelled_by_name",
+            "cancellation_reason",
+            "created_at",
+        ]
+
+
+class OnDemandInvoiceCreateSerializer(serializers.Serializer):
+    """Serializer for creating an on-demand invoice."""
+
+    container_entry_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        min_length=1,
+        help_text="List of container entry IDs to include",
+    )
+    notes = serializers.CharField(required=False, allow_blank=True, default="")

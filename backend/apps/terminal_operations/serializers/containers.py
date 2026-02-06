@@ -32,8 +32,9 @@ class ContainerEntrySerializer(serializers.ModelSerializer):
     exit_transport_type = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
-    # Read-only calculated field
+    # Read-only calculated fields
     dwell_time_days = serializers.SerializerMethodField()
+    has_pending_invoice = serializers.SerializerMethodField()
     # Accept company ID for write operations
     company_id = serializers.PrimaryKeyRelatedField(
         queryset=Company.objects.filter(is_active=True),
@@ -91,6 +92,7 @@ class ContainerEntrySerializer(serializers.ModelSerializer):
             "crane_operations_data",
             "note",
             "dwell_time_days",
+            "has_pending_invoice",
             "cargo_weight",
             # Hazmat/IMO fields
             "imo_class",
@@ -109,6 +111,7 @@ class ContainerEntrySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "dwell_time_days",
+            "has_pending_invoice",
             "crane_operations",
             "company",
         ]
@@ -117,6 +120,17 @@ class ContainerEntrySerializer(serializers.ModelSerializer):
     def get_dwell_time_days(self, obj):
         """Return calculated dwell time in days"""
         return obj.dwell_time_days
+
+    @extend_schema_field({"type": "boolean"})
+    def get_has_pending_invoice(self, obj) -> bool:
+        """Check if container is invoiced but still on terminal (expecting exit)."""
+        # Only relevant for containers still on terminal
+        if obj.exit_date is not None:
+            return False
+        # Check if in any active on-demand invoice
+        return obj.on_demand_items.filter(
+            invoice__status__in=["draft", "finalized", "paid"]
+        ).exists()
 
     def to_representation(self, instance):
         """Return Russian display values for choice fields and full nested objects for FKs"""
@@ -242,7 +256,7 @@ class ContainerEntrySerializer(serializers.ModelSerializer):
             request = self.context.get("request")
             if request and not request.user.is_staff:
                 raise serializers.ValidationError(
-                    "Тільки адміністратори можуть встановлювати поле recorded_by. Only admins can set recorded_by field."
+                    "Только администраторы могут устанавливать поле recorded_by"
                 )
         return value
 
@@ -420,14 +434,14 @@ class ContainerEntryImportSerializer(serializers.Serializer):
         max_size = 10 * 1024 * 1024
         if value.size > max_size:
             raise serializers.ValidationError(
-                f"File size exceeds 10MB limit. Current size: {value.size / 1024 / 1024:.2f}MB"
+                f"Размер файла превышает 10МБ. Текущий размер: {value.size / 1024 / 1024:.2f}МБ"
             )
 
         # Check file extension
         filename = value.name.lower()
         if not filename.endswith(".xlsx"):
             raise serializers.ValidationError(
-                "Only .xlsx files are supported. Please use Excel 2007+ format."
+                "Поддерживаются только файлы .xlsx. Используйте формат Excel 2007+."
             )
 
         return value
@@ -456,7 +470,7 @@ class PlateRecognitionRequestSerializer(serializers.Serializer):
         max_size = 5 * 1024 * 1024
         if value.size > max_size:
             raise serializers.ValidationError(
-                f"Image size exceeds 5MB limit. Current size: {value.size / 1024 / 1024:.2f}MB"
+                f"Размер изображения превышает 5МБ. Текущий размер: {value.size / 1024 / 1024:.2f}МБ"
             )
 
         # Check file extension
@@ -464,7 +478,7 @@ class PlateRecognitionRequestSerializer(serializers.Serializer):
         filename = value.name.lower()
         if not any(filename.endswith(ext) for ext in allowed_extensions):
             raise serializers.ValidationError(
-                f"Invalid file type. Allowed types: {', '.join(allowed_extensions)}"
+                f"Недопустимый тип файла. Допустимые типы: {', '.join(allowed_extensions)}"
             )
 
         return value

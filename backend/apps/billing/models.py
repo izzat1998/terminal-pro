@@ -2,8 +2,176 @@ from decimal import Decimal
 
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 from apps.core.models import TimestampedModel
+
+
+class TerminalSettings(TimestampedModel):
+    """
+    Singleton model for the terminal operator's own company details.
+
+    Used in formal documents (Счёт-фактура, АКТ) as the supplier/исполнитель.
+    Only one record should exist — enforced by save() override.
+    """
+
+    # Company info
+    company_name = models.CharField(
+        max_length=255,
+        default="",
+        blank=True,
+        verbose_name="Наименование организации",
+        help_text='Например: ООО "MULTIMODAL TRANS TERMINAL"',
+    )
+    legal_address = models.TextField(
+        default="",
+        blank=True,
+        verbose_name="Юридический адрес",
+    )
+    phone = models.CharField(
+        max_length=50,
+        default="",
+        blank=True,
+        verbose_name="Телефон",
+    )
+
+    # Bank details
+    bank_name = models.CharField(
+        max_length=255,
+        default="",
+        blank=True,
+        verbose_name="Банк",
+        help_text='Например: АКБ "Xamkor Bank", Яккасарой ф-л',
+    )
+    bank_account = models.CharField(
+        max_length=50,
+        default="",
+        blank=True,
+        verbose_name="Расчётный счёт",
+    )
+    mfo = models.CharField(
+        max_length=20,
+        default="",
+        blank=True,
+        verbose_name="МФО",
+    )
+    inn = models.CharField(
+        max_length=20,
+        default="",
+        blank=True,
+        verbose_name="ИНН",
+    )
+    vat_registration_code = models.CharField(
+        max_length=30,
+        default="",
+        blank=True,
+        verbose_name="Код плательщика НДС",
+    )
+    vat_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("12.00"),
+        verbose_name="Ставка НДС (%)",
+        help_text="Текущая ставка НДС в процентах",
+    )
+
+    # Signatories
+    director_name = models.CharField(
+        max_length=100,
+        default="",
+        blank=True,
+        verbose_name="Руководитель (ФИО)",
+    )
+    director_title = models.CharField(
+        max_length=100,
+        default="Руководитель",
+        blank=True,
+        verbose_name="Должность руководителя",
+    )
+    accountant_name = models.CharField(
+        max_length=100,
+        default="",
+        blank=True,
+        verbose_name="Гл. бухгалтер (ФИО)",
+    )
+
+    # Contract template
+    basis_document = models.CharField(
+        max_length=255,
+        default="Устава",
+        blank=True,
+        verbose_name="Основание",
+        help_text="На основании чего действует (Устава, Доверенности и т.д.)",
+    )
+
+    # Default exchange rate
+    default_usd_uzs_rate = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name="Курс USD → UZS",
+        help_text="Курс ЦБ по умолчанию. Может быть переопределён при формировании документа.",
+    )
+
+    class Meta:
+        verbose_name = "Настройки терминала"
+        verbose_name_plural = "Настройки терминала"
+
+    def __str__(self):
+        return self.company_name or "Настройки терминала"
+
+    def save(self, *args, **kwargs):
+        # Enforce singleton: if another record exists, reuse its PK
+        if not self.pk:
+            existing = TerminalSettings.objects.first()
+            if existing:
+                self.pk = existing.pk
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls) -> "TerminalSettings":
+        """Return the singleton instance, creating a blank one if needed."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class ExchangeRate(models.Model):
+    """
+    Cached exchange rates from the Central Bank of Uzbekistan (cbu.uz).
+
+    Each record stores one currency rate for one date, fetched from:
+      https://cbu.uz/ru/arkhiv-kursov-valyut/json/{ccy}/{date}/
+    """
+
+    currency = models.CharField(
+        max_length=3,
+        default="USD",
+        verbose_name="Валюта",
+    )
+    date = models.DateField(verbose_name="Дата курса")
+    rate = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        verbose_name="Курс ЦБ",
+    )
+    fetched_at = models.DateTimeField(
+        default=timezone.now,
+        verbose_name="Дата загрузки",
+    )
+
+    class Meta:
+        verbose_name = "Курс валюты"
+        verbose_name_plural = "Курсы валют"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["currency", "date"],
+                name="unique_rate_per_currency_date",
+            ),
+        ]
+        ordering = ["-date"]
+
+    def __str__(self):
+        return f"{self.currency} {self.date}: {self.rate}"
 
 
 class ContainerSize(models.TextChoices):
@@ -345,6 +513,16 @@ class MonthlyStatement(TimestampedModel):
         help_text="JSON snapshot of containers still on terminal at generation time",
     )
 
+    # Exchange rate (frozen at finalization for Счёт-фактура)
+    exchange_rate = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Курс USD → UZS",
+        help_text="Курс ЦБ на дату документа. Замораживается при утверждении.",
+    )
+
     # Metadata
     generated_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата формирования")
     generated_by = models.ForeignKey(
@@ -475,6 +653,18 @@ class StatementLineItem(TimestampedModel):
             models.Index(fields=["statement", "container_number"], name="lineitem_stmt_container_idx"),
         ]
 
+    def save(self, **kwargs):
+        # Prevent modification of line items on finalized/paid statements
+        # WARNING: bulk_update() bypasses this check. Use save() for individual updates.
+        if self.pk and not self.statement.is_editable:
+            from apps.core.exceptions import BusinessLogicError
+
+            raise BusinessLogicError(
+                "Нельзя изменить позицию утверждённого документа",
+                error_code="IMMUTABLE_LINE_ITEM",
+            )
+        super().save(**kwargs)
+
     def __str__(self):
         return f"{self.container_number} ({self.statement})"
 
@@ -525,6 +715,16 @@ class StatementServiceItem(TimestampedModel):
         indexes = [
             models.Index(fields=["statement", "charge_date"], name="svcitem_stmt_date_idx"),
         ]
+
+    def save(self, **kwargs):
+        if self.pk and not self.statement.is_editable:
+            from apps.core.exceptions import BusinessLogicError
+
+            raise BusinessLogicError(
+                "Нельзя изменить позицию утверждённого документа",
+                error_code="IMMUTABLE_LINE_ITEM",
+            )
+        super().save(**kwargs)
 
     def __str__(self):
         return f"{self.description} - {self.container_number} ({self.statement})"
@@ -625,3 +825,272 @@ class AdditionalCharge(TimestampedModel):
 
     def __str__(self):
         return f"{self.description} - ${self.amount_usd}"
+
+
+class OnDemandInvoice(TimestampedModel):
+    """
+    On-demand invoice for specific containers.
+
+    Created when a customer requests an immediate invoice instead of waiting
+    for the monthly billing cycle. Both active and exited containers can be
+    included. For active containers, costs are calculated as of today's date.
+
+    Containers in a non-cancelled on-demand invoice are excluded from
+    monthly statement generation to prevent double-billing.
+
+    Lifecycle: draft → finalized → paid (or cancelled at any point).
+    """
+
+    company = models.ForeignKey(
+        "accounts.Company",
+        on_delete=models.CASCADE,
+        related_name="on_demand_invoices",
+        verbose_name="Компания",
+    )
+    invoice_number = models.CharField(
+        max_length=30,
+        null=True,
+        blank=True,
+        unique=True,
+        verbose_name="Номер счёта",
+        help_text="Assigned on finalization, format: OD-YYYY-NNNN",
+    )
+    status = models.CharField(
+        max_length=15,
+        choices=StatementStatus.choices,
+        default=StatementStatus.DRAFT,
+        verbose_name="Статус",
+    )
+    notes = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Примечания",
+        help_text="Причина выставления разового счёта",
+    )
+
+    # Totals
+    total_containers = models.PositiveIntegerField(default=0, verbose_name="Всего контейнеров")
+    total_usd = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Итого USD"
+    )
+    total_uzs = models.DecimalField(
+        max_digits=15, decimal_places=2, default=Decimal("0.00"), verbose_name="Итого UZS"
+    )
+
+    # Audit fields
+    created_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_on_demand_invoices",
+        verbose_name="Создал",
+    )
+    finalized_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Дата утверждения"
+    )
+    finalized_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="finalized_on_demand_invoices",
+        verbose_name="Утвердил",
+    )
+    paid_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Дата оплаты"
+    )
+    paid_marked_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="marked_paid_on_demand_invoices",
+        verbose_name="Отметил оплату",
+    )
+    payment_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Референс платежа",
+        help_text="Номер банковской транзакции, чека и т.д.",
+    )
+    payment_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Дата платежа",
+        help_text="Фактическая дата оплаты (может отличаться от даты отметки)",
+    )
+
+    # Cancellation audit fields
+    cancelled_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Дата отмены"
+    )
+    cancelled_by = models.ForeignKey(
+        "accounts.CustomUser",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cancelled_on_demand_invoices",
+        verbose_name="Отменил",
+    )
+    cancellation_reason = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Причина отмены",
+        help_text="Обязательно при отмене утверждённого счёта",
+    )
+
+    class Meta:
+        verbose_name = "Разовый счёт"
+        verbose_name_plural = "Разовые счета"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["company", "status"], name="od_invoice_company_status_idx"),
+            models.Index(fields=["status"], name="od_invoice_status_idx"),
+            models.Index(fields=["invoice_number"], name="od_invoice_number_idx"),
+        ]
+
+    def __str__(self):
+        prefix = self.invoice_number or f"OD-DRAFT-{self.id}"
+        return f"{prefix} | {self.company.name}"
+
+    @property
+    def status_display(self) -> str:
+        return dict(StatementStatus.choices).get(self.status, self.status)
+
+    @property
+    def is_editable(self) -> bool:
+        return self.status == StatementStatus.DRAFT
+
+
+class OnDemandInvoiceItem(TimestampedModel):
+    """
+    Individual container cost entry within an on-demand invoice.
+
+    Stores a snapshot of container data at generation time so the invoice
+    remains accurate even if container data is later modified.
+    """
+
+    invoice = models.ForeignKey(
+        OnDemandInvoice,
+        on_delete=models.CASCADE,
+        related_name="items",
+        verbose_name="Разовый счёт",
+    )
+    container_entry = models.ForeignKey(
+        "terminal_operations.ContainerEntry",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="on_demand_items",
+        verbose_name="Запись контейнера",
+    )
+
+    # Snapshot data
+    container_number = models.CharField(max_length=20, verbose_name="Номер контейнера")
+    container_size = models.CharField(
+        max_length=10, choices=ContainerSize.choices, verbose_name="Размер контейнера"
+    )
+    container_status = models.CharField(
+        max_length=10, choices=ContainerBillingStatus.choices, verbose_name="Статус контейнера"
+    )
+    entry_date = models.DateField(verbose_name="Дата въезда")
+    exit_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Дата выезда",
+        help_text="NULL = контейнер на терминале при выставлении счёта",
+    )
+
+    # Day breakdown
+    total_days = models.PositiveIntegerField(verbose_name="Всего дней")
+    free_days = models.PositiveIntegerField(verbose_name="Льготных дней")
+    billable_days = models.PositiveIntegerField(verbose_name="Оплачиваемых дней")
+
+    # Rates used
+    daily_rate_usd = models.DecimalField(
+        max_digits=10, decimal_places=2, verbose_name="Ставка USD/день"
+    )
+    daily_rate_uzs = models.DecimalField(
+        max_digits=12, decimal_places=2, verbose_name="Ставка UZS/день"
+    )
+
+    # Calculated amounts
+    amount_usd = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Сумма USD")
+    amount_uzs = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Сумма UZS")
+
+    class Meta:
+        verbose_name = "Позиция разового счёта"
+        verbose_name_plural = "Позиции разового счёта"
+        ordering = ["container_number"]
+        indexes = [
+            models.Index(
+                fields=["invoice", "container_number"], name="od_item_invoice_container_idx"
+            ),
+            models.Index(fields=["container_entry"], name="od_item_entry_idx"),
+        ]
+
+    def save(self, **kwargs):
+        if self.pk and not self.invoice.is_editable:
+            from apps.core.exceptions import BusinessLogicError
+
+            raise BusinessLogicError(
+                "Нельзя изменить позицию утверждённого счёта",
+                error_code="IMMUTABLE_LINE_ITEM",
+            )
+        super().save(**kwargs)
+
+    def __str__(self):
+        return f"{self.container_number} ({self.invoice})"
+
+
+class OnDemandInvoiceServiceItem(TimestampedModel):
+    """
+    Snapshot of an additional charge included in an on-demand invoice.
+
+    Mirrors the AdditionalCharge at generation time so the invoice
+    remains accurate even if the original charge is later modified.
+    """
+
+    invoice = models.ForeignKey(
+        OnDemandInvoice,
+        on_delete=models.CASCADE,
+        related_name="service_items",
+        verbose_name="Разовый счёт",
+    )
+    additional_charge = models.ForeignKey(
+        "billing.AdditionalCharge",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="on_demand_service_items",
+        verbose_name="Доп. начисление",
+    )
+
+    # Snapshot data
+    container_number = models.CharField(max_length=20, verbose_name="Номер контейнера")
+    description = models.CharField(max_length=255, verbose_name="Описание услуги")
+    charge_date = models.DateField(verbose_name="Дата начисления")
+    amount_usd = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Сумма USD")
+    amount_uzs = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Сумма UZS")
+
+    class Meta:
+        verbose_name = "Услуга разового счёта"
+        verbose_name_plural = "Услуги разового счёта"
+        ordering = ["charge_date", "container_number"]
+        indexes = [
+            models.Index(
+                fields=["invoice", "charge_date"], name="od_svc_invoice_date_idx"
+            ),
+        ]
+
+    def save(self, **kwargs):
+        if self.pk and not self.invoice.is_editable:
+            from apps.core.exceptions import BusinessLogicError
+
+            raise BusinessLogicError(
+                "Нельзя изменить позицию утверждённого счёта",
+                error_code="IMMUTABLE_LINE_ITEM",
+            )
+        super().save(**kwargs)
+
+    def __str__(self):
+        return f"{self.container_number}: {self.description} ({self.invoice})"

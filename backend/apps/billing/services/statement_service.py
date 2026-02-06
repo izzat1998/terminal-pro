@@ -10,7 +10,7 @@ Lifecycle: draft → finalized → paid (with credit notes for corrections).
 import decimal
 from calendar import monthrange
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING
 
 from django.db import IntegrityError, transaction
@@ -28,7 +28,7 @@ from ..models import (
     StatementType,
     Tariff,
 )
-from .storage_cost_service import StorageCostService
+from .storage_cost_service import StorageCostService, TariffNotFoundError, TariffRateMissingError
 
 
 if TYPE_CHECKING:
@@ -85,7 +85,7 @@ class MonthlyStatementService(BaseService):
         if existing and not existing.is_editable:
             raise BusinessLogicError(
                 "Невозможно пересчитать утверждённый документ. Используйте корректировку.",
-                code="STATEMENT_NOT_EDITABLE",
+                error_code="STATEMENT_NOT_EDITABLE",
             )
 
         return self._generate_statement(company, year, month, user, existing)
@@ -156,9 +156,27 @@ class MonthlyStatementService(BaseService):
                     total_storage_uzs += line_item.amount_uzs
                     total_billable_days += line_item.billable_days
                     line_items_created += 1
+            except (TariffNotFoundError, TariffRateMissingError):
+                # Tariff misconfiguration must not be silently skipped
+                raise
             except (Tariff.DoesNotExist, ValueError, decimal.InvalidOperation) as e:
                 self.logger.warning(f"Failed to create line item for entry {entry.id}: {e}")
                 continue
+
+        # Generate residual line items for containers invoiced while active
+        # that have since exited with extra days beyond the invoiced period
+        residual_usd, residual_uzs, residual_days, residual_count = self._create_residual_line_items(
+            statement, company, month_start, month_end
+        )
+        total_storage_usd += residual_usd
+        total_storage_uzs += residual_uzs
+        total_billable_days += residual_days
+        line_items_created += residual_count
+
+        if residual_count > 0:
+            self.logger.info(
+                f"Added {residual_count} residual line items: ${residual_usd} / {residual_uzs} UZS"
+            )
 
         # Generate service items from additional charges
         total_services_usd, total_services_uzs = self._create_service_items(
@@ -197,12 +215,26 @@ class MonthlyStatementService(BaseService):
         month_end: date,
     ) -> tuple[Decimal, Decimal]:
         """Create service items from additional charges in the month."""
-        from ..models import AdditionalCharge
+        from ..models import AdditionalCharge, StatementStatus
 
         charges = AdditionalCharge.objects.filter(
             container_entry__company=company,
             charge_date__gte=month_start,
             charge_date__lte=month_end,
+        ).exclude(
+            # Exclude charges already billed in non-cancelled on-demand invoices
+            on_demand_service_items__invoice__status__in=[
+                StatementStatus.DRAFT,
+                StatementStatus.FINALIZED,
+                StatementStatus.PAID,
+            ]
+        ).exclude(
+            # Exclude charges already billed in non-cancelled monthly statements
+            statement_service_items__statement__status__in=[
+                StatementStatus.DRAFT,
+                StatementStatus.FINALIZED,
+                StatementStatus.PAID,
+            ]
         ).select_related("container_entry__container")
 
         total_usd = Decimal("0.00")
@@ -256,6 +288,9 @@ class MonthlyStatementService(BaseService):
                     "estimated_usd": str(cost.total_usd),
                     "estimated_uzs": str(cost.total_uzs),
                 })
+            except (TariffNotFoundError, TariffRateMissingError):
+                # Tariff misconfiguration must not be silently skipped
+                raise
             except (Tariff.DoesNotExist, ValueError, decimal.InvalidOperation) as e:
                 self.logger.warning(f"Failed to calculate pending cost for entry {entry.id}: {e}")
 
@@ -284,9 +319,16 @@ class MonthlyStatementService(BaseService):
             total_days = (period_end - period_start).days + 1
             full_days = cost_result.total_days
             if full_days > 0:
+                # Pro-rata allocation: this month's share of the total cost.
+                # Note: cross-statement rounding difference of up to $0.02 per
+                # container is expected and standard for pro-rata billing.
                 ratio = Decimal(total_days) / Decimal(full_days)
-                amount_usd = (cost_result.total_usd * ratio).quantize(Decimal("0.01"))
-                amount_uzs = (cost_result.total_uzs * ratio).quantize(Decimal("0.01"))
+                amount_usd = (cost_result.total_usd * ratio).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                amount_uzs = (cost_result.total_uzs * ratio).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
                 free_days = min(cost_result.free_days_applied, total_days)
                 billable_days = total_days - free_days
             else:
@@ -344,8 +386,29 @@ class MonthlyStatementService(BaseService):
         if statement.status != StatementStatus.DRAFT:
             raise BusinessLogicError(
                 "Только черновики можно утвердить",
-                code="INVALID_STATUS_TRANSITION",
+                error_code="INVALID_STATUS_TRANSITION",
             )
+
+        # Auto-fill exchange rate from CBU if not already set by admin
+        if not statement.exchange_rate:
+            try:
+                from apps.billing.services import cbu_service
+
+                rate = cbu_service.get_last_day_of_month_rate(
+                    statement.year, statement.month
+                )
+                statement.exchange_rate = rate
+            except Exception:
+                # Fallback to TerminalSettings default if CBU is unreachable
+                from apps.billing.models import TerminalSettings
+
+                settings = TerminalSettings.load()
+                if settings.default_usd_uzs_rate:
+                    statement.exchange_rate = settings.default_usd_uzs_rate
+                self.logger.warning(
+                    "CBU rate fetch failed for statement %s, using settings default",
+                    statement.id,
+                )
 
         for attempt in range(_retries):
             try:
@@ -358,9 +421,14 @@ class MonthlyStatementService(BaseService):
                     statement.invoice_number = invoice_number
                     statement.finalized_at = timezone.now()
                     statement.finalized_by = user
-                    statement.save(update_fields=[
+
+                    update_fields = [
                         "status", "invoice_number", "finalized_at", "finalized_by",
-                    ])
+                    ]
+                    if statement.exchange_rate:
+                        update_fields.append("exchange_rate")
+
+                    statement.save(update_fields=update_fields)
 
                     self.logger.info(
                         f"Finalized statement {statement.id} as {invoice_number} by {user}"
@@ -376,7 +444,7 @@ class MonthlyStatementService(BaseService):
 
         raise BusinessLogicError(
             "Не удалось сгенерировать номер документа",
-            code="INVOICE_NUMBER_GENERATION_FAILED",
+            error_code="INVOICE_NUMBER_GENERATION_FAILED",
         )
 
     def mark_paid(
@@ -396,7 +464,7 @@ class MonthlyStatementService(BaseService):
         else:
             raise BusinessLogicError(
                 "Отметить оплату можно только для утверждённых документов",
-                code="INVALID_STATUS_TRANSITION",
+                error_code="INVALID_STATUS_TRANSITION",
             )
 
         statement.save(update_fields=["status", "paid_at", "paid_marked_by"])
@@ -420,7 +488,7 @@ class MonthlyStatementService(BaseService):
         if original.status not in (StatementStatus.FINALIZED, StatementStatus.PAID):
             raise BusinessLogicError(
                 "Корректировку можно создать только для утверждённых или оплаченных документов",
-                code="INVALID_STATUS_TRANSITION",
+                error_code="INVALID_STATUS_TRANSITION",
             )
 
         # Create credit note
@@ -489,17 +557,29 @@ class MonthlyStatementService(BaseService):
     def _get_next_invoice_number(self, year: int, statement_type: str) -> str:
         """Generate the next sequential invoice number for the year.
 
-        Uses select_for_update to prevent race conditions when
-        two statements are finalized concurrently.
+        Locks matching rows with select_for_update() before reading the max
+        invoice number.  Note: select_for_update() is silently ignored when
+        combined with .aggregate(), so we lock the rows first and then
+        aggregate separately to guarantee serialized access.
         """
         if statement_type == StatementType.CREDIT_NOTE:
             prefix = f"MTT-CR-{year}-"
         else:
             prefix = f"MTT-{year}-"
 
-        last = (
+        # Lock all rows that could affect the next number.
+        # IMPORTANT: select_for_update() is silently ignored when chained
+        # with .aggregate() — Django drops the FOR UPDATE clause.  We must
+        # evaluate the locking query first (which acquires row-level locks),
+        # then compute the max via a separate aggregate call.
+        list(
             MonthlyStatement.objects
             .select_for_update()
+            .filter(invoice_number__startswith=prefix)
+            .values("id")
+        )
+        last = (
+            MonthlyStatement.objects
             .filter(invoice_number__startswith=prefix)
             .aggregate(max_num=Max("invoice_number"))
         )["max_num"]
@@ -571,7 +651,7 @@ class MonthlyStatementService(BaseService):
         """List all statements for a company, optionally filtered by year."""
         queryset = MonthlyStatement.objects.filter(
             company=company
-        ).select_related("paid_marked_by", "finalized_by", "original_statement")
+        ).select_related("company", "paid_marked_by", "finalized_by", "original_statement")
         if year:
             queryset = queryset.filter(year=year)
         return queryset
@@ -615,7 +695,7 @@ class MonthlyStatementService(BaseService):
         if not statement.is_editable:
             raise BusinessLogicError(
                 "Невозможно удалить утверждённый документ",
-                code="STATEMENT_NOT_EDITABLE",
+                error_code="STATEMENT_NOT_EDITABLE",
             )
         statement_id = statement.id
         statement.delete()
@@ -629,14 +709,23 @@ class MonthlyStatementService(BaseService):
         month_start: date,
         month_end: date,
     ) -> QuerySet["ContainerEntry"]:
-        """Find containers active during any part of the month."""
+        """Find containers active during any part of the month.
+        Excludes containers already included in a non-cancelled on-demand invoice.
+        Cancelled on-demand invoices do NOT exclude containers, so they are
+        correctly picked up by monthly billing after cancellation."""
         from apps.terminal_operations.models import ContainerEntry
 
-        return ContainerEntry.objects.filter(
+        return ContainerEntry.objects.select_for_update().filter(
             company=company,
             entry_time__date__lte=month_end,
         ).filter(
             Q(exit_date__isnull=True) | Q(exit_date__date__gte=month_start)
+        ).exclude(
+            on_demand_items__invoice__status__in=[
+                StatementStatus.DRAFT,
+                StatementStatus.FINALIZED,
+                StatementStatus.PAID,
+            ],
         ).select_related("container", "company")
 
     def _get_containers_for_exit_billing(
@@ -645,13 +734,22 @@ class MonthlyStatementService(BaseService):
         month_start: date,
         month_end: date,
     ) -> QuerySet["ContainerEntry"]:
-        """Find containers that exited during the month."""
+        """Find containers that exited during the month.
+        Excludes containers already included in a non-cancelled on-demand invoice.
+        Cancelled on-demand invoices do NOT exclude containers, so they are
+        correctly picked up by monthly billing after cancellation."""
         from apps.terminal_operations.models import ContainerEntry
 
-        return ContainerEntry.objects.filter(
+        return ContainerEntry.objects.select_for_update().filter(
             company=company,
             exit_date__date__gte=month_start,
             exit_date__date__lte=month_end,
+        ).exclude(
+            on_demand_items__invoice__status__in=[
+                StatementStatus.DRAFT,
+                StatementStatus.FINALIZED,
+                StatementStatus.PAID,
+            ],
         ).select_related("container", "company")
 
     def _get_month_boundaries(self, year: int, month: int) -> tuple[date, date]:
@@ -659,3 +757,126 @@ class MonthlyStatementService(BaseService):
         first_day = date(year, month, 1)
         last_day = date(year, month, monthrange(year, month)[1])
         return first_day, last_day
+
+    def _create_residual_line_items(
+        self,
+        statement: MonthlyStatement,
+        company: "Company",
+        month_start: date,
+        month_end: date,
+    ) -> tuple[Decimal, Decimal, int, int]:
+        """
+        Create line items for residual days from on-demand invoiced containers.
+
+        When a container was invoiced while still active (exit_date=NULL in OnDemandInvoiceItem),
+        and has since exited, any days beyond the invoiced period are "residual" and should
+        be billed in the monthly statement.
+
+        Returns: (total_usd, total_uzs, total_billable_days, items_created)
+        """
+        from datetime import timedelta
+
+        from ..models import OnDemandInvoiceItem
+
+        total_usd = Decimal("0.00")
+        total_uzs = Decimal("0.00")
+        total_billable_days = 0
+        items_created = 0
+
+        # Find on-demand invoice items where:
+        # - Container was active when invoiced (exit_date IS NULL on item)
+        # - Container has now exited (container_entry.exit_date IS NOT NULL)
+        # - Invoice is non-cancelled
+        # - Container belongs to this company
+        residual_candidates = OnDemandInvoiceItem.objects.filter(
+            invoice__company=company,
+            invoice__status__in=[StatementStatus.DRAFT, StatementStatus.FINALIZED, StatementStatus.PAID],
+            exit_date__isnull=True,  # Was active when invoiced
+            container_entry__exit_date__isnull=False,  # Has now exited
+        ).select_related(
+            "invoice", "container_entry", "container_entry__container", "container_entry__company"
+        )
+
+        for od_item in residual_candidates:
+            entry = od_item.container_entry
+            if not entry:
+                continue
+
+            # Calculate invoiced_until date
+            # entry_date + total_days - 1 = last day covered by on-demand invoice
+            invoiced_until = od_item.entry_date + timedelta(days=od_item.total_days - 1)
+            actual_exit = entry.exit_date
+
+            # Check if there are residual days
+            if actual_exit <= invoiced_until:
+                continue  # No residual - container exited within invoiced period
+
+            # Residual period: day after invoiced_until to actual exit
+            residual_start = invoiced_until + timedelta(days=1)
+            residual_end = actual_exit
+
+            # Check if residual period overlaps with statement month
+            if residual_end < month_start or residual_start > month_end:
+                continue  # Residual period doesn't overlap with this month
+
+            # Clip to month boundaries
+            period_start = max(residual_start, month_start)
+            period_end = min(residual_end, month_end)
+
+            # Calculate cost for residual period
+            try:
+                cost_result = self.storage_cost_service.calculate_cost(
+                    entry, as_of_date=period_end
+                )
+
+                # Calculate days for this specific period
+                residual_days = (period_end - period_start).days + 1
+
+                # Get rate from the last period (covers the most recent dates)
+                daily_rate_usd = cost_result.periods[-1].daily_rate_usd if cost_result.periods else Decimal("0")
+                daily_rate_uzs = cost_result.periods[-1].daily_rate_uzs if cost_result.periods else Decimal("0")
+
+                # For residual billing, all days are billable (free days already used)
+                billable_days = residual_days
+                amount_usd = (daily_rate_usd * billable_days).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                amount_uzs = (daily_rate_uzs * billable_days).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+                # Create line item marked as residual
+                StatementLineItem.objects.create(
+                    statement=statement,
+                    container_entry=entry,
+                    container_number=cost_result.container_number,
+                    container_size=cost_result.container_size,
+                    container_status=cost_result.container_status,
+                    period_start=period_start,
+                    period_end=period_end,
+                    is_still_on_terminal=False,  # Container has exited
+                    total_days=residual_days,
+                    free_days=0,  # Free days already consumed in on-demand invoice
+                    billable_days=billable_days,
+                    daily_rate_usd=daily_rate_usd,
+                    daily_rate_uzs=daily_rate_uzs,
+                    amount_usd=amount_usd,
+                    amount_uzs=amount_uzs,
+                )
+
+                total_usd += amount_usd
+                total_uzs += amount_uzs
+                total_billable_days += billable_days
+                items_created += 1
+
+                self.logger.info(
+                    f"Created residual line item for {cost_result.container_number}: "
+                    f"{period_start} to {period_end} ({billable_days} days, ${amount_usd})"
+                )
+
+            except (TariffNotFoundError, TariffRateMissingError):
+                # Tariff misconfiguration must not be silently skipped
+                raise
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to create residual line item for entry {entry.id}: {e}"
+                )
+                continue
+
+        return total_usd, total_uzs, total_billable_days, items_created

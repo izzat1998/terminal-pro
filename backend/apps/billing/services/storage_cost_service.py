@@ -39,6 +39,35 @@ class TariffNotFoundError(BusinessLogicError):
         )
 
 
+class TariffRateMissingError(BusinessLogicError):
+    """Raised when a tariff exists but is missing a rate for the required size/status."""
+
+    def __init__(
+        self,
+        target_date: date,
+        container_size: str,
+        container_status: str,
+        company_name: str | None = None,
+    ):
+        size_display = "20 футов" if container_size == "20ft" else "40 футов"
+        status_display = "груженый" if container_status == "laden" else "порожний"
+        company_info = f" для компании '{company_name}'" if company_name else ""
+        super().__init__(
+            message=(
+                f"Тариф на дату {target_date}{company_info} не содержит ставку "
+                f"для контейнера {size_display}/{status_display}. "
+                f"Необходимо добавить недостающую ставку в тариф."
+            ),
+            error_code="TARIFF_RATE_MISSING",
+            details={
+                "date": str(target_date),
+                "company": company_name,
+                "container_size": container_size,
+                "container_status": container_status,
+            },
+        )
+
+
 class InvalidContainerSizeError(BusinessLogicError):
     """Raised when container size cannot be determined from ISO type."""
 
@@ -175,9 +204,11 @@ class StorageCostService(BaseService):
             rate = tariff.get_rate(container_size, container_status)
 
             if not rate:
-                raise TariffNotFoundError(
-                    current_date,
-                    company.name if company else None,
+                raise TariffRateMissingError(
+                    target_date=current_date,
+                    container_size=container_size,
+                    container_status=container_status,
+                    company_name=company.name if company else None,
                 )
 
             # Set free days on first iteration (locked at entry)
@@ -279,7 +310,7 @@ class StorageCostService(BaseService):
             try:
                 result = self.calculate_cost(entry, as_of_date)
                 results.append(result)
-            except (TariffNotFoundError, InvalidContainerSizeError) as e:
+            except (TariffNotFoundError, TariffRateMissingError, InvalidContainerSizeError) as e:
                 self.logger.warning(
                     f"Failed to calculate cost for entry {entry.id}: {e}"
                 )
