@@ -73,7 +73,7 @@
 import { ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { DownloadOutlined } from '@ant-design/icons-vue';
-import { getCookie } from '../utils/storage';
+import { getStorageItem } from '../utils/storage';
 import { API_BASE_URL } from '../config/api';
 import { downloadBlob } from '../utils/download';
 
@@ -126,7 +126,7 @@ watch(visible, (newVal) => {
 const fetchContainerOwners = async () => {
   try {
     ownersLoading.value = true;
-    const token = getCookie('access_token');
+    const token = getStorageItem('access_token');
 
     const response = await fetch(`${API_BASE_URL}/terminal/owners/?page=1&page_size=1000`, {
       headers: {
@@ -151,7 +151,7 @@ const fetchContainerOwners = async () => {
 const fetchCustomerNames = async () => {
   try {
     customersLoading.value = true;
-    const token = getCookie('access_token');
+    const token = getStorageItem('access_token');
 
     const response = await fetch(`${API_BASE_URL}/terminal/entries/customer-names/`, {
       headers: {
@@ -188,7 +188,7 @@ const handleCancel = () => {
 const handleExport = async () => {
   try {
     loading.value = true;
-    const token = getCookie('access_token');
+    const token = getStorageItem('access_token');
 
     // Build query parameters from form filters
     const queryParams = new URLSearchParams();
