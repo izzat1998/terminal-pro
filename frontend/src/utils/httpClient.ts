@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '../config/api';
-import { getCookie, setCookie, deleteCookie } from './storage';
+import { getStorageItem, setStorageItem, removeStorageItem } from './storage';
 import { ApiError, parseApiErrorResponse } from '../types/api';
 
 const ACCESS_TOKEN_KEY = 'access_token';
@@ -22,7 +22,7 @@ function onRefreshFailed() {
 }
 
 async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = getCookie(REFRESH_TOKEN_KEY);
+  const refreshToken = getStorageItem(REFRESH_TOKEN_KEY);
 
   if (!refreshToken) {
     return null;
@@ -43,9 +43,9 @@ async function refreshAccessToken(): Promise<string | null> {
 
     const data = await response.json();
 
-    setCookie(ACCESS_TOKEN_KEY, data.access);
+    setStorageItem(ACCESS_TOKEN_KEY, data.access);
     if (data.refresh) {
-      setCookie(REFRESH_TOKEN_KEY, data.refresh);
+      setStorageItem(REFRESH_TOKEN_KEY, data.refresh);
     }
 
     return data.access;
@@ -55,11 +55,8 @@ async function refreshAccessToken(): Promise<string | null> {
 }
 
 function clearAuthAndRedirect() {
-  // DEV MODE: Don't redirect to login
-  if (import.meta.env.DEV) return;
-
-  deleteCookie(ACCESS_TOKEN_KEY);
-  deleteCookie(REFRESH_TOKEN_KEY);
+  removeStorageItem(ACCESS_TOKEN_KEY);
+  removeStorageItem(REFRESH_TOKEN_KEY);
 
   // Redirect to login with current path as redirect query
   const currentPath = window.location.pathname + window.location.search;
@@ -92,11 +89,18 @@ export async function httpRequest<T>(
 ): Promise<T> {
   const { skipAuth = false, isFormData = false, ...fetchOptions } = options;
 
-  const token = getCookie(ACCESS_TOKEN_KEY);
+  const token = getStorageItem(ACCESS_TOKEN_KEY);
 
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string>),
-  };
+  const headers: Record<string, string> = {};
+  if (options.headers) {
+    if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => { headers[key] = value; });
+    } else if (Array.isArray(options.headers)) {
+      options.headers.forEach(([key, value]) => { headers[key] = value; });
+    } else {
+      Object.assign(headers, options.headers);
+    }
+  }
 
   // Don't set Content-Type for FormData - browser will set it with boundary
   if (!isFormData) {
@@ -238,7 +242,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
     return response.json();
   }
 
-  return undefined as T;
+  return undefined as unknown as T;
 }
 
 // Convenience methods
@@ -285,3 +289,33 @@ export const http = {
     });
   },
 };
+
+/**
+ * Download a file from an authenticated API endpoint.
+ * Uses fetch with JWT Authorization header, then triggers a browser download
+ * via a temporary Blob URL + anchor element click.
+ */
+export async function downloadFile(endpoint: string, filename: string): Promise<void> {
+  const token = getStorageItem(ACCESS_TOKEN_KEY);
+
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, { headers });
+
+  if (!response.ok) {
+    throw new Error(`Ошибка загрузки файла (${response.status})`);
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(objectUrl);
+}

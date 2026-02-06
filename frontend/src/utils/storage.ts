@@ -27,9 +27,3 @@ export function removeStorageItem(name: string): void {
     console.error('Failed to remove from localStorage:', error);
   }
 }
-
-// Legacy aliases for backward compatibility during migration
-// TODO: Remove these aliases after all usages are migrated
-export const setCookie = setStorageItem;
-export const getCookie = getStorageItem;
-export const deleteCookie = removeStorageItem;

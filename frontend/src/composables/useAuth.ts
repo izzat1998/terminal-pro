@@ -1,28 +1,13 @@
 import { ref, computed } from 'vue';
 import { userService, type User, type LoginRequest } from '../services/userService';
-import { getCookie, setCookie, deleteCookie } from '../utils/storage';
+import { getStorageItem, setStorageItem, removeStorageItem } from '../utils/storage';
 
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 
-// DEV MODE: Provide a mock admin user so the UI renders without login
-const DEV_MOCK_USER: User | null = import.meta.env.DEV
-  ? {
-      id: 0,
-      username: 'dev',
-      email: 'dev@localhost',
-      first_name: 'Dev',
-      last_name: 'User',
-      is_admin: true,
-      is_staff: true,
-      is_active: true,
-      user_type: 'admin',
-    }
-  : null;
-
-const user = ref<User | null>(DEV_MOCK_USER);
-const accessToken = ref<string | null>(getCookie(ACCESS_TOKEN_KEY));
-const refreshToken = ref<string | null>(getCookie(REFRESH_TOKEN_KEY));
+const user = ref<User | null>(null);
+const accessToken = ref<string | null>(getStorageItem(ACCESS_TOKEN_KEY));
+const refreshToken = ref<string | null>(getStorageItem(REFRESH_TOKEN_KEY));
 const loading = ref(false);
 const error = ref<string | null>(null);
 
@@ -61,8 +46,8 @@ export function useAuth() {
       const response = await userService.login(credentials);
       accessToken.value = response.access;
       refreshToken.value = response.refresh;
-      setCookie(ACCESS_TOKEN_KEY, response.access);
-      setCookie(REFRESH_TOKEN_KEY, response.refresh);
+      setStorageItem(ACCESS_TOKEN_KEY, response.access);
+      setStorageItem(REFRESH_TOKEN_KEY, response.refresh);
 
       // Verify token and get user data
       const userData = await userService.verifyToken(response.access);
@@ -73,21 +58,21 @@ export function useAuth() {
         accessToken.value = null;
         refreshToken.value = null;
         user.value = null;
-        deleteCookie(ACCESS_TOKEN_KEY);
-        deleteCookie(REFRESH_TOKEN_KEY);
+        removeStorageItem(ACCESS_TOKEN_KEY);
+        removeStorageItem(REFRESH_TOKEN_KEY);
         return false;
       }
 
       user.value = userData;
 
       return true;
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Ошибка входа. Проверьте учётные данные и попробуйте снова.';
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Ошибка входа. Проверьте учётные данные и попробуйте снова.';
       accessToken.value = null;
       refreshToken.value = null;
       user.value = null;
-      deleteCookie(ACCESS_TOKEN_KEY);
-      deleteCookie(REFRESH_TOKEN_KEY);
+      removeStorageItem(ACCESS_TOKEN_KEY);
+      removeStorageItem(REFRESH_TOKEN_KEY);
       return false;
     } finally {
       loading.value = false;
@@ -110,14 +95,14 @@ export function useAuth() {
         accessToken.value = null;
         refreshToken.value = null;
         user.value = null;
-        deleteCookie(ACCESS_TOKEN_KEY);
-        deleteCookie(REFRESH_TOKEN_KEY);
+        removeStorageItem(ACCESS_TOKEN_KEY);
+        removeStorageItem(REFRESH_TOKEN_KEY);
         return false;
       }
 
       user.value = userData;
       return true;
-    } catch (err) {
+    } catch {
       // Token verification failed, try to refresh it
       if (refreshToken.value) {
         try {
@@ -126,8 +111,8 @@ export function useAuth() {
           // Update tokens
           accessToken.value = response.access;
           refreshToken.value = response.refresh;
-          setCookie(ACCESS_TOKEN_KEY, response.access);
-          setCookie(REFRESH_TOKEN_KEY, response.refresh);
+          setStorageItem(ACCESS_TOKEN_KEY, response.access);
+          setStorageItem(REFRESH_TOKEN_KEY, response.refresh);
 
           // Verify the new token and get user data
           const userData = await userService.verifyToken(response.access);
@@ -137,20 +122,20 @@ export function useAuth() {
             accessToken.value = null;
             refreshToken.value = null;
             user.value = null;
-            deleteCookie(ACCESS_TOKEN_KEY);
-            deleteCookie(REFRESH_TOKEN_KEY);
+            removeStorageItem(ACCESS_TOKEN_KEY);
+            removeStorageItem(REFRESH_TOKEN_KEY);
             return false;
           }
 
           user.value = userData;
           return true;
-        } catch (refreshErr) {
+        } catch {
           // Refresh failed, clear all tokens
           accessToken.value = null;
           refreshToken.value = null;
           user.value = null;
-          deleteCookie(ACCESS_TOKEN_KEY);
-          deleteCookie(REFRESH_TOKEN_KEY);
+          removeStorageItem(ACCESS_TOKEN_KEY);
+          removeStorageItem(REFRESH_TOKEN_KEY);
           return false;
         }
       }
@@ -159,8 +144,8 @@ export function useAuth() {
       accessToken.value = null;
       refreshToken.value = null;
       user.value = null;
-      deleteCookie(ACCESS_TOKEN_KEY);
-      deleteCookie(REFRESH_TOKEN_KEY);
+      removeStorageItem(ACCESS_TOKEN_KEY);
+      removeStorageItem(REFRESH_TOKEN_KEY);
       return false;
     } finally {
       loading.value = false;
@@ -171,8 +156,8 @@ export function useAuth() {
     user.value = null;
     accessToken.value = null;
     refreshToken.value = null;
-    deleteCookie(ACCESS_TOKEN_KEY);
-    deleteCookie(REFRESH_TOKEN_KEY);
+    removeStorageItem(ACCESS_TOKEN_KEY);
+    removeStorageItem(REFRESH_TOKEN_KEY);
   }
 
   async function checkAndRefreshToken(): Promise<boolean> {
@@ -200,8 +185,8 @@ export function useAuth() {
 
       accessToken.value = response.access;
       refreshToken.value = response.refresh;
-      setCookie(ACCESS_TOKEN_KEY, response.access);
-      setCookie(REFRESH_TOKEN_KEY, response.refresh);
+      setStorageItem(ACCESS_TOKEN_KEY, response.access);
+      setStorageItem(REFRESH_TOKEN_KEY, response.refresh);
 
       // Fetch user data with new token
       const userData = await userService.verifyToken(response.access);

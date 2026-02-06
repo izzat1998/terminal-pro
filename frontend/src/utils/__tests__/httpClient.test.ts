@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { httpRequest, http } from '../httpClient';
+import { httpRequest, http, downloadFile } from '../httpClient';
 import * as storage from '../storage';
 import { API_BASE_URL } from '../../config/api';
 
@@ -13,9 +13,9 @@ global.fetch = mockFetch;
 describe('httpClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(storage.getCookie).mockReturnValue(null);
-    vi.mocked(storage.setCookie).mockImplementation(() => {});
-    vi.mocked(storage.deleteCookie).mockImplementation(() => {});
+    vi.mocked(storage.getStorageItem).mockReturnValue(null);
+    vi.mocked(storage.setStorageItem).mockImplementation(() => {});
+    vi.mocked(storage.removeStorageItem).mockImplementation(() => {});
 
     // Mock window.location.href
     delete (window as { location?: unknown }).location;
@@ -29,7 +29,7 @@ describe('httpClient', () => {
   describe('basic requests', () => {
     it('should make GET request with auth token', async () => {
       // Arrange
-      vi.mocked(storage.getCookie).mockReturnValue('valid-token');
+      vi.mocked(storage.getStorageItem).mockReturnValue('valid-token');
       mockFetch.mockResolvedValue({
         ok: true,
         json: async () => ({ data: 'test' }),
@@ -53,7 +53,7 @@ describe('httpClient', () => {
 
     it('should make POST request with JSON body', async () => {
       // Arrange
-      vi.mocked(storage.getCookie).mockReturnValue('valid-token');
+      vi.mocked(storage.getStorageItem).mockReturnValue('valid-token');
       mockFetch.mockResolvedValue({
         ok: true,
         json: async () => ({ success: true }),
@@ -102,7 +102,7 @@ describe('httpClient', () => {
 
     it('should handle FormData upload', async () => {
       // Arrange
-      vi.mocked(storage.getCookie).mockReturnValue('valid-token');
+      vi.mocked(storage.getStorageItem).mockReturnValue('valid-token');
       mockFetch.mockResolvedValue({
         ok: true,
         json: async () => ({ success: true }),
@@ -132,7 +132,7 @@ describe('httpClient', () => {
   describe('token refresh logic', () => {
     it('should refresh token on 401 response', async () => {
       // Arrange
-      vi.mocked(storage.getCookie)
+      vi.mocked(storage.getStorageItem)
         .mockReturnValueOnce('expired-token') // First call - access token
         .mockReturnValueOnce('valid-refresh-token'); // Second call - refresh token
 
@@ -164,14 +164,14 @@ describe('httpClient', () => {
 
       // Assert
       expect(result).toEqual({ data: 'success' });
-      expect(storage.setCookie).toHaveBeenCalledWith('access_token', 'new-access-token');
-      expect(storage.setCookie).toHaveBeenCalledWith('refresh_token', 'new-refresh-token');
+      expect(storage.setStorageItem).toHaveBeenCalledWith('access_token', 'new-access-token');
+      expect(storage.setStorageItem).toHaveBeenCalledWith('refresh_token', 'new-refresh-token');
       expect(mockFetch).toHaveBeenCalledTimes(3); // Original + refresh + retry
     });
 
     it('should refresh token on token_not_valid error in response body', async () => {
       // Arrange
-      vi.mocked(storage.getCookie)
+      vi.mocked(storage.getStorageItem)
         .mockReturnValueOnce('expired-token')
         .mockReturnValueOnce('valid-refresh-token');
 
@@ -217,12 +217,12 @@ describe('httpClient', () => {
 
       // Assert
       expect(result).toEqual({ data: 'success' });
-      expect(storage.setCookie).toHaveBeenCalledWith('access_token', 'new-access-token');
+      expect(storage.setStorageItem).toHaveBeenCalledWith('access_token', 'new-access-token');
     });
 
     it('should redirect to login when refresh fails', async () => {
       // Arrange
-      vi.mocked(storage.getCookie)
+      vi.mocked(storage.getStorageItem)
         .mockReturnValueOnce('expired-token')
         .mockReturnValueOnce('invalid-refresh-token');
 
@@ -242,30 +242,25 @@ describe('httpClient', () => {
 
       // Act & Assert
       await expect(http.get('/test')).rejects.toThrow('Сессия истекла. Пожалуйста, войдите снова.');
-      expect(storage.deleteCookie).toHaveBeenCalledWith('access_token');
-      expect(storage.deleteCookie).toHaveBeenCalledWith('refresh_token');
+      expect(storage.removeStorageItem).toHaveBeenCalledWith('access_token');
+      expect(storage.removeStorageItem).toHaveBeenCalledWith('refresh_token');
       expect(window.location.href).toContain('/login');
     });
 
     it('should queue concurrent requests during token refresh', async () => {
       // Arrange
-      vi.mocked(storage.getCookie)
+      vi.mocked(storage.getStorageItem)
         .mockReturnValue('expired-token') // access token
         .mockReturnValueOnce('valid-refresh-token'); // refresh token for first call
 
       let refreshCallCount = 0;
+      // Track per-URL call counts so first call returns 401, retry returns success
+      const urlCallCounts: Record<string, number> = {};
 
-      mockFetch.mockImplementation((url) => {
-        // 401 for original requests
-        if (url.includes('/test1') || url.includes('/test2')) {
-          return Promise.resolve({
-            ok: false,
-            status: 401,
-            json: async () => ({ detail: 'Token expired' }),
-          });
-        }
+      mockFetch.mockImplementation((url: string) => {
+        urlCallCounts[url] = (urlCallCounts[url] || 0) + 1;
 
-        // Token refresh
+        // Token refresh endpoint
         if (url.includes('/token/refresh/')) {
           refreshCallCount++;
           return Promise.resolve({
@@ -275,6 +270,15 @@ describe('httpClient', () => {
               refresh: 'new-refresh-token',
             }),
             headers: new Headers({ 'content-type': 'application/json' }),
+          });
+        }
+
+        // For test endpoints: first call returns 401, subsequent calls succeed
+        if (urlCallCounts[url] === 1) {
+          return Promise.resolve({
+            ok: false,
+            status: 401,
+            json: async () => ({ detail: 'Token expired' }),
           });
         }
 
@@ -297,7 +301,7 @@ describe('httpClient', () => {
 
     it('should clear auth and redirect when no refresh token available', async () => {
       // Arrange
-      vi.mocked(storage.getCookie).mockReturnValue(null); // No refresh token
+      vi.mocked(storage.getStorageItem).mockReturnValue(null); // No refresh token
 
       mockFetch.mockResolvedValue({
         ok: false,
@@ -307,7 +311,7 @@ describe('httpClient', () => {
 
       // Act & Assert
       await expect(http.get('/test')).rejects.toThrow();
-      expect(storage.deleteCookie).toHaveBeenCalled();
+      expect(storage.removeStorageItem).toHaveBeenCalled();
       expect(window.location.href).toContain('/login');
     });
   });
@@ -452,6 +456,146 @@ describe('httpClient', () => {
 
       // Assert
       expect(result).toBeUndefined();
+    });
+
+    it('should handle 204 No Content response gracefully', async () => {
+      // Arrange
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 204,
+        headers: new Headers({}),
+      });
+
+      // Act
+      const result = await http.delete('/test/1');
+
+      // Assert - 204 has no content-type, should return undefined
+      expect(result).toBeUndefined();
+    });
+
+    it('should handle empty response body with JSON content-type', async () => {
+      // Arrange
+      mockFetch.mockResolvedValue({
+        ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({}),
+      });
+
+      // Act
+      const result = await http.get('/test');
+
+      // Assert
+      expect(result).toEqual({});
+    });
+  });
+
+  describe('downloadFile', () => {
+    let createElementSpy: ReturnType<typeof vi.spyOn>;
+    let appendChildSpy: ReturnType<typeof vi.spyOn>;
+    let removeChildSpy: ReturnType<typeof vi.spyOn>;
+    let createObjectURLSpy: ReturnType<typeof vi.spyOn>;
+    let revokeObjectURLSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      const mockLink = {
+        href: '',
+        download: '',
+        click: vi.fn(),
+      } as unknown as HTMLAnchorElement;
+
+      createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(mockLink);
+      appendChildSpy = vi.spyOn(document.body, 'appendChild').mockReturnValue(mockLink);
+      removeChildSpy = vi.spyOn(document.body, 'removeChild').mockReturnValue(mockLink);
+      createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:http://localhost/fake-blob-url');
+      revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      createElementSpy.mockRestore();
+      appendChildSpy.mockRestore();
+      removeChildSpy.mockRestore();
+      createObjectURLSpy.mockRestore();
+      revokeObjectURLSpy.mockRestore();
+    });
+
+    it('should download file with Authorization header', async () => {
+      // Arrange
+      vi.mocked(storage.getStorageItem).mockReturnValue('valid-token');
+      const mockBlob = new Blob(['file content'], { type: 'application/pdf' });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        blob: async () => mockBlob,
+      });
+
+      // Act
+      await downloadFile('/billing/export/report.pdf', 'report.pdf');
+
+      // Assert - verify Authorization header is set
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${API_BASE_URL}/billing/export/report.pdf`,
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer valid-token',
+          }),
+        })
+      );
+    });
+
+    it('should create blob URL, click link, and clean up', async () => {
+      // Arrange
+      vi.mocked(storage.getStorageItem).mockReturnValue('valid-token');
+      const mockBlob = new Blob(['file content']);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        blob: async () => mockBlob,
+      });
+
+      // Act
+      await downloadFile('/export/data.xlsx', 'data.xlsx');
+
+      // Assert - verify download flow
+      expect(createObjectURLSpy).toHaveBeenCalledWith(mockBlob);
+      expect(createElementSpy).toHaveBeenCalledWith('a');
+      expect(appendChildSpy).toHaveBeenCalled();
+      expect(removeChildSpy).toHaveBeenCalled();
+      expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:http://localhost/fake-blob-url');
+    });
+
+    it('should throw error for non-ok response', async () => {
+      // Arrange
+      vi.mocked(storage.getStorageItem).mockReturnValue('valid-token');
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 403,
+      });
+
+      // Act & Assert
+      await expect(downloadFile('/export/secret.pdf', 'secret.pdf')).rejects.toThrow(
+        'Ошибка загрузки файла (403)'
+      );
+    });
+
+    it('should work without auth token', async () => {
+      // Arrange
+      vi.mocked(storage.getStorageItem).mockReturnValue(null);
+      const mockBlob = new Blob(['content']);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        blob: async () => mockBlob,
+      });
+
+      // Act
+      await downloadFile('/public/file.pdf', 'file.pdf');
+
+      // Assert - no Authorization header
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${API_BASE_URL}/public/file.pdf`,
+        expect.objectContaining({
+          headers: expect.not.objectContaining({
+            Authorization: expect.anything(),
+          }),
+        })
+      );
     });
   });
 });

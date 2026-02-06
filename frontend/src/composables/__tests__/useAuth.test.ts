@@ -30,10 +30,15 @@ describe('useAuth', () => {
     // Reset all mocks before each test
     vi.clearAllMocks();
 
+    // Reset module-level composable state to avoid cross-test contamination
+    const auth = useAuth();
+    auth.logout();
+    vi.clearAllMocks(); // Clear again after logout to reset removeStorageItem calls
+
     // Setup default mock implementations
-    vi.mocked(storage.getCookie).mockReturnValue(null);
-    vi.mocked(storage.setCookie).mockImplementation(() => {});
-    vi.mocked(storage.deleteCookie).mockImplementation(() => {});
+    vi.mocked(storage.getStorageItem).mockReturnValue(null);
+    vi.mocked(storage.setStorageItem).mockImplementation(() => {});
+    vi.mocked(storage.removeStorageItem).mockImplementation(() => {});
   });
 
   describe('login', () => {
@@ -53,8 +58,8 @@ describe('useAuth', () => {
       expect(auth.accessToken.value).toBe('mock-access-token');
       expect(auth.refreshToken.value).toBe('mock-refresh-token');
       expect(auth.isAuthenticated.value).toBe(true);
-      expect(storage.setCookie).toHaveBeenCalledWith('access_token', 'mock-access-token');
-      expect(storage.setCookie).toHaveBeenCalledWith('refresh_token', 'mock-refresh-token');
+      expect(storage.setStorageItem).toHaveBeenCalledWith('access_token', 'mock-access-token');
+      expect(storage.setStorageItem).toHaveBeenCalledWith('refresh_token', 'mock-refresh-token');
     });
 
     it('should reject login for inactive user', async () => {
@@ -71,8 +76,8 @@ describe('useAuth', () => {
       // Assert
       expect(result).toBe(false);
       expect(auth.error.value).toBe('Ваш аккаунт деактивирован');
-      expect(storage.deleteCookie).toHaveBeenCalledWith('access_token');
-      expect(storage.deleteCookie).toHaveBeenCalledWith('refresh_token');
+      expect(storage.removeStorageItem).toHaveBeenCalledWith('access_token');
+      expect(storage.removeStorageItem).toHaveBeenCalledWith('refresh_token');
     });
 
     it('should handle login failure', async () => {
@@ -87,7 +92,7 @@ describe('useAuth', () => {
       // Assert
       expect(result).toBe(false);
       expect(auth.error.value).toBe('Invalid credentials');
-      expect(storage.deleteCookie).toHaveBeenCalled();
+      expect(storage.removeStorageItem).toHaveBeenCalled();
     });
 
     it('should set loading state during login', async () => {
@@ -119,15 +124,15 @@ describe('useAuth', () => {
       auth.logout();
 
       // Assert
-      expect(storage.deleteCookie).toHaveBeenCalledWith('access_token');
-      expect(storage.deleteCookie).toHaveBeenCalledWith('refresh_token');
+      expect(storage.removeStorageItem).toHaveBeenCalledWith('access_token');
+      expect(storage.removeStorageItem).toHaveBeenCalledWith('refresh_token');
     });
   });
 
   describe('verifyCurrentToken', () => {
     it('should return false when no token exists', async () => {
       // Arrange
-      vi.mocked(storage.getCookie).mockReturnValue(null);
+      vi.mocked(storage.getStorageItem).mockReturnValue(null);
 
       const auth = useAuth();
 
@@ -139,14 +144,17 @@ describe('useAuth', () => {
     });
 
     it('should attempt token refresh when verification fails', async () => {
-      // Arrange
+      // Arrange - first login to set internal accessToken.value
       const auth = useAuth();
+      vi.mocked(userService.login).mockResolvedValue(mockLoginResponse);
+      vi.mocked(userService.verifyToken).mockResolvedValueOnce(mockUser);
+      await auth.login({ username: 'testuser', password: 'password123' });
+      vi.clearAllMocks();
 
-      // Set up initial token state
-      vi.mocked(storage.getCookie)
-        .mockReturnValueOnce('expired-access-token')
-        .mockReturnValueOnce('valid-refresh-token')
-        .mockReturnValue('valid-refresh-token');
+      // Now set up the verification failure + refresh scenario
+      vi.mocked(storage.getStorageItem).mockReturnValue('valid-refresh-token');
+      vi.mocked(storage.setStorageItem).mockImplementation(() => {});
+      vi.mocked(storage.removeStorageItem).mockImplementation(() => {});
 
       vi.mocked(userService.verifyToken)
         .mockRejectedValueOnce(new Error('Token expired'))
@@ -163,15 +171,15 @@ describe('useAuth', () => {
       // Assert
       expect(result).toBe(true);
       expect(userService.refreshToken).toHaveBeenCalled();
-      expect(storage.setCookie).toHaveBeenCalledWith('access_token', 'new-access-token');
-      expect(storage.setCookie).toHaveBeenCalledWith('refresh_token', 'new-refresh-token');
+      expect(storage.setStorageItem).toHaveBeenCalledWith('access_token', 'new-access-token');
+      expect(storage.setStorageItem).toHaveBeenCalledWith('refresh_token', 'new-refresh-token');
     });
   });
 
   describe('checkAndRefreshToken', () => {
     it('should return false when no access token exists', async () => {
       // Arrange
-      vi.mocked(storage.getCookie).mockReturnValue(null);
+      vi.mocked(storage.getStorageItem).mockReturnValue(null);
 
       const auth = useAuth();
 
@@ -183,23 +191,28 @@ describe('useAuth', () => {
     });
 
     it('should refresh expired token', async () => {
-      // Arrange - create an expired token
+      // Arrange - create an expired token and set it via login
       const pastTimestamp = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
       const payload = { exp: pastTimestamp };
       const base64Payload = btoa(JSON.stringify(payload));
       const expiredToken = `header.${base64Payload}.signature`;
 
-      vi.mocked(storage.getCookie)
-        .mockReturnValueOnce(expiredToken) // access token
-        .mockReturnValue('valid-refresh-token'); // refresh token for subsequent calls
+      // First, login to set internal accessToken.value to the expired token
+      const auth = useAuth();
+      vi.mocked(userService.login).mockResolvedValue({ access: expiredToken, refresh: 'valid-refresh-token' });
+      vi.mocked(userService.verifyToken).mockResolvedValueOnce(mockUser);
+      await auth.login({ username: 'test', password: 'test' });
+      vi.clearAllMocks();
 
+      // Now set up mocks for the refresh flow
+      vi.mocked(storage.getStorageItem).mockReturnValue(null);
+      vi.mocked(storage.setStorageItem).mockImplementation(() => {});
+      vi.mocked(storage.removeStorageItem).mockImplementation(() => {});
       vi.mocked(userService.refreshToken).mockResolvedValue({
         access: 'new-access-token',
         refresh: 'new-refresh-token',
       });
       vi.mocked(userService.verifyToken).mockResolvedValue(mockUser);
-
-      const auth = useAuth();
 
       // Act
       const result = await auth.checkAndRefreshToken();
@@ -210,26 +223,31 @@ describe('useAuth', () => {
     });
 
     it('should logout when refresh fails', async () => {
-      // Arrange - create an expired token
+      // Arrange - create an expired token and set it via login
       const pastTimestamp = Math.floor(Date.now() / 1000) - 3600;
       const payload = { exp: pastTimestamp };
       const base64Payload = btoa(JSON.stringify(payload));
       const expiredToken = `header.${base64Payload}.signature`;
 
-      vi.mocked(storage.getCookie)
-        .mockReturnValueOnce(expiredToken)
-        .mockReturnValue('invalid-refresh-token');
-
-      vi.mocked(userService.refreshToken).mockRejectedValue(new Error('Refresh failed'));
-
+      // First, login to set internal state
       const auth = useAuth();
+      vi.mocked(userService.login).mockResolvedValue({ access: expiredToken, refresh: 'invalid-refresh-token' });
+      vi.mocked(userService.verifyToken).mockResolvedValueOnce(mockUser);
+      await auth.login({ username: 'test', password: 'test' });
+      vi.clearAllMocks();
+
+      // Now set up mocks for the failed refresh flow
+      vi.mocked(storage.getStorageItem).mockReturnValue(null);
+      vi.mocked(storage.setStorageItem).mockImplementation(() => {});
+      vi.mocked(storage.removeStorageItem).mockImplementation(() => {});
+      vi.mocked(userService.refreshToken).mockRejectedValue(new Error('Refresh failed'));
 
       // Act
       const result = await auth.checkAndRefreshToken();
 
       // Assert
       expect(result).toBe(false);
-      expect(storage.deleteCookie).toHaveBeenCalled();
+      expect(storage.removeStorageItem).toHaveBeenCalled();
     });
   });
 
@@ -246,6 +264,64 @@ describe('useAuth', () => {
 
       // Assert
       expect(auth.isAuthenticated.value).toBe(true);
+    });
+  });
+
+  describe('error handling', () => {
+    it('should handle non-Error thrown during login', async () => {
+      // Arrange - service throws a string instead of Error
+      vi.mocked(userService.login).mockRejectedValue('network failure');
+
+      const auth = useAuth();
+
+      // Act
+      const result = await auth.login({ username: 'testuser', password: 'wrong' });
+
+      // Assert - should fall back to generic message
+      expect(result).toBe(false);
+      expect(auth.error.value).toBe('Ошибка входа. Проверьте учётные данные и попробуйте снова.');
+      expect(auth.user.value).toBeNull();
+    });
+
+    it('should clear tokens when verifyToken fails during login', async () => {
+      // Arrange - login succeeds but token verification throws
+      vi.mocked(userService.login).mockResolvedValue(mockLoginResponse);
+      vi.mocked(userService.verifyToken).mockRejectedValue(new Error('Server error'));
+
+      const auth = useAuth();
+
+      // Act
+      const result = await auth.login({ username: 'testuser', password: 'password123' });
+
+      // Assert
+      expect(result).toBe(false);
+      expect(auth.error.value).toBe('Server error');
+      expect(auth.accessToken.value).toBeNull();
+      expect(auth.refreshToken.value).toBeNull();
+      expect(storage.removeStorageItem).toHaveBeenCalledWith('access_token');
+      expect(storage.removeStorageItem).toHaveBeenCalledWith('refresh_token');
+    });
+
+    it('should return false from verifyCurrentToken when no internal token is set', async () => {
+      // Arrange - state is clean from beforeEach, no login performed
+      const auth = useAuth();
+
+      // Act - accessToken.value is null, so returns false immediately
+      const result = await auth.verifyCurrentToken();
+
+      // Assert
+      expect(result).toBe(false);
+    });
+
+    it('should return false from checkAndRefreshToken when no tokens exist', async () => {
+      // Arrange - state is clean from beforeEach
+      const auth = useAuth();
+
+      // Act - no accessToken.value means immediate false
+      const result = await auth.checkAndRefreshToken();
+
+      // Assert
+      expect(result).toBe(false);
     });
   });
 });
