@@ -266,20 +266,11 @@ export function usePlacementState() {
       const container = unplacedContainers.value.find(c => c.id === containerEntryId);
       const containerSize = isoTypeToSize(container?.iso_type);
 
-      console.log('[Placement] Entering placement mode for container:', containerEntryId);
-      console.log('[Placement] Container ISO type:', container?.iso_type, '→ Size:', containerSize);
-
       // Fetch suggestion and size-filtered available positions in parallel
       const [suggestion, allAvailable] = await Promise.all([
         placementService.suggestPosition(containerEntryId, zonePreference),
         placementService.getAvailablePositions(zonePreference, undefined, 200, containerSize),
       ]);
-
-      console.log('[Placement] Suggestion:', suggestion.suggested_position?.coordinate);
-      console.log('[Placement] Alternatives:', suggestion.alternatives?.map(a => a.coordinate));
-      console.log('[Placement] Alternatives rows:', suggestion.alternatives?.map(a => a.row));
-      console.log('[Placement] Available positions count:', allAvailable.length);
-      console.log('[Placement] Available positions rows:', [...new Set(allAvailable.map(p => p.row))].sort());
 
       currentSuggestion.value = suggestion;
 

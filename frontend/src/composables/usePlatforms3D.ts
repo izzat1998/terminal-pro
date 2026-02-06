@@ -166,8 +166,6 @@ export function usePlatforms3D(platformsRef: Ref<PlatformData[]>) {
 
     platformMeshes.value = meshMap
 
-    console.log(`📦 Created ${meshMap.size} storage platform meshes`)
-
     return group
   }
 

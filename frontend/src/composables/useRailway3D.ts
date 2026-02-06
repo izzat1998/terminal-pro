@@ -316,8 +316,6 @@ export function useRailway3D(tracksRef: Ref<RailwayTrack[]>) {
       }
     }
 
-    console.log(`🚂 Created railway with ${tracks.length} tracks, ${sleeperIndex} sleepers`)
-
     return group
   }
 
