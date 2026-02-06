@@ -1,22 +1,58 @@
 <template>
-  <a-card title="Компании" :bordered="false">
-    <template #extra>
-      <a-button type="primary" @click="showCreateModal">
-        <template #icon>
-          <PlusOutlined />
-        </template>
-        Создать компанию
-      </a-button>
-    </template>
+  <div class="companies-page">
+    <!-- Header -->
+    <div class="page-header">
+      <div class="header-row">
+        <h2 class="page-title">Компании</h2>
+        <a-button type="primary" @click="showCreateModal">
+          <template #icon><PlusOutlined /></template>
+          Создать компанию
+        </a-button>
+      </div>
 
+      <!-- Filters -->
+      <div class="filters-row">
+        <a-input-search
+          v-model:value="searchText"
+          placeholder="Поиск по названию..."
+          style="width: 260px"
+          allow-clear
+          @search="handleSearch"
+          @input="handleSearchChange"
+        />
+        <a-select
+          v-model:value="statusFilter"
+          placeholder="Статус"
+          style="width: 150px"
+          allow-clear
+          @change="handleFilterChange"
+        >
+          <a-select-option value="true">Активные</a-select-option>
+          <a-select-option value="false">Неактивные</a-select-option>
+        </a-select>
+      </div>
+
+      <!-- Stats Bar -->
+      <div v-if="stats" class="stats-summary">
+        <span>Всего: <strong>{{ stats.total }}</strong></span>
+        <span class="stats-dot">&middot;</span>
+        <span>Активных: <strong class="stats-active">{{ stats.active }}</strong></span>
+        <span class="stats-dot">&middot;</span>
+        <span>Неактивных: <strong class="stats-inactive">{{ stats.inactive }}</strong></span>
+      </div>
+    </div>
+
+    <!-- Table -->
     <a-table
       :columns="columns"
       :data-source="dataSource"
       :pagination="pagination"
       :loading="loading"
+      :row-class-name="() => 'clickable-row'"
+      :custom-row="customRow"
       @change="handleTableChange"
       bordered
-      :scroll="{ x: 1200 }"
+      :scroll="{ x: 900 }"
       :locale="{ emptyText: 'Нет компаний. Создайте первую компанию.' }"
     >
       <template #bodyCell="{ column, index, record }">
@@ -24,107 +60,50 @@
           {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
         </template>
         <template v-else-if="column.key === 'name'">
-          <router-link :to="`/accounts/companies/${record.slug}/users`">{{ record.name }}</router-link>
+          <span class="company-name-cell">{{ record.name }}</span>
         </template>
         <template v-else-if="column.key === 'is_active'">
           <a-tag :color="record.is_active ? 'green' : 'red'">
             {{ record.is_active ? 'Активна' : 'Неактивна' }}
           </a-tag>
         </template>
-        <template v-else-if="column.key === 'notifications'">
-          <a-tag :color="record.notifications_enabled ? 'green' : 'default'">
-            {{ record.notifications_enabled ? 'Вкл' : 'Выкл' }}
-          </a-tag>
-          <div v-if="record.telegram_group_name" style="font-size: 12px; color: #888;">
-            {{ record.telegram_group_name }}
-          </div>
-        </template>
-        <template v-else-if="column.key === 'actions'">
-          <a-button type="link" size="small" @click="showEditModal(record)">
-            Настройки
-          </a-button>
+        <template v-else-if="column.key === 'balance'">
+          <span :class="{ 'balance-negative': Number(record.balance_usd) > 0 }">
+            {{ Number(record.balance_usd) > 0 ? `-$${formatMoney(record.balance_usd)}` : '$0' }}
+          </span>
+          <a-tooltip v-if="Number(record.balance_uzs) > 0" :title="`${formatMoney(record.balance_uzs)} сум`">
+            <span class="balance-uzs-hint">UZS</span>
+          </a-tooltip>
         </template>
       </template>
     </a-table>
-  </a-card>
 
-  <!-- Create Modal -->
-  <a-modal
-    v-model:open="createModalVisible"
-    title="Создать компанию"
-    @ok="handleCreateSubmit"
-    @cancel="handleCreateCancel"
-    :confirm-loading="createLoading"
-  >
-    <a-form :model="createForm" layout="vertical">
-      <a-form-item label="Название" required>
-        <a-input v-model:value="createForm.name" placeholder="Введите название компании" />
-      </a-form-item>
-    </a-form>
-  </a-modal>
-
-  <!-- Edit Notification Settings Modal -->
-  <a-modal
-    v-model:open="editModalVisible"
-    title="Настройки уведомлений"
-    @ok="handleEditSubmit"
-    @cancel="handleEditCancel"
-    :confirm-loading="editLoading"
-  >
-    <a-form :model="editForm" layout="vertical">
-      <a-form-item label="Компания">
-        <a-input :value="editForm.name" disabled />
-      </a-form-item>
-      <a-form-item label="Уведомления в Telegram">
-        <a-switch v-model:checked="editForm.notifications_enabled" />
-        <span style="margin-left: 8px; color: #666;">
-          {{ editForm.notifications_enabled ? 'Включены' : 'Выключены' }}
-        </span>
-      </a-form-item>
-      <a-form-item label="Telegram группа" :required="editForm.notifications_enabled">
-        <a-input
-          v-model:value="editForm.telegram_group_id"
-          placeholder="@mygroup или -1001234567890"
-          :disabled="!editForm.notifications_enabled"
-        />
-        <div style="font-size: 12px; color: #888; margin-top: 4px;">
-          <div><b>Вариант 1:</b> Username публичной группы (например: @mygroup)</div>
-          <div><b>Вариант 2:</b> ID группы (для приватных групп). Добавьте @RawDataBot в группу чтобы узнать ID</div>
-        </div>
-      </a-form-item>
-      <a-form-item label="Название группы">
-        <a-input
-          v-model:value="editForm.telegram_group_name"
-          placeholder="Название для отображения"
-          :disabled="!editForm.notifications_enabled"
-        />
-      </a-form-item>
-    </a-form>
-  </a-modal>
-
+    <!-- Create Modal -->
+    <a-modal
+      v-model:open="createModalVisible"
+      title="Создать компанию"
+      @ok="handleCreateSubmit"
+      @cancel="handleCreateCancel"
+      :confirm-loading="createLoading"
+    >
+      <a-form :model="createForm" layout="vertical">
+        <a-form-item label="Название" required>
+          <a-input v-model:value="createForm.name" placeholder="Введите название компании" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { message } from 'ant-design-vue';
 import { PlusOutlined } from '@ant-design/icons-vue';
 import { formatDateTime } from '../utils/dateFormat';
 import { http } from '../utils/httpClient';
 import { useCrudTable } from '../composables/useCrudTable';
-
-interface Company {
-  id: number;
-  name: string;
-  slug: string;
-  is_active: boolean;
-  telegram_group_id: string | null;
-  telegram_group_name: string;
-  notifications_enabled: boolean;
-  customers_count: number;
-  entries_count: number;
-  created_at: string;
-  updated_at: string;
-}
+import type { Company } from '../types/company';
 
 interface CompanyRecord {
   key: string;
@@ -132,14 +111,20 @@ interface CompanyRecord {
   name: string;
   slug: string;
   is_active: boolean;
-  telegram_group_id: string | null;
-  telegram_group_name: string;
-  notifications_enabled: boolean;
   customers_count: number;
   entries_count: number;
+  balance_usd: string;
+  balance_uzs: string;
   created: string;
-  updated: string;
 }
+
+interface CompanyStats {
+  total: number;
+  active: number;
+  inactive: number;
+}
+
+const router = useRouter();
 
 const columns = [
   {
@@ -150,55 +135,54 @@ const columns = [
     fixed: 'left' as const,
   },
   {
-    title: 'Название',
+    title: 'Компания',
     dataIndex: 'name',
     key: 'name',
-    align: 'center' as const,
-    width: 200,
+    width: 220,
   },
   {
     title: 'Статус',
     key: 'is_active',
     align: 'center' as const,
-    width: 100,
+    width: 110,
   },
   {
     title: 'Клиенты',
     dataIndex: 'customers_count',
     key: 'customers_count',
     align: 'center' as const,
-    width: 100,
+    width: 90,
   },
   {
     title: 'Контейнеры',
     dataIndex: 'entries_count',
     key: 'entries_count',
     align: 'center' as const,
-    width: 110,
+    width: 100,
   },
   {
-    title: 'Telegram',
-    key: 'notifications',
-    align: 'center' as const,
-    width: 150,
+    title: 'Баланс',
+    key: 'balance',
+    align: 'right' as const,
+    width: 140,
   },
   {
     title: 'Создана',
     dataIndex: 'created',
     key: 'created',
     align: 'center' as const,
-    width: 140,
-  },
-  {
-    title: 'Действия',
-    key: 'actions',
-    align: 'center' as const,
-    width: 120,
+    width: 130,
   },
 ];
 
-// Use composable for table data management
-const { dataSource, loading, pagination, fetchData, handleTableChange, refresh } = useCrudTable<Company, CompanyRecord>(
+const formatMoney = (value: string): string => {
+  const num = Number(value);
+  if (isNaN(num) || num === 0) return '0';
+  return num.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+};
+
+// Table data
+const { dataSource, loading, pagination, searchText, fetchData, handleTableChange, handleSearch, refresh } = useCrudTable<Company, CompanyRecord>(
   '/auth/companies/',
   (company) => ({
     key: company.id.toString(),
@@ -206,22 +190,55 @@ const { dataSource, loading, pagination, fetchData, handleTableChange, refresh }
     name: company.name,
     slug: company.slug,
     is_active: company.is_active,
-    telegram_group_id: company.telegram_group_id,
-    telegram_group_name: company.telegram_group_name,
-    notifications_enabled: company.notifications_enabled,
     customers_count: company.customers_count,
     entries_count: company.entries_count,
+    balance_usd: company.balance_usd,
+    balance_uzs: company.balance_uzs,
     created: formatDateTime(company.created_at),
-    updated: formatDateTime(company.updated_at),
-  })
+  }),
+  { searchEnabled: true },
 );
 
-// Create modal state
+// Stats
+const stats = ref<CompanyStats | null>(null);
+
+const fetchStats = async () => {
+  try {
+    const result = await http.get<{ data: CompanyStats }>('/auth/companies/stats/');
+    stats.value = result.data;
+  } catch {
+    // Stats are non-critical, fail silently
+  }
+};
+
+// Filter
+const statusFilter = ref<string | undefined>(undefined);
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+const handleSearchChange = () => {
+  if (searchTimeout) clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    handleSearch();
+  }, 400);
+};
+
+const handleFilterChange = () => {
+  // Status filter not supported by useCrudTable natively,
+  // so we refetch and let the backend handle it via URL
+  handleSearch();
+};
+
+// Row click → navigate to company detail
+const customRow = (record: CompanyRecord) => ({
+  onClick: () => {
+    router.push(`/accounts/companies/${record.slug}`);
+  },
+});
+
+// Create modal
 const createModalVisible = ref(false);
 const createLoading = ref(false);
-const createForm = reactive({
-  name: '',
-});
+const createForm = reactive({ name: '' });
 
 const showCreateModal = () => {
   createForm.name = '';
@@ -241,14 +258,11 @@ const handleCreateSubmit = async () => {
 
   try {
     createLoading.value = true;
-
-    await http.post('/auth/companies/', {
-      name: createForm.name,
-    });
-
+    await http.post('/auth/companies/', { name: createForm.name });
     message.success('Компания успешно создана');
     createModalVisible.value = false;
     refresh();
+    fetchStats();
   } catch (error) {
     message.error(error instanceof Error ? error.message : 'Ошибка создания компании');
   } finally {
@@ -256,65 +270,87 @@ const handleCreateSubmit = async () => {
   }
 };
 
-// Edit modal state
-const editModalVisible = ref(false);
-const editLoading = ref(false);
-const editForm = reactive({
-  id: 0,
-  name: '',
-  slug: '',
-  notifications_enabled: false,
-  telegram_group_id: '',
-  telegram_group_name: '',
-});
-
-const showEditModal = (record: CompanyRecord) => {
-  editForm.id = record.id;
-  editForm.name = record.name;
-  editForm.slug = record.slug;
-  editForm.notifications_enabled = record.notifications_enabled;
-  editForm.telegram_group_id = record.telegram_group_id || '';
-  editForm.telegram_group_name = record.telegram_group_name || '';
-  editModalVisible.value = true;
-};
-
-const handleEditCancel = () => {
-  editModalVisible.value = false;
-  editForm.id = 0;
-  editForm.name = '';
-  editForm.slug = '';
-  editForm.notifications_enabled = false;
-  editForm.telegram_group_id = '';
-  editForm.telegram_group_name = '';
-};
-
-const handleEditSubmit = async () => {
-  // Validate if notifications enabled but no group ID
-  if (editForm.notifications_enabled && !editForm.telegram_group_id.trim()) {
-    message.error('Введите Telegram Group ID для включения уведомлений');
-    return;
-  }
-
-  try {
-    editLoading.value = true;
-
-    await http.patch(`/auth/companies/${editForm.slug}/`, {
-      notifications_enabled: editForm.notifications_enabled,
-      telegram_group_id: editForm.telegram_group_id.trim() || null,
-      telegram_group_name: editForm.telegram_group_name.trim(),
-    });
-
-    message.success('Настройки сохранены');
-    editModalVisible.value = false;
-    refresh();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Ошибка сохранения настроек');
-  } finally {
-    editLoading.value = false;
-  }
-};
-
 onMounted(() => {
   fetchData();
+  fetchStats();
 });
 </script>
+
+<style scoped>
+.companies-page {
+  min-height: 100%;
+}
+
+.page-header {
+  background: #fff;
+  border-radius: 6px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.filters-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stats-summary {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.65);
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.stats-dot {
+  margin: 0 8px;
+  color: #d9d9d9;
+}
+
+.stats-active {
+  color: #52c41a;
+}
+
+.stats-inactive {
+  color: #ff4d4f;
+}
+
+.company-name-cell {
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.balance-negative {
+  color: #cf1322;
+  font-weight: 600;
+}
+
+.balance-uzs-hint {
+  font-size: 11px;
+  color: #1890ff;
+  margin-left: 6px;
+  cursor: help;
+  border-bottom: 1px dotted #1890ff;
+}
+
+:deep(.clickable-row) {
+  cursor: pointer;
+}
+
+:deep(.clickable-row:hover td) {
+  background: #e6f7ff !important;
+}
+</style>

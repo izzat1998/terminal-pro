@@ -11,7 +11,6 @@ import CompanyLayout from '../layouts/CompanyLayout.vue';
 import CustomerLayout from '../layouts/CustomerLayout.vue';
 import CompanyInfo from '../views/company/CompanyInfo.vue';
 import CompanyUsers from '../views/company/CompanyUsers.vue';
-import CompanySettings from '../views/company/CompanySettings.vue';
 import CompanyOrders from '../views/company/CompanyOrders.vue';
 import CustomerPreOrders from '../views/customer/PreOrders.vue';
 import CustomerContainers from '../views/customer/Containers.vue';
@@ -19,7 +18,9 @@ import CustomerUsers from '../views/customer/Users.vue';
 import CustomerDashboard from '../views/customer/Dashboard.vue';
 import CustomerBilling from '../views/customer/Billing.vue';
 import CompanyContainers from '../views/company/CompanyContainers.vue';
-import CompanyBilling from '../views/company/CompanyBilling.vue';
+import CurrentCosts from '../components/billing/CurrentCosts.vue';
+import MonthlyStatements from '../components/billing/MonthlyStatements.vue';
+import OnDemandInvoices from '../components/billing/OnDemandInvoices.vue';
 import { useAuth } from '../composables/useAuth';
 import AppLayout from '../components/AppLayout.vue'
 
@@ -52,19 +53,21 @@ const routes = [
     component: () => import('../views/UnauthorizedView.vue'),
     meta: { requiresAuth: true, title: 'Нет доступа - МТТ' },
   },
-  // Standalone test routes (no auth required for development testing)
-  {
-    path: '/yard-test-dev',
-    name: 'YardTestDev',
-    component: () => import('../views/UnifiedYardView.vue'),
-    meta: { requiresAuth: false, title: 'Тест 3D Площадки - МТТ' },
-  },
-  {
-    path: '/gate-test',
-    name: 'GateCameraTest',
-    component: () => import('../views/GateCameraTestView.vue'),
-    meta: { requiresAuth: false, title: 'Тест камеры ворот - МТТ' },
-  },
+  // Standalone test routes (only available in development)
+  ...(import.meta.env.DEV ? [
+    {
+      path: '/yard-test-dev',
+      name: 'YardTestDev',
+      component: () => import('../views/UnifiedYardView.vue'),
+      meta: { requiresAuth: false, title: 'Тест 3D Площадки - МТТ' },
+    },
+    {
+      path: '/gate-test',
+      name: 'GateCameraTest',
+      component: () => import('../views/GateCameraTestView.vue'),
+      meta: { requiresAuth: false, title: 'Тест камеры ворот - МТТ' },
+    },
+  ] : []),
   {
     path: '/app',
     component: AppLayout,
@@ -178,6 +181,12 @@ const routes = [
         meta: { title: 'Telegram Бот - МТТ', roles: ['admin'] as UserRole[] },
       },
       {
+        path: '/settings/terminal',
+        name: 'TerminalSettings',
+        component: () => import('../views/TerminalSettings.vue'),
+        meta: { title: 'Настройки терминала - МТТ', roles: ['admin'] as UserRole[] },
+      },
+      {
         path: '/vehicles-customers',
         name: 'VehiclesCustomers',
         component: VehiclesCustomers,
@@ -219,12 +228,6 @@ const routes = [
             meta: { title: 'Пользователи компании - МТТ', roles: ['admin'] as UserRole[] },
           },
           {
-            path: 'settings',
-            name: 'CompanySettings',
-            component: CompanySettings,
-            meta: { title: 'Настройки компании - МТТ', roles: ['admin'] as UserRole[] },
-          },
-          {
             path: 'orders',
             name: 'CompanyOrders',
             component: CompanyOrders,
@@ -237,10 +240,34 @@ const routes = [
             meta: { title: 'Контейнеры компании - МТТ', roles: ['admin', 'customer'] as UserRole[] },
           },
           {
-            path: 'billing',
-            name: 'CompanyBilling',
-            component: CompanyBilling,
-            meta: { title: 'Биллинг компании - МТТ', roles: ['admin'] as UserRole[] },
+            path: 'billing/current',
+            name: 'CompanyBillingCurrent',
+            component: CurrentCosts,
+            meta: { title: 'Текущие расходы - МТТ', roles: ['admin'] as UserRole[] },
+          },
+          {
+            path: 'billing/statements',
+            name: 'CompanyBillingStatements',
+            component: MonthlyStatements,
+            meta: { title: 'Акты сверки - МТТ', roles: ['admin'] as UserRole[] },
+          },
+          {
+            path: 'billing/invoices',
+            name: 'CompanyBillingInvoices',
+            component: OnDemandInvoices,
+            meta: { title: 'Разовые счета - МТТ', roles: ['admin'] as UserRole[] },
+          },
+          {
+            path: 'settings/telegram',
+            name: 'CompanySettingsTelegram',
+            component: () => import('../views/company/CompanyTelegramSettings.vue'),
+            meta: { title: 'Telegram настройки - МТТ', roles: ['admin'] as UserRole[] },
+          },
+          {
+            path: 'settings/general',
+            name: 'CompanySettingsGeneral',
+            component: () => import('../views/company/CompanyGeneralSettings.vue'),
+            meta: { title: 'Настройки компании - МТТ', roles: ['admin'] as UserRole[] },
           },
         ],
       },
@@ -260,17 +287,6 @@ router.beforeEach(async (to, _from, next) => {
   // Update page title
   const title = to.meta.title || 'МТТ';
   document.title = title;
-
-  // DEV MODE: Skip authentication entirely
-  if (import.meta.env.DEV) {
-    // Redirect root/login to main app page
-    if (to.name === 'Login' || to.name === 'Landing' || to.path === '/app' || to.path === '/app/') {
-      next({ path: '/containers' });
-      return;
-    }
-    next();
-    return;
-  }
 
   // Check if route requires authentication
   const requiresAuth = to.meta.requiresAuth !== false;
