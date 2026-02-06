@@ -387,6 +387,38 @@ class Company(TimestampedModel):
         help_text="Метод расчёта для ежемесячных выписок",
     )
 
+    # Legal / billing credentials (buyer side for Счёт-фактура)
+    legal_address = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="Юридический адрес",
+    )
+    inn = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="ИНН",
+    )
+    mfo = models.CharField(
+        max_length=10,
+        blank=True,
+        default="",
+        verbose_name="МФО",
+    )
+    bank_account = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Расчётный счёт",
+    )
+    bank_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Банк",
+    )
+
     class Meta:
         verbose_name = "Компания"
         verbose_name_plural = "Компании"

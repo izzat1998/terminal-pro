@@ -160,6 +160,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             "password_confirm",
             "is_admin",
         )
+        read_only_fields = ("is_admin",)
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password_confirm"]:
@@ -169,9 +170,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop("password_confirm")
         password = validated_data.pop("password")
-        user = CustomUser.objects.create_user(**validated_data)
-        user.set_password(password)
-        user.save()
+        user = CustomUser.objects.create_user(password=password, **validated_data)
         return user
 
 
@@ -395,11 +394,14 @@ class ManagerStatsSerializer(serializers.Serializer):
 class CompanySerializer(serializers.ModelSerializer):
     """
     Serializer for Company model (read operations).
-    Includes counts for customers and container entries.
+    Includes counts for customers and container entries,
+    and outstanding balance from unpaid finalized statements.
     """
 
     customers_count = serializers.SerializerMethodField()
     entries_count = serializers.SerializerMethodField()
+    balance_usd = serializers.SerializerMethodField()
+    balance_uzs = serializers.SerializerMethodField()
 
     class Meta:
         model = Company
@@ -411,8 +413,15 @@ class CompanySerializer(serializers.ModelSerializer):
             "telegram_group_id",
             "telegram_group_name",
             "notifications_enabled",
+            "legal_address",
+            "inn",
+            "mfo",
+            "bank_account",
+            "bank_name",
             "customers_count",
             "entries_count",
+            "balance_usd",
+            "balance_uzs",
             "created_at",
             "updated_at",
         )
@@ -431,6 +440,20 @@ class CompanySerializer(serializers.ModelSerializer):
         if hasattr(obj, "_entries_count"):
             return obj._entries_count
         return obj.container_entries.count()
+
+    @extend_schema_field(OpenApiTypes.DECIMAL)
+    def get_balance_usd(self, obj):
+        """Outstanding debt from finalized unpaid statements (USD)."""
+        if hasattr(obj, "_balance_usd"):
+            return str(obj._balance_usd)
+        return "0"
+
+    @extend_schema_field(OpenApiTypes.DECIMAL)
+    def get_balance_uzs(self, obj):
+        """Outstanding debt from finalized unpaid statements (UZS)."""
+        if hasattr(obj, "_balance_uzs"):
+            return str(obj._balance_uzs)
+        return "0"
 
 
 class CompanyCreateSerializer(serializers.ModelSerializer):
@@ -462,6 +485,11 @@ class CompanyUpdateSerializer(serializers.ModelSerializer):
             "telegram_group_id",
             "telegram_group_name",
             "notifications_enabled",
+            "legal_address",
+            "inn",
+            "mfo",
+            "bank_account",
+            "bank_name",
         )
 
     def validate_name(self, value):
@@ -675,6 +703,8 @@ class CustomerSerializer(serializers.ModelSerializer):
     @extend_schema_field(OpenApiTypes.INT)
     def get_orders_count(self, obj):
         """Get count of pre-orders for this customer."""
+        if hasattr(obj, "_orders_count"):
+            return obj._orders_count
         return obj.pre_orders.count() if hasattr(obj, "pre_orders") else 0
 
 

@@ -159,6 +159,11 @@ class CompanyService(BaseService):
         if "notifications_enabled" in kwargs:
             company.notifications_enabled = kwargs["notifications_enabled"]
 
+        # Legal / billing credentials
+        for field in ("legal_address", "inn", "mfo", "bank_account", "bank_name"):
+            if field in kwargs:
+                setattr(company, field, kwargs[field])
+
         company.save()
 
         self.logger.info(f"Updated company {company.name}: {list(kwargs.keys())}")
