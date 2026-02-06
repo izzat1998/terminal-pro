@@ -506,6 +506,11 @@
               {{ record.container }}
             </span>
           </a-tooltip>
+          <a-tooltip v-if="record.hasPendingInvoice" title="Включён в разовый счёт — ожидается выезд">
+            <a-tag color="gold" size="small" style="margin-left: 4px; font-size: 10px;">
+              💰 СЧЁТ
+            </a-tag>
+          </a-tooltip>
         </template>
         <template v-else-if="column.key === 'containerStatus'">
           <a-tag :color="getContainerStatusColor(record.containerStatus)">
@@ -682,6 +687,7 @@ import { useRouter, useRoute } from 'vue-router';
 import type { Dayjs } from 'dayjs';
 import { terminalService, type FileAttachment, type CraneOperation } from '../services/terminalService';
 import { message, Modal } from 'ant-design-vue';
+import type { TableProps } from 'ant-design-vue';
 import {
   SearchOutlined,
   PlusOutlined,
@@ -699,7 +705,7 @@ import {
   DollarOutlined,
   LoadingOutlined,
 } from '@ant-design/icons-vue';
-import { http } from '../utils/httpClient';
+import { http, downloadFile } from '../utils/httpClient';
 import { debounce } from 'lodash-es';
 import { useContainerTransform, type ContainerRecord } from '../composables/useContainerTransform';
 import { useStorageCosts } from '../composables/useStorageCosts';
@@ -996,15 +1002,46 @@ const fetchStats = async () => {
   }
 };
 
+interface ContainerFilters {
+  container?: string[];
+  isoType?: string[];
+  companyName?: (string | number)[];
+  containerOwner?: (string | number)[];
+  cargoName?: string[];
+  entryTime?: string[];
+  transportType?: string[];
+  entryTrainNumber?: string[];
+  transportNumber?: string[];
+  exitDate?: string[];
+  exitTransportType?: string[];
+  exitTrainNumber?: string[];
+  exitTransportNumber?: string[];
+  destinationStation?: string[];
+  location?: string[];
+  additionalCraneOperationDate?: string[];
+  note?: string[];
+  dwellTimeDays?: string[];
+  cargoWeight?: string[];
+  [key: string]: (string | number | null)[] | undefined;
+}
+
+interface StatFilters {
+  has_exited?: boolean;
+  status?: string;
+  exit_date_after?: string;
+  entry_date_after?: string;
+  company?: number;
+}
+
 const dataSource = ref<ContainerRecord[]>([]);
 const loading = ref(false);
-const currentFilters = ref<Record<string, any>>({});
+const currentFilters = ref<ContainerFilters>({});
 const activeStatusTab = ref('all');
 
 // Clickable stat filter state
 const activeStatFilter = ref<string | null>(null);
 const activeCompanyFilter = ref<number | null>(null);
-const statFilters = ref<Record<string, any>>({});
+const statFilters = ref<StatFilters>({});
 
 // Sorting state
 const currentSorter = ref<{ field: string | null; order: 'ascend' | 'descend' | null }>({
@@ -1054,9 +1091,12 @@ const exportSelected = async () => {
 
   try {
     const containerIds = selectedRowKeys.value.join(',');
-    window.open(`/api/terminal/entries/export-excel/?container_ids=${containerIds}`);
+    await downloadFile(
+      `/terminal/entries/export-excel/?container_ids=${containerIds}`,
+      'containers-export.xlsx'
+    );
     message.success(`Экспорт ${selectedRowKeys.value.length} контейнеров`);
-  } catch (error) {
+  } catch {
     message.error('Ошибка при экспорте');
   }
 };
@@ -1112,7 +1152,7 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
   }
 };
 
-// Register keyboard shortcuts
+// Register keyboard shortcuts and load preferences + fetch data
 onMounted(() => {
   window.addEventListener('keydown', handleKeyboardShortcuts);
 
@@ -1135,6 +1175,19 @@ onMounted(() => {
     }
   } catch (e) {
     console.error('Failed to load column preferences:', e);
+  }
+
+  // Fetch initial data
+  fetchStats();
+  fetchCompanies();
+
+  // Check for search query parameter from URL (e.g., from 3D view double-click)
+  const searchQuery = route.query.search;
+  if (searchQuery && typeof searchQuery === 'string') {
+    globalSearch.value = searchQuery;
+    handleGlobalSearch();
+  } else {
+    fetchContainers();
   }
 });
 
@@ -1271,7 +1324,6 @@ const selectedNote = ref('');
 const selectedCargoWeight = ref<number>();
 const selectedCargoName = ref('');
 const selectedCompanyId = ref<number>();
-const selectedContainerOwner = ref('');
 const selectedContainerOwnerId = ref<number>();
 
 const createModalVisible = ref(false);
@@ -1375,10 +1427,10 @@ function showStorageCost(record: ContainerRecord) {
   storageCostModalVisible.value = true;
 }
 
-const fetchContainers = async (filters?: Record<string, any>, page?: number, pageSize?: number) => {
+const fetchContainers = async (filters?: ContainerFilters, page?: number, pageSize?: number) => {
   try {
     loading.value = true;
-    const apiFilters: Record<string, any> = {};
+    const apiFilters: Record<string, string | number | boolean> = {};
 
     // Map frontend filter keys to API query parameters
     if (filters?.container && filters.container.length > 0) {
@@ -1491,8 +1543,8 @@ const fetchContainers = async (filters?: Record<string, any>, page?: number, pag
   }
 };
 
-const handleTableChange = (pag: any, filters: any, sorter: any) => {
-  currentFilters.value = filters;
+const handleTableChange: TableProps['onChange'] = (pag, filters, sorter) => {
+  currentFilters.value = filters as ContainerFilters;
 
   // Handle sorter
   if (!Array.isArray(sorter) && sorter.field) {
@@ -1504,7 +1556,7 @@ const handleTableChange = (pag: any, filters: any, sorter: any) => {
     currentSorter.value.order = 'descend';
   }
 
-  fetchContainers(filters, pag.current, pag.pageSize);
+  fetchContainers(filters as ContainerFilters, pag.current, pag.pageSize);
 };
 
 const handleStatusTabChange = () => {
@@ -1529,7 +1581,7 @@ const handleStatClick = (statType: string) => {
   activeStatFilter.value = statType;
   activeCompanyFilter.value = null;
 
-  const filterMap: Record<string, Record<string, any>> = {
+  const filterMap: Record<string, StatFilters> = {
     'onTerminal': { has_exited: false },
     'laden': { status: 'Гружёный', has_exited: false },
     'empty': { status: 'Порожний', has_exited: false },
@@ -1581,7 +1633,6 @@ const showFiles = (record: ContainerRecord) => {
   selectedCargoWeight.value = record.cargoWeight;
   selectedCargoName.value = record.cargoName || '';
   selectedCompanyId.value = record.companyId;
-  selectedContainerOwner.value = record.containerOwner || '';
   selectedContainerOwnerId.value = record.containerOwnerId;
   filesModalVisible.value = true;
 };
@@ -1630,7 +1681,6 @@ const showEditModal = (record: ContainerRecord) => {
   selectedCargoWeight.value = record.cargoWeight;
   selectedCargoName.value = record.cargoName || '';
   selectedCompanyId.value = record.companyId;
-  selectedContainerOwner.value = record.containerOwner || '';
   selectedContainerOwnerId.value = record.containerOwnerId;
   editModalVisible.value = true;
 };
@@ -1678,20 +1728,6 @@ const showExportModal = () => {
   excelExportModalVisible.value = true;
 };
 
-
-onMounted(() => {
-  fetchStats();
-  fetchCompanies();
-
-  // Check for search query parameter from URL (e.g., from 3D view double-click)
-  const searchQuery = route.query.search;
-  if (searchQuery && typeof searchQuery === 'string') {
-    globalSearch.value = searchQuery;
-    handleGlobalSearch();
-  } else {
-    fetchContainers();
-  }
-});
 </script>
 
 <style scoped>

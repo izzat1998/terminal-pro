@@ -60,7 +60,8 @@ class UserService {
       throw new Error(errorData.detail || 'Token verification failed');
     }
 
-    return response.json();
+    const json = await response.json();
+    return json.data ?? json;
   }
 
   async refreshToken(refreshToken: string): Promise<LoginResponse> {

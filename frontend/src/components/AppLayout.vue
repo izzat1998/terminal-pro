@@ -89,6 +89,10 @@
             <RobotOutlined />
             <span>Telegram Бот</span>
           </a-menu-item>
+          <a-menu-item key="terminal-settings">
+            <SettingOutlined />
+            <span>Реквизиты</span>
+          </a-menu-item>
         </a-menu>
 
         <!-- Vehicle Status Panel -->
@@ -170,7 +174,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, ref, watch, onMounted } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import {
   AppstoreOutlined,
@@ -277,10 +281,14 @@ async function fetchTaskCount(): Promise<void> {
 }
 
 // Refresh task count periodically
+let taskCountInterval: ReturnType<typeof setInterval>;
 onMounted(() => {
   fetchTaskCount();
   // Refresh every 60 seconds
-  setInterval(fetchTaskCount, 60_000);
+  taskCountInterval = setInterval(fetchTaskCount, 60_000);
+});
+onUnmounted(() => {
+  clearInterval(taskCountInterval);
 });
 
 // Route to menu key mapping
@@ -330,6 +338,7 @@ const keyToRoute: Record<string, string> = {
   'terminal-vehicles': '/terminal-vehicles',
   'tariffs': '/tariffs',
   'telegram-bot': '/telegram-bot',
+  'terminal-settings': '/settings/terminal',
 };
 
 const handleMenuClick = ({ key }: { key: string }) => {

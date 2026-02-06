@@ -67,6 +67,7 @@ import { FileOutlined, DownloadOutlined, UploadOutlined, DeleteOutlined } from '
 import type { FileAttachment } from '../services/terminalService';
 import { http } from '../utils/httpClient';
 import { downloadBlob } from '../utils/download';
+import { getStorageItem } from '../utils/storage';
 import { useModalVisibility } from '../composables/useModalVisibility';
 
 interface Props {
@@ -144,16 +145,38 @@ const handleClose = () => {
   visible.value = false;
 };
 
-const openFile = (url: string) => {
-  window.open(url, '_blank');
+const authenticatedFetch = async (url: string): Promise<Response> => {
+  const token = getStorageItem('access_token');
+  const response = await fetch(url, {
+    headers: {
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response;
+};
+
+const openFile = async (url: string) => {
+  try {
+    const response = await authenticatedFetch(url);
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    window.open(objectUrl, '_blank');
+    // Revoke after a delay to allow the new tab to load
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+  } catch {
+    message.error('Ошибка при открытии файла');
+  }
 };
 
 const downloadFile = async (url: string, filename: string) => {
   try {
-    const response = await fetch(url);
+    const response = await authenticatedFetch(url);
     const blob = await response.blob();
     downloadBlob(blob, filename);
-  } catch (error) {
+  } catch {
     message.error('Ошибка при скачивании файла');
   }
 };
@@ -172,7 +195,7 @@ const beforeUpload = (file: File) => {
   return true;
 };
 
-const handleUpload = async (options: any) => {
+const handleUpload = async (options: { file: File; onSuccess?: (body: unknown) => void; onError?: (err: Error) => void }) => {
   const { file, onSuccess, onError } = options;
 
   if (!props.containerId) {

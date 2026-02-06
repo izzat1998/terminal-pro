@@ -66,6 +66,8 @@ export interface TerminalEntry {
   files: FileAttachment[];
   file_count: number;
   main_file: FileAttachment | null;
+  // Billing status
+  has_pending_invoice?: boolean;
 }
 
 class TerminalService {

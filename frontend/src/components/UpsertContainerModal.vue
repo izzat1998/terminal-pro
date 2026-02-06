@@ -137,7 +137,7 @@
               :loading="companiesLoading"
               allow-clear
               show-search
-              :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())">
+              :filter-option="(input: string, option: { label?: string; value?: string | number }) => (option.label ?? '').toLowerCase().includes(input.toLowerCase())">
               <a-select-option v-for="company in companies" :key="company.id" :value="company.id" :label="company.name">
                 {{ company.name }}
               </a-select-option>

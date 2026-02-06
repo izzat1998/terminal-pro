@@ -25,7 +25,7 @@ try {
   // Configure all application dependencies.
   await init({
     debug,
-    eruda: true,
+    eruda: debug,
     mockForMacOS: platform === 'macos',
   })
     .then(() => {

@@ -61,6 +61,8 @@ export interface ContainerRecord {
   additionalChargesUzs?: string
   additionalChargesCount?: number
   additionalChargesLoading?: boolean
+  // Invoice status
+  hasPendingInvoice: boolean
 }
 
 export function useContainerTransform() {
@@ -102,6 +104,7 @@ export function useContainerTransform() {
     filesData: entry.files || [],
     created: formatDateTimeLocale(entry.created_at),
     updated: formatDateTimeLocale(entry.updated_at),
+    hasPendingInvoice: entry.has_pending_invoice ?? false,
   })
 
   /**
