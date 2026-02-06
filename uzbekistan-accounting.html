@@ -1,0 +1,1562 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Бухгалтерия Узбекистана — Интерактивный справочник</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #f8f9fa;
+    --surface: #ffffff;
+    --surface-alt: #f0f2f5;
+    --border: #dee2e6;
+    --text: #212529;
+    --text-muted: #6c757d;
+    --accent: #2563eb;
+    --accent-light: #dbeafe;
+    --accent-hover: #1d4ed8;
+    --green: #16a34a;
+    --green-light: #dcfce7;
+    --orange: #ea580c;
+    --orange-light: #fff7ed;
+    --red: #dc2626;
+    --red-light: #fef2f2;
+    --purple: #7c3aed;
+    --purple-light: #f3e8ff;
+    --yellow: #ca8a04;
+    --yellow-light: #fefce8;
+    --teal: #0d9488;
+    --teal-light: #f0fdfa;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
+    --radius: 8px;
+    --radius-sm: 4px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .app {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 280px;
+    min-width: 280px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .sidebar-header {
+    padding: 20px 16px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-header h1 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .sidebar-header p {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .nav-section {
+    padding: 8px 0;
+  }
+
+  .nav-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    padding: 8px 16px 4px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+    transition: background 0.15s;
+    border-left: 3px solid transparent;
+  }
+
+  .nav-item:hover {
+    background: var(--surface-alt);
+  }
+
+  .nav-item.active {
+    background: var(--accent-light);
+    color: var(--accent);
+    font-weight: 600;
+    border-left-color: var(--accent);
+  }
+
+  .nav-icon {
+    width: 20px;
+    text-align: center;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 40px;
+    max-width: 960px;
+  }
+
+  .page { display: none; }
+  .page.active { display: block; }
+
+  .page-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+
+  .page-subtitle {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-text {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.7;
+  }
+
+  .card-text strong { color: var(--text); }
+
+  /* Tags */
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .tag-blue { background: var(--accent-light); color: var(--accent); }
+  .tag-green { background: var(--green-light); color: var(--green); }
+  .tag-orange { background: var(--orange-light); color: var(--orange); }
+  .tag-red { background: var(--red-light); color: var(--red); }
+  .tag-purple { background: var(--purple-light); color: var(--purple); }
+  .tag-yellow { background: var(--yellow-light); color: var(--yellow); }
+  .tag-teal { background: var(--teal-light); color: var(--teal); }
+
+  /* Tables */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  th {
+    text-align: left;
+    padding: 8px 12px;
+    background: var(--surface-alt);
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 2px solid var(--border);
+  }
+
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin: 16px 0;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+
+  .flow-step {
+    flex: 1;
+    min-width: 140px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 12px;
+    text-align: center;
+    position: relative;
+    box-shadow: var(--shadow);
+  }
+
+  .flow-step .step-num {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 6px;
+  }
+
+  .flow-step .step-title {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .flow-step .step-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    font-size: 18px;
+    color: var(--accent);
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+
+  /* Calculator */
+  .calc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 16px 0;
+  }
+
+  .calc-field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .calc-field input, .calc-field select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-family: var(--mono);
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .calc-field input:focus, .calc-field select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+
+  .calc-result {
+    margin: 16px 0;
+    padding: 16px;
+    background: var(--accent-light);
+    border-radius: var(--radius);
+    border: 1px solid rgba(37, 99, 235, 0.2);
+  }
+
+  .calc-result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    font-size: 13px;
+  }
+
+  .calc-result-row .label { color: var(--text-muted); }
+  .calc-result-row .value { font-family: var(--mono); font-weight: 700; font-size: 14px; }
+  .calc-result-row.total { border-top: 2px solid var(--accent); padding-top: 8px; margin-top: 4px; }
+  .calc-result-row.total .value { color: var(--accent); font-size: 16px; }
+
+  /* Highlight box */
+  .highlight {
+    padding: 14px 16px;
+    border-radius: var(--radius);
+    margin: 12px 0;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .highlight-blue { background: var(--accent-light); border-left: 3px solid var(--accent); }
+  .highlight-green { background: var(--green-light); border-left: 3px solid var(--green); }
+  .highlight-orange { background: var(--orange-light); border-left: 3px solid var(--orange); }
+  .highlight-red { background: var(--red-light); border-left: 3px solid var(--red); }
+  .highlight-purple { background: var(--purple-light); border-left: 3px solid var(--purple); }
+
+  .highlight strong { display: block; margin-bottom: 4px; }
+
+  /* Document preview */
+  .doc-preview {
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    background: white;
+    font-size: 12px;
+    line-height: 1.8;
+    margin: 12px 0;
+    position: relative;
+    font-family: 'Times New Roman', serif;
+  }
+
+  .doc-preview .doc-header {
+    text-align: center;
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+
+  .doc-preview .doc-stamp {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 9px;
+    background: var(--red-light);
+    color: var(--red);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: var(--font);
+    font-weight: 600;
+  }
+
+  .doc-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+  }
+
+  .doc-row .doc-label { color: var(--text-muted); }
+  .doc-row .doc-value { font-weight: 600; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border-bottom: 2px solid var(--border);
+  }
+
+  .tab {
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.15s;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* MTT specific */
+  .mtt-flow {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 16px 0;
+  }
+
+  .mtt-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    box-shadow: var(--shadow);
+  }
+
+  .mtt-card .icon { font-size: 24px; margin-bottom: 6px; }
+  .mtt-card .title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .mtt-card .desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+
+  /* Checklist */
+  .checklist { list-style: none; padding: 0; }
+  .checklist li {
+    padding: 6px 0;
+    font-size: 13px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .checklist li::before {
+    content: "✓";
+    color: var(--green);
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* Warning list */
+  .warn-list li::before {
+    content: "⚠";
+    color: var(--orange);
+  }
+
+  /* Section divider */
+  .section-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 20px 0;
+  }
+
+  /* Comparison grid */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 12px 0;
+  }
+
+  .compare-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+
+  .compare-card.good { border-color: var(--green); background: var(--green-light); }
+  .compare-card.bad { border-color: var(--red); background: var(--red-light); }
+
+  .compare-card .compare-title {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .compare-card.good .compare-title { color: var(--green); }
+  .compare-card.bad .compare-title { color: var(--red); }
+
+  .compare-card code {
+    font-family: var(--mono);
+    font-size: 12px;
+    display: block;
+    line-height: 1.6;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+  /* Number formatting */
+  .num { font-family: var(--mono); font-weight: 600; }
+  .num-green { color: var(--green); }
+  .num-red { color: var(--red); }
+  .num-blue { color: var(--accent); }
+
+  .formula {
+    font-family: var(--mono);
+    background: var(--surface-alt);
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    margin: 8px 0;
+    font-size: 13px;
+    border: 1px solid var(--border);
+    display: inline-block;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  @media (max-width: 768px) {
+    .grid-2, .calc-grid, .compare-grid, .mtt-flow { grid-template-columns: 1fr; }
+    .flow { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); justify-content: center; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Sidebar Navigation -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h1>Бухгалтерия Узбекистана</h1>
+      <p>Интерактивный справочник для МТТ</p>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">Основы</div>
+      <div class="nav-item active" onclick="showPage('overview')">
+        <span class="nav-icon">📋</span> Обзор системы
+      </div>
+      <div class="nav-item" onclick="showPage('documents')">
+        <span class="nav-icon">📄</span> Типы документов
+      </div>
+      <div class="nav-item" onclick="showPage('flow')">
+        <span class="nav-icon">🔄</span> Документооборот
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">НДС и расчёты</div>
+      <div class="nav-item" onclick="showPage('vat')">
+        <span class="nav-icon">💰</span> НДС (VAT) 12%
+      </div>
+      <div class="nav-item" onclick="showPage('calculator')">
+        <span class="nav-icon">🧮</span> Калькулятор НДС
+      </div>
+      <div class="nav-item" onclick="showPage('currency')">
+        <span class="nav-icon">💱</span> Валюта USD/UZS
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">Применение к МТТ</div>
+      <div class="nav-item" onclick="showPage('mtt')">
+        <span class="nav-icon">🏗️</span> МТТ: документы
+      </div>
+      <div class="nav-item" onclick="showPage('mtt-monthly')">
+        <span class="nav-icon">📅</span> Месячный цикл
+      </div>
+      <div class="nav-item" onclick="showPage('mtt-sf')">
+        <span class="nav-icon">🧾</span> Счёт-фактура МТТ
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">Нюансы</div>
+      <div class="nav-item" onclick="showPage('pitfalls')">
+        <span class="nav-icon">⚠️</span> Частые ошибки
+      </div>
+      <div class="nav-item" onclick="showPage('reporting')">
+        <span class="nav-icon">📊</span> Налоговая отчётность
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main">
+
+    <!-- PAGE: Overview -->
+    <div class="page active" id="page-overview">
+      <div class="page-title">Бухгалтерская система Узбекистана</div>
+      <div class="page-subtitle">Ключевые концепции для контейнерного терминала</div>
+
+      <div class="card">
+        <div class="card-title">🏛️ Правовая основа</div>
+        <div class="card-text">
+          Бухгалтерский учёт в Узбекистане регулируется <strong>Налоговым Кодексом Республики Узбекистан</strong> (с 2020 г. — новая редакция). Основные принципы:
+        </div>
+        <ul class="checklist" style="margin-top:10px">
+          <li>Все хозяйственные операции оформляются <strong>первичными документами</strong></li>
+          <li>НДС (НДС = Налог на добавленную стоимость) — <strong>12%</strong> с 2023 года</li>
+          <li>Счёт-фактуры обязательно регистрируются в <strong>электронной системе</strong> (my.soliq.uz)</li>
+          <li>Учёт ведётся в <strong>национальной валюте</strong> (UZS), иностранная — справочно</li>
+          <li>Финансовый год совпадает с <strong>календарным</strong> (1 янв — 31 дек)</li>
+        </ul>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title"><span class="tag tag-blue">Поставщик</span> Исполнитель</div>
+          <div class="card-text">
+            Тот, кто <strong>оказывает услуги</strong> или продаёт товар. В нашем случае — <strong>МТТ</strong> (Multimodal Trans Terminal).<br><br>
+            Обязанности: выставить счёт-фактуру, начислить НДС, сдать отчётность.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="tag tag-green">Покупатель</span> Заказчик</div>
+          <div class="card-text">
+            Тот, кто <strong>получает услуги</strong> или покупает товар. В нашем случае — <strong>клиенты МТТ</strong> (InterRail, и др.).<br><br>
+            Права: принять НДС к зачёту (вычету) на основании полученной счёт-фактуры.
+          </div>
+        </div>
+      </div>
+
+      <div class="highlight highlight-blue">
+        <strong>Ключевой принцип</strong>
+        Каждая операция должна быть подтверждена документом. Нет документа — нет расхода/дохода в бухгалтерии. Поэтому так важна корректная Счёт-фактура.
+      </div>
+    </div>
+
+    <!-- PAGE: Document Types -->
+    <div class="page" id="page-documents">
+      <div class="page-title">Типы первичных документов</div>
+      <div class="page-subtitle">Какие документы существуют и для чего нужны</div>
+
+      <div class="card">
+        <div class="card-title">🧾 Счёт-фактура (Tax Invoice)</div>
+        <div class="card-text">
+          <strong>Главный налоговый документ</strong>. Обязателен для плательщиков НДС.
+        </div>
+        <div class="table-wrap">
+          <table>
+            <tr><th style="width:30%">Параметр</th><th>Описание</th></tr>
+            <tr><td>Назначение</td><td>Подтверждение суммы НДС между поставщиком и покупателем</td></tr>
+            <tr><td>Кто выписывает</td><td><span class="tag tag-blue">Поставщик</span> (МТТ)</td></tr>
+            <tr><td>Когда</td><td>В течение <strong>10 дней</strong> после отгрузки/оказания услуг</td></tr>
+            <tr><td>Регистрация</td><td>Обязательно в <strong>my.soliq.uz</strong> (электронный реестр)</td></tr>
+            <tr><td>Содержит</td><td>Реквизиты сторон, перечень услуг, суммы без/с НДС, ставка НДС</td></tr>
+            <tr><td>Для покупателя</td><td>Основание для <strong>вычета НДС</strong> из своих налогов</td></tr>
+          </table>
+        </div>
+        <div class="highlight highlight-red" style="margin-top:12px">
+          <strong>Важно!</strong> Без корректной счёт-фактуры покупатель <strong>не может</strong> принять НДС к зачёту. Ошибка в реквизитах = потеря 12% для клиента.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📝 АКТ выполненных работ (Act of Completed Works)</div>
+        <div class="card-text">
+          <strong>Двусторонний документ</strong> — подтверждает, что услуги оказаны и приняты.
+        </div>
+        <div class="table-wrap">
+          <table>
+            <tr><th style="width:30%">Параметр</th><th>Описание</th></tr>
+            <tr><td>Назначение</td><td>Юридическое подтверждение факта оказания услуг</td></tr>
+            <tr><td>Подписи</td><td><strong>Обе стороны</strong> — и поставщик, и заказчик</td></tr>
+            <tr><td>Содержит</td><td>Перечень работ/услуг, объёмы, стоимость, период</td></tr>
+            <tr><td>Формат</td><td>Сводная таблица (без детализации по каждому контейнеру)</td></tr>
+            <tr><td>Печати</td><td>М.П. (место печати) обеих организаций</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📦 Накладная / Товарная накладная (Waybill)</div>
+        <div class="card-text">
+          Используется при <strong>передаче товара</strong> (не услуг). Для МТТ менее актуальна, т.к. основная деятельность — услуги (хранение, перегрузка).
+        </div>
+        <div class="table-wrap">
+          <table>
+            <tr><th style="width:30%">Параметр</th><th>Описание</th></tr>
+            <tr><td>Назначение</td><td>Сопровождение товара при передаче</td></tr>
+            <tr><td>Для МТТ</td><td>Может потребоваться при перегрузке грузов (удобрения и т.д.)</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📋 Доверенность (Power of Attorney)</div>
+        <div class="card-text">
+          Документ, подтверждающий полномочия лица на получение товара или подписание документов от имени организации.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">💳 Платёжное поручение (Payment Order)</div>
+        <div class="card-text">
+          Банковский документ на перечисление денежных средств. Клиент оплачивает на основании полученной счёт-фактуры.
+        </div>
+      </div>
+
+      <div class="highlight highlight-purple">
+        <strong>В контексте МТТ ежемесячно формируются</strong>
+        <ol style="margin-top:6px; padding-left:20px; font-size:13px;">
+          <li><strong>АКТ</strong> — сводка оказанных услуг (подписывается обеими сторонами)</li>
+          <li><strong>Счёт-фактура</strong> — налоговый документ с НДС (регистрируется в soliq.uz)</li>
+          <li><strong>Детализация</strong> — приложение с поконтейнерной разбивкой (для внутреннего учёта клиента)</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- PAGE: Document Flow -->
+    <div class="page" id="page-flow">
+      <div class="page-title">Документооборот</div>
+      <div class="page-subtitle">Как документы движутся между сторонами</div>
+
+      <div class="card">
+        <div class="card-title">Основной цикл оказания услуг</div>
+        <div class="flow">
+          <div class="flow-step">
+            <div class="step-num">1</div>
+            <div class="step-title">Услуга</div>
+            <div class="step-desc">МТТ оказывает услуги (хранение, перегрузка)</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">
+            <div class="step-num">2</div>
+            <div class="step-title">АКТ</div>
+            <div class="step-desc">Формируется акт, подписывается обеими сторонами</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">
+            <div class="step-num">3</div>
+            <div class="step-title">Счёт-фактура</div>
+            <div class="step-desc">Выставляется в течение 10 дней, регистрируется в soliq.uz</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">
+            <div class="step-num">4</div>
+            <div class="step-title">Оплата</div>
+            <div class="step-desc">Клиент оплачивает по платёжному поручению</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Кто что получает</div>
+        <div class="table-wrap">
+          <table>
+            <tr><th>Документ</th><th><span class="tag tag-blue">МТТ (Поставщик)</span></th><th><span class="tag tag-green">Клиент (Заказчик)</span></th><th><span class="tag tag-red">Налоговая</span></th></tr>
+            <tr><td>АКТ</td><td>Оригинал (подписанный)</td><td>Оригинал (подписанный)</td><td>По запросу</td></tr>
+            <tr><td>Счёт-фактура</td><td>Хранит у себя</td><td>Получает для вычета НДС</td><td>Автоматически через soliq.uz</td></tr>
+            <tr><td>Детализация</td><td>Формирует как приложение</td><td>Для сверки сумм</td><td>—</td></tr>
+            <tr><td>Платёжное поручение</td><td>Получает оплату</td><td>Оформляет через банк</td><td>Видит через банк</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="highlight highlight-orange">
+        <strong>Электронный документооборот</strong>
+        С 2020 года Узбекистан активно переходит на ЭДО. Счёт-фактуры <strong>обязательно</strong> регистрируются через портал my.soliq.uz. АКТы можно подписывать через систему ЭЦП (электронная цифровая подпись). Но многие компании до сих пор дублируют на бумаге.
+      </div>
+
+      <div class="card">
+        <div class="card-title">Сроки хранения документов</div>
+        <div class="table-wrap">
+          <table>
+            <tr><th>Документ</th><th>Срок хранения</th><th>Примечание</th></tr>
+            <tr><td>Счёт-фактуры</td><td><span class="num">5 лет</span></td><td>С момента выставления</td></tr>
+            <tr><td>АКТы</td><td><span class="num">5 лет</span></td><td>С даты подписания</td></tr>
+            <tr><td>Бухгалтерские регистры</td><td><span class="num">5 лет</span></td><td>После отчётного периода</td></tr>
+            <tr><td>Годовая отчётность</td><td><span class="num">Постоянно</span></td><td>Не уничтожается</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: VAT -->
+    <div class="page" id="page-vat">
+      <div class="page-title">НДС — Налог на добавленную стоимость</div>
+      <div class="page-subtitle">Как работает VAT 12% в Узбекистане</div>
+
+      <div class="card">
+        <div class="card-title">Базовые правила</div>
+        <div class="table-wrap">
+          <table>
+            <tr><th style="width:35%">Параметр</th><th>Значение</th></tr>
+            <tr><td>Текущая ставка</td><td><span class="num num-blue">12%</span> (с 1 января 2023 г.)</td></tr>
+            <tr><td>Прежняя ставка</td><td>15% (до 2023 г.)</td></tr>
+            <tr><td>Порог регистрации</td><td>Оборот > <span class="num">1 млрд UZS</span> в год</td></tr>
+            <tr><td>Отчётный период</td><td>Ежемесячно</td></tr>
+            <tr><td>Срок подачи</td><td>До <strong>20-го числа</strong> следующего месяца</td></tr>
+            <tr><td>Срок уплаты</td><td>До <strong>25-го числа</strong> следующего месяца</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Два способа расчёта НДС</div>
+
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab(this, 'vat-inclusive')">НДС в том числе (inclusive)</div>
+          <div class="tab" onclick="switchTab(this, 'vat-exclusive')">НДС сверху (exclusive)</div>
+        </div>
+
+        <div class="tab-content active" id="tab-vat-inclusive">
+          <div class="highlight highlight-blue">
+            <strong>Когда используется</strong>
+            Цена уже <strong>включает</strong> НДС. Нужно «вытащить» НДС из итоговой суммы. Это стандартный подход в Счёт-фактуре МТТ.
+          </div>
+          <div class="card-text" style="margin-top:8px">
+            <div class="formula">
+              НДС = Сумма × Ставка ÷ (100 + Ставка)
+            </div>
+            <br>Пример: сумма с НДС = <span class="num">2 200 USD</span><br>
+            <div class="formula">
+              НДС = 2200 × 12 ÷ 112 = <span class="num-blue">235.71 USD</span>
+            </div>
+            <br>Сумма без НДС: 2200 − 235.71 = <span class="num">1 964.29 USD</span>
+          </div>
+        </div>
+
+        <div class="tab-content" id="tab-vat-exclusive">
+          <div class="highlight highlight-green">
+            <strong>Когда используется</strong>
+            Цена <strong>не включает</strong> НДС. Нужно начислить НДС сверху. Используется реже в готовых документах.
+          </div>
+          <div class="card-text" style="margin-top:8px">
+            <div class="formula">
+              НДС = Сумма × Ставка ÷ 100
+            </div>
+            <br>Пример: сумма без НДС = <span class="num">1 964.29 USD</span><br>
+            <div class="formula">
+              НДС = 1964.29 × 12 ÷ 100 = <span class="num-green">235.71 USD</span>
+            </div>
+            <br>Итого с НДС: 1964.29 + 235.71 = <span class="num">2 200.00 USD</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Механизм зачёта НДС</div>
+        <div class="card-text">
+          НДС работает по цепочке. Каждый участник цепочки платит НДС только с <strong>добавленной стоимости</strong>:
+        </div>
+        <div class="flow" style="margin-top: 12px;">
+          <div class="flow-step" style="border-color: var(--orange);">
+            <div class="step-title">МТТ покупает</div>
+            <div class="step-desc">Электричество: 100 + НДС 12 = <span class="num">112 UZS</span></div>
+            <div style="margin-top:4px"><span class="tag tag-orange">Входящий НДС: 12</span></div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color: var(--accent);">
+            <div class="step-title">МТТ оказывает</div>
+            <div class="step-desc">Хранение: 500 + НДС 60 = <span class="num">560 UZS</span></div>
+            <div style="margin-top:4px"><span class="tag tag-blue">Исходящий НДС: 60</span></div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="border-color: var(--green);">
+            <div class="step-title">МТТ платит</div>
+            <div class="step-desc">В бюджет: 60 − 12 = <span class="num num-green">48 UZS</span></div>
+            <div style="margin-top:4px"><span class="tag tag-green">К уплате: 48</span></div>
+          </div>
+        </div>
+        <div class="highlight highlight-purple" style="margin-top:8px;">
+          <strong>Формула: НДС к уплате = Исходящий НДС − Входящий НДС</strong><br>
+          Поэтому клиенту так важно получить корректную Счёт-фактуру — без неё он не может принять «входящий НДС» к зачёту.
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: Calculator -->
+    <div class="page" id="page-calculator">
+      <div class="page-title">Калькулятор НДС</div>
+      <div class="page-subtitle">Интерактивный расчёт для сделок МТТ</div>
+
+      <div class="card">
+        <div class="card-title">🧮 Расчёт НДС и конвертация</div>
+
+        <div class="calc-grid">
+          <div class="calc-field">
+            <label>Сумма (USD)</label>
+            <input type="number" id="calc-amount" value="2200" step="0.01" oninput="recalculate()">
+          </div>
+          <div class="calc-field">
+            <label>Тип суммы</label>
+            <select id="calc-type" onchange="recalculate()">
+              <option value="inclusive">С НДС (inclusive)</option>
+              <option value="exclusive">Без НДС (exclusive)</option>
+            </select>
+          </div>
+          <div class="calc-field">
+            <label>Ставка НДС (%)</label>
+            <input type="number" id="calc-rate" value="12" step="0.1" oninput="recalculate()">
+          </div>
+          <div class="calc-field">
+            <label>Курс USD → UZS</label>
+            <input type="number" id="calc-fx" value="12591.57" step="0.01" oninput="recalculate()">
+          </div>
+          <div class="calc-field">
+            <label>Количество</label>
+            <input type="number" id="calc-qty" value="176" step="1" oninput="recalculate()">
+          </div>
+          <div class="calc-field">
+            <label>Единица измерения</label>
+            <input type="text" id="calc-unit" value="контейнер" oninput="recalculate()">
+          </div>
+        </div>
+
+        <div class="calc-result" id="calc-results">
+          <!-- filled by JS -->
+        </div>
+
+        <div class="highlight highlight-blue" id="calc-formula" style="margin-top:8px;">
+          <!-- filled by JS -->
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Быстрые примеры</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button onclick="setExample(2200, 'inclusive', 176, 'контейнер')" style="padding:6px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); cursor:pointer; font-size:12px;">Крановые операции</button>
+          <button onclick="setExample(438, 'inclusive', 876, 'контейнер')" style="padding:6px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); cursor:pointer; font-size:12px;">Хранение 20фт</button>
+          <button onclick="setExample(405.30, 'inclusive', 579, 'контейнер')" style="padding:6px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); cursor:pointer; font-size:12px;">Хранение 40фт</button>
+          <button onclick="setExample(38132.64, 'inclusive', 4601, 'авто')" style="padding:6px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); cursor:pointer; font-size:12px;">Экспедиторские</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: Currency -->
+    <div class="page" id="page-currency">
+      <div class="page-title">Валютные операции USD / UZS</div>
+      <div class="page-subtitle">Двойное отражение в документах</div>
+
+      <div class="card">
+        <div class="card-title">Правило двойного отражения</div>
+        <div class="card-text">
+          В Узбекистане бухгалтерский учёт ведётся <strong>только в UZS</strong>. Но договоры часто заключаются в <strong>USD</strong> (особенно с иностранными клиентами, как InterRail AG).<br><br>
+          Поэтому в Счёт-фактуре <strong>каждая позиция указывается дважды</strong>:
+        </div>
+        <div class="table-wrap">
+          <table>
+            <tr><th>Строка</th><th>Валюта</th><th>Пример</th></tr>
+            <tr>
+              <td>Первая (основная)</td>
+              <td><span class="tag tag-blue">USD</span></td>
+              <td>Хранение 20фт: <span class="num">391.07 USD</span></td>
+            </tr>
+            <tr>
+              <td>Вторая (пересчёт)</td>
+              <td><span class="tag tag-green">UZS</span></td>
+              <td>= 391.07 × 12 591.57 = <span class="num">4 924 203.27 UZS</span></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Курс ЦБ Узбекистана</div>
+        <div class="card-text">
+          Курс берётся на <strong>дату совершения операции</strong> (обычно последний день месяца) с сайта Центрального Банка (cbu.uz).
+        </div>
+        <div class="highlight highlight-orange">
+          <strong>Курсовая разница</strong><br>
+          Если оплата происходит позже выставления счёта, возникает <strong>курсовая разница</strong> — разница между курсом на дату счёта и дату оплаты. Она учитывается как доход или расход.
+        </div>
+        <div class="table-wrap" style="margin-top:12px;">
+          <table>
+            <tr><th>Дата</th><th>Событие</th><th>Курс</th><th>Сумма UZS</th><th>Разница</th></tr>
+            <tr>
+              <td>31.07</td>
+              <td>Выставлен счёт на 1 000 USD</td>
+              <td>12 591.57</td>
+              <td class="num">12 591 570</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>15.08</td>
+              <td>Получена оплата 1 000 USD</td>
+              <td>12 650.00</td>
+              <td class="num">12 650 000</td>
+              <td class="num num-green">+58 430</td>
+            </tr>
+          </table>
+        </div>
+        <div class="card-text" style="margin-top:8px;">
+          Положительная разница (курс вырос) → <strong>доход</strong>. Отрицательная → <strong>расход</strong>.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Как это выглядит в Счёт-фактуре МТТ</div>
+        <div class="doc-preview">
+          <div style="text-align:center; margin-bottom:8px; color:var(--text-muted); font-family:var(--font); font-size:11px;">
+            Валюта USD &nbsp;&nbsp; Курс 1 USD = <strong>12 591.57</strong> сум
+          </div>
+          <table style="font-family: 'Times New Roman', serif;">
+            <tr style="background:var(--surface-alt);">
+              <th>№</th><th>Наименование</th><th>Ед.</th><th>Кол.</th><th>Цена</th><th>Стоимость</th><th>НДС</th><th>Итого с НДС</th>
+            </tr>
+            <tr>
+              <td>1</td><td>Хранение 20фт порожнего</td><td>конт.</td>
+              <td class="num">876</td><td class="num">0.45</td>
+              <td class="num">391.07</td><td class="num">46.93</td><td class="num num-blue">438.00</td>
+            </tr>
+            <tr style="background:#f0f7ff;">
+              <td></td><td colspan="4" style="color:var(--text-muted);">↳ в узбекских сумах</td>
+              <td class="num">4 924 203</td><td class="num">590 904</td><td class="num num-blue">5 515 108</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: MTT Documents -->
+    <div class="page" id="page-mtt">
+      <div class="page-title">Документы МТТ</div>
+      <div class="page-subtitle">Какие документы формирует терминал</div>
+
+      <div class="card">
+        <div class="card-title">Услуги МТТ и их документальное оформление</div>
+        <div class="mtt-flow">
+          <div class="mtt-card">
+            <div class="icon">🏗️</div>
+            <div class="title">Крановые операции</div>
+            <div class="desc">Погрузка/выгрузка козловым краном. Тариф за контейнер, зависит от гружёный/порожний.</div>
+          </div>
+          <div class="mtt-card">
+            <div class="icon">📦</div>
+            <div class="title">Хранение контейнеров</div>
+            <div class="desc">Посуточный тариф. Зависит от размера (20/40 фт) и статуса (гружёный/порожний). Есть бесплатные дни.</div>
+          </div>
+          <div class="mtt-card">
+            <div class="icon">🚛</div>
+            <div class="title">Экспедиторские услуги</div>
+            <div class="desc">Организация перевозки, перегрузка удобрений вагон→контейнер, услуги ЖД.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Комплект документов на каждый месяц</div>
+        <div class="table-wrap">
+          <table>
+            <tr><th>№</th><th>Документ</th><th>Формат</th><th>Содержание</th><th>Для кого</th></tr>
+            <tr>
+              <td>1</td>
+              <td><strong>АКТ выполненных работ</strong></td>
+              <td><span class="tag tag-blue">Excel</span></td>
+              <td>Сводка: виды услуг, суммы, НДС. Подписи обеих сторон.</td>
+              <td>Бухгалтерия обеих сторон</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td><strong>Счёт-фактура</strong></td>
+              <td><span class="tag tag-blue">Excel</span></td>
+              <td>Реквизиты поставщика/покупателя, позиции с НДС, двойные строки USD/UZS</td>
+              <td>Бухгалтерия + Налоговая</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td><strong>Детализация (Excel)</strong></td>
+              <td><span class="tag tag-green">Excel</span></td>
+              <td>Поконтейнерный список: номер, даты, дни, стоимость</td>
+              <td>Операционный отдел клиента</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td><strong>Детализация (PDF)</strong></td>
+              <td><span class="tag tag-orange">PDF</span></td>
+              <td>Тоже поконтейнерный, но в печатном формате</td>
+              <td>Архив, печать</td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="highlight highlight-green" style="margin-top:12px;">
+          <strong>АКТ + Счёт-фактура = один файл</strong><br>
+          В практике МТТ эти два документа объединены в один Excel-файл: верхняя часть — АКТ, нижняя — Счёт-фактура. Это допускается законодательством.
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: Monthly Cycle -->
+    <div class="page" id="page-mtt-monthly">
+      <div class="page-title">Месячный биллинговый цикл</div>
+      <div class="page-subtitle">Что происходит каждый месяц в МТТ</div>
+
+      <div class="card">
+        <div class="card-title">Временная шкала</div>
+        <div class="flow">
+          <div class="flow-step">
+            <div class="step-num">1</div>
+            <div class="step-title">1–30/31</div>
+            <div class="step-desc">Контейнеры хранятся, операции выполняются. Всё фиксируется в системе.</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">
+            <div class="step-num">2</div>
+            <div class="step-title">1–5 след.</div>
+            <div class="step-desc">Бухгалтер закрывает период. Рассчитывается стоимость хранения.</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">
+            <div class="step-num">3</div>
+            <div class="step-title">5–10 след.</div>
+            <div class="step-desc">Формируются АКТ + Счёт-фактура. Отправляются клиенту.</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">
+            <div class="step-num">4</div>
+            <div class="step-title">до 20</div>
+            <div class="step-desc">Подаётся НДС-декларация в налоговую.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Расчёт стоимости хранения</div>
+        <div class="card-text">
+          Для каждого контейнера:
+        </div>
+        <div class="formula" style="margin-top:8px;">
+          Стоимость = max(0, Дни_хранения − Бесплатные_дни) × Суточный_тариф
+        </div>
+        <div class="table-wrap" style="margin-top:12px;">
+          <table>
+            <tr><th>Параметр</th><th>20фт порожний</th><th>40фт порожний</th><th>20фт гружёный</th><th>40фт гружёный</th></tr>
+            <tr><td>Суточный тариф (USD)</td><td class="num">0.45</td><td class="num">0.63</td><td class="num">0.80</td><td class="num">1.10</td></tr>
+            <tr><td>Бесплатные дни</td><td class="num">0–5</td><td class="num">0–5</td><td class="num">0–3</td><td class="num">0–3</td></tr>
+          </table>
+        </div>
+        <div class="card-text" style="margin-top:8px; color:var(--text-muted); font-size:12px;">
+          * Тарифы примерные. Реальные берутся из настроек системы и могут отличаться для каждого клиента.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Статусы биллинга в системе</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+          <span class="tag tag-yellow">DRAFT — Черновик</span>
+          <span style="line-height:24px">→</span>
+          <span class="tag tag-blue">PENDING — На проверке</span>
+          <span style="line-height:24px">→</span>
+          <span class="tag tag-green">FINALIZED — Утверждён</span>
+          <span style="line-height:24px">→</span>
+          <span class="tag tag-purple">PAID — Оплачен</span>
+        </div>
+        <div class="highlight highlight-red" style="margin-top:12px;">
+          <strong>После FINALIZED документ нельзя менять!</strong><br>
+          Это требование бухгалтерии. Если найдена ошибка — создаётся корректировочный документ, а не правка исходного.
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: MTT Schet-Factura -->
+    <div class="page" id="page-mtt-sf">
+      <div class="page-title">Структура Счёт-фактуры МТТ</div>
+      <div class="page-subtitle">Разбор реального документа</div>
+
+      <div class="card">
+        <div class="card-title">Часть 1: АКТ приёмки-сдачи</div>
+        <div class="doc-preview">
+          <div class="doc-stamp">Часть 1 из 2</div>
+          <div class="doc-header">АКТ приёмки-сдачи выполненных работ</div>
+          <div style="font-size:11px; margin-bottom:8px;">от 31.07.2025 г.</div>
+          <div style="font-size:11px; line-height:1.6; margin-bottom:12px;">
+            Мы, нижеподписавшиеся, <strong>ООО "MULTIMODAL TRANS TERMINAL"</strong> в лице <strong>Талипов Х.Х.</strong>, действующее на основании Устава, и <strong>«InterRail Services AG»</strong>...
+          </div>
+          <table style="font-size:11px;">
+            <tr style="background:var(--surface-alt);">
+              <th>№</th><th>Наименование услуг</th><th>Стоимость</th><th>Ст. НДС</th><th>Сумма НДС</th><th>С НДС</th>
+            </tr>
+            <tr><td>1</td><td>Погрузка/выгрузка козловым краном</td><td class="num">1 964.29</td><td>12%</td><td class="num">235.71</td><td class="num">2 200.00</td></tr>
+            <tr><td>2</td><td>Хранение порожнего 20 фт.</td><td class="num">391.07</td><td>12%</td><td class="num">46.93</td><td class="num">438.00</td></tr>
+            <tr><td>3</td><td>Хранение порожнего 40 фт.</td><td class="num">575.13</td><td>12%</td><td class="num">69.02</td><td class="num">644.14</td></tr>
+            <tr style="font-weight:700; background:var(--surface-alt);">
+              <td colspan="2">Всего</td><td class="num">72 595.07</td><td></td><td class="num">8 711.41</td><td class="num num-blue">81 306.48</td>
+            </tr>
+          </table>
+          <div style="margin-top:12px; display:flex; justify-content:space-between;">
+            <div><strong>Исполнитель</strong><br><br>М.П.</div>
+            <div><strong>Заказчик</strong><br><br>М.П.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Часть 2: Счёт-фактура (реквизиты)</div>
+        <div class="doc-preview">
+          <div class="doc-stamp">Часть 2 из 2</div>
+          <div class="doc-header">Счёт-фактура № 54 от 31.07.2025 г.</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
+            к товаро-отгрузочным документам: Договор № 002E/23 от 05.01.2023
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; font-size:11px;">
+            <div>
+              <div style="font-weight:700; margin-bottom:4px; color:var(--accent);">Поставщик:</div>
+              <div>ООО "MULTIMODAL TRANS TERMINAL"</div>
+              <div>Адрес: Таш.обл., Зангиатинский р-н...</div>
+              <div>Телефон: 1503388</div>
+              <div>Р/с: 2020 8000 2002 7354 8001</div>
+              <div>Банк: АКБ "Xamkor Bank"</div>
+              <div>МФО: 00083</div>
+              <div>ИНН: 207202576</div>
+              <div>НДС код: 327040006645</div>
+            </div>
+            <div>
+              <div style="font-weight:700; margin-bottom:4px; color:var(--green);">Покупатель:</div>
+              <div>«InterRail Services AG»</div>
+              <div>Winkelriedstrasse 19, St. Gallen</div>
+              <div>Tel.: +41 71 227 15 15</div>
+              <div>IBAN (USD): CH85 0070 0130...</div>
+              <div>Bank: Zürcher Kantonalbank</div>
+              <div>SWIFT: ZKBKCHZZ80A</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Часть 2: Таблица позиций (двойные строки)</div>
+        <div class="highlight highlight-blue">
+          <strong>Ключевая особенность</strong>: каждая позиция занимает <strong>2 строки</strong> — первая в USD, вторая в UZS (пересчёт по курсу).
+        </div>
+        <div class="doc-preview" style="overflow-x:auto;">
+          <div style="text-align:right; font-size:10px; color:var(--text-muted); margin-bottom:8px;">
+            Курс 1 USD = 12 591.57 сум
+          </div>
+          <table style="font-size:10px; min-width:600px;">
+            <tr style="background:var(--surface-alt);">
+              <th>№</th><th>Наименование</th><th>Ед.</th><th>Кол.</th><th>Цена</th><th>Стоимость</th><th>Ст.НДС</th><th>Сумма НДС</th><th>Итого с НДС</th>
+            </tr>
+            <tr>
+              <td>1</td><td>Хранение порожнего 20 фт.</td><td>конт.</td>
+              <td class="num">876</td><td class="num">0.45</td><td class="num">391.07</td>
+              <td>12</td><td class="num">46.93</td><td class="num num-blue">438.00</td>
+            </tr>
+            <tr style="background:#f8f9fa;">
+              <td></td><td colspan="3" style="color:var(--text-muted);">↳ UZS (× 12 591.57)</td><td></td>
+              <td class="num">4 924 203</td><td></td><td class="num">590 904</td><td class="num num-blue">5 515 108</td>
+            </tr>
+            <tr>
+              <td>2</td><td>Хранение порожнего 40 фт.</td><td>конт.</td>
+              <td class="num">579</td><td class="num">0.63</td><td class="num">361.88</td>
+              <td>12</td><td class="num">43.43</td><td class="num num-blue">405.30</td>
+            </tr>
+            <tr style="background:#f8f9fa;">
+              <td></td><td colspan="3" style="color:var(--text-muted);">↳ UZS (× 12 591.57)</td><td></td>
+              <td class="num">4 556 574</td><td></td><td class="num">546 789</td><td class="num num-blue">5 103 363</td>
+            </tr>
+            <tr style="font-weight:700; background:var(--accent-light);">
+              <td colspan="5">Всего к оплате (USD)</td>
+              <td class="num">72 595.07</td><td></td><td class="num">8 711.41</td><td class="num num-blue">81 306.48</td>
+            </tr>
+            <tr style="font-weight:700; background:var(--accent-light);">
+              <td colspan="5">Всего к оплате (UZS)</td>
+              <td class="num">914 085 924</td><td></td><td class="num">109 690 311</td><td class="num num-blue">1 023 776 234</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Подписи</div>
+        <div class="doc-preview">
+          <div class="doc-row"><div class="doc-label">Руководитель:</div><div class="doc-value">Талипов Х.Х.</div></div>
+          <div class="doc-row"><div class="doc-label">Гл. бухгалтер:</div><div class="doc-value">Иристаева Н.Т.</div></div>
+          <div class="doc-row"><div class="doc-label">Товар отпустил:</div><div class="doc-value">________________</div></div>
+          <hr style="margin:8px 0; border-color:var(--border);">
+          <div style="font-size:10px; color:var(--text-muted); text-align:center;">(подпись покупателя или уполномоченного лица)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: Pitfalls -->
+    <div class="page" id="page-pitfalls">
+      <div class="page-title">Частые ошибки и нюансы</div>
+      <div class="page-subtitle">На что обращать внимание</div>
+
+      <div class="card">
+        <div class="card-title">Критические ошибки в Счёт-фактуре</div>
+        <ul class="checklist warn-list">
+          <li><strong>Неверный ИНН</strong> покупателя или поставщика — документ недействителен для вычета НДС</li>
+          <li><strong>Ошибка в НДС-коде</strong> (регистрационный код плательщика) — налоговая не примет</li>
+          <li><strong>Неправильный курс ЦБ</strong> — должен быть на дату операции, не на дату выставления</li>
+          <li><strong>Округление НДС</strong> — нужно округлять только в итоговой строке, не в каждой позиции</li>
+          <li><strong>Несовпадение сумм</strong> АКТ и Счёт-фактуры — документы должны быть идентичны по итогам</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Нюансы округления</div>
+        <div class="compare-grid">
+          <div class="compare-card bad">
+            <div class="compare-title">Неправильно</div>
+            <code>
+              Строка 1: 391.07 × 12/112 = 41.89 (округлено)<br>
+              Строка 2: 575.13 × 12/112 = 61.62 (округлено)<br>
+              НДС итого: 41.89 + 61.62 = 103.51<br>
+              <strong style="color:var(--red);">Ошибка в копейках из-за преждевременного округления!</strong>
+            </code>
+          </div>
+          <div class="compare-card good">
+            <div class="compare-title">Правильно</div>
+            <code>
+              Строка 1: 391.07 × 12/112 = 41.8932...<br>
+              Строка 2: 575.13 × 12/112 = 61.6211...<br>
+              НДС итого: round(41.8932 + 61.6211) = <strong>103.51</strong><br>
+              <strong style="color:var(--green);">Округляем только итоговую сумму</strong>
+            </code>
+          </div>
+        </div>
+
+        <div class="highlight highlight-red" style="margin-top:8px;">
+          <strong>В коде: ВСЕГДА используйте Decimal, никогда float!</strong><br>
+          float(0.1) + float(0.2) ≠ 0.3 → Decimal("0.1") + Decimal("0.2") = Decimal("0.3")
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Бесплатные дни хранения</div>
+        <div class="card-text">
+          Контейнеры могут иметь <strong>бесплатный период</strong> (grace period). Нюансы:
+        </div>
+        <ul class="checklist warn-list" style="margin-top:8px;">
+          <li><strong>Бесплатные дни — не скидка.</strong> Это отдельная строка с нулевой стоимостью, а не уменьшение суммы</li>
+          <li><strong>Дни считаются с момента выгрузки</strong>, не с момента регистрации</li>
+          <li><strong>Выходные не исключаются</strong> — считаются календарные дни</li>
+          <li><strong>Частичный месяц</strong>: если контейнер прибыл 25-го, считаем только фактические дни до конца месяца</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Нюансы при работе с иностранными клиентами</div>
+        <ul class="checklist" style="margin-top:8px;">
+          <li><strong>Договор в USD</strong> — все расчёты в валюте, но учёт в UZS</li>
+          <li><strong>Реквизиты на латинице</strong> — имя компании, адрес, IBAN пишутся без перевода</li>
+          <li><strong>SWIFT-код</strong> банка покупателя обязателен для валютных операций</li>
+          <li><strong>Курс ЦБ</strong> — берётся на последний рабочий день месяца с cbu.uz</li>
+          <li><strong>Сумма прописью</strong> — дублируется на двух языках (если требуется)</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- PAGE: Tax Reporting -->
+    <div class="page" id="page-reporting">
+      <div class="page-title">Налоговая отчётность</div>
+      <div class="page-subtitle">Какие отчёты и когда сдавать</div>
+
+      <div class="card">
+        <div class="card-title">Календарь отчётности МТТ</div>
+        <div class="table-wrap">
+          <table>
+            <tr><th>Отчёт</th><th>Период</th><th>Срок сдачи</th><th>Куда</th></tr>
+            <tr><td><strong>Декларация по НДС</strong></td><td>Ежемесячно</td><td>До 20-го числа</td><td>my.soliq.uz</td></tr>
+            <tr><td><strong>Реестр счёт-фактур</strong></td><td>Ежемесячно</td><td>Вместе с декларацией</td><td>my.soliq.uz</td></tr>
+            <tr><td><strong>Налог на прибыль</strong></td><td>Ежеквартально</td><td>До 25-го после квартала</td><td>my.soliq.uz</td></tr>
+            <tr><td><strong>Единый налоговый платёж</strong></td><td>Ежемесячно</td><td>До 25-го числа</td><td>Банк</td></tr>
+            <tr><td><strong>Финансовая отчётность</strong></td><td>Ежегодно</td><td>До 1 марта</td><td>Статистика + Налоговая</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Что входит в декларацию по НДС</div>
+        <div class="card-text">
+          Ежемесячная декларация содержит:
+        </div>
+        <div class="grid-2" style="margin-top:12px;">
+          <div class="highlight highlight-blue">
+            <strong>Исходящий НДС (продажи)</strong><br>
+            Сумма НДС из всех выставленных Счёт-фактур за месяц.<br>
+            <span class="num num-blue">Пример: 8 711.41 USD</span>
+          </div>
+          <div class="highlight highlight-orange">
+            <strong>Входящий НДС (покупки)</strong><br>
+            Сумма НДС из всех полученных Счёт-фактур от поставщиков.<br>
+            <span class="num num-red">Пример: 2 150.00 USD</span>
+          </div>
+        </div>
+        <div class="calc-result" style="margin-top:12px;">
+          <div class="calc-result-row">
+            <span class="label">Исходящий НДС</span>
+            <span class="value">8 711.41 USD</span>
+          </div>
+          <div class="calc-result-row">
+            <span class="label">− Входящий НДС</span>
+            <span class="value num-red">− 2 150.00 USD</span>
+          </div>
+          <div class="calc-result-row total">
+            <span class="label">= К уплате в бюджет</span>
+            <span class="value">6 561.41 USD</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Электронная система my.soliq.uz</div>
+        <div class="card-text">
+          Все налогоплательщики обязаны использовать электронный портал:
+        </div>
+        <ul class="checklist" style="margin-top:8px;">
+          <li>Регистрация/аннулирование счёт-фактур</li>
+          <li>Подача деклараций по всем налогам</li>
+          <li>Получение актов сверки с бюджетом</li>
+          <li>Электронная подпись (ЭЦП) через e-imzo</li>
+          <li>Автоматическая проверка ИНН контрагентов</li>
+        </ul>
+
+        <div class="highlight highlight-orange" style="margin-top:12px;">
+          <strong>Штрафы за нарушения</strong><br>
+          • Несвоевременная подача декларации: <strong>1% от суммы налога</strong> за каждый день просрочки<br>
+          • Невыставление счёт-фактуры: <strong>10%</strong> от суммы операции<br>
+          • Занижение налоговой базы: <strong>20%</strong> от суммы доначисления
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+// Navigation
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  document.getElementById('page-' + id).classList.add('active');
+  event.currentTarget.classList.add('active');
+
+  document.querySelector('.main').scrollTop = 0;
+}
+
+// Tabs
+function switchTab(tabEl, contentId) {
+  const parent = tabEl.closest('.card');
+  parent.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  parent.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  tabEl.classList.add('active');
+  document.getElementById('tab-' + contentId).classList.add('active');
+}
+
+// Calculator
+function fmt(n, decimals = 2) {
+  return new Intl.NumberFormat('ru-RU', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(n);
+}
+
+function recalculate() {
+  const amount = parseFloat(document.getElementById('calc-amount').value) || 0;
+  const type = document.getElementById('calc-type').value;
+  const rate = parseFloat(document.getElementById('calc-rate').value) || 12;
+  const fx = parseFloat(document.getElementById('calc-fx').value) || 12591.57;
+  const qty = parseInt(document.getElementById('calc-qty').value) || 1;
+
+  let baseUSD, vatUSD, totalUSD;
+
+  if (type === 'inclusive') {
+    totalUSD = amount;
+    vatUSD = amount * rate / (100 + rate);
+    baseUSD = totalUSD - vatUSD;
+  } else {
+    baseUSD = amount;
+    vatUSD = amount * rate / 100;
+    totalUSD = baseUSD + vatUSD;
+  }
+
+  const unitPrice = totalUSD / qty;
+  const baseUZS = baseUSD * fx;
+  const vatUZS = vatUSD * fx;
+  const totalUZS = totalUSD * fx;
+
+  const results = document.getElementById('calc-results');
+  results.innerHTML = `
+    <div style="font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;">Расчёт в USD</div>
+    <div class="calc-result-row">
+      <span class="label">Стоимость без НДС</span>
+      <span class="value">${fmt(baseUSD)} USD</span>
+    </div>
+    <div class="calc-result-row">
+      <span class="label">НДС ${rate}%</span>
+      <span class="value">${fmt(vatUSD)} USD</span>
+    </div>
+    <div class="calc-result-row total">
+      <span class="label">Итого с НДС</span>
+      <span class="value">${fmt(totalUSD)} USD</span>
+    </div>
+    <div class="calc-result-row" style="margin-top:8px;">
+      <span class="label">Цена за единицу (с НДС)</span>
+      <span class="value">${fmt(unitPrice, 6)} USD</span>
+    </div>
+
+    <hr style="margin:12px 0; border-color: rgba(37, 99, 235, 0.2);">
+
+    <div style="font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;">Пересчёт в UZS (курс: ${fmt(fx)})</div>
+    <div class="calc-result-row">
+      <span class="label">Стоимость без НДС</span>
+      <span class="value">${fmt(baseUZS, 0)} сум</span>
+    </div>
+    <div class="calc-result-row">
+      <span class="label">НДС ${rate}%</span>
+      <span class="value">${fmt(vatUZS, 0)} сум</span>
+    </div>
+    <div class="calc-result-row total">
+      <span class="label">Итого с НДС</span>
+      <span class="value">${fmt(totalUZS, 0)} сум</span>
+    </div>
+  `;
+
+  const formula = document.getElementById('calc-formula');
+  if (type === 'inclusive') {
+    formula.innerHTML = `
+      <strong>Формула (НДС в том числе):</strong><br>
+      НДС = ${fmt(amount)} × ${rate} ÷ ${100 + rate} = <span class="num num-blue">${fmt(vatUSD)}</span> USD<br>
+      Без НДС = ${fmt(amount)} − ${fmt(vatUSD)} = <span class="num">${fmt(baseUSD)}</span> USD<br>
+      В UZS = ${fmt(totalUSD)} × ${fmt(fx)} = <span class="num">${fmt(totalUZS, 0)}</span> сум
+    `;
+  } else {
+    formula.innerHTML = `
+      <strong>Формула (НДС сверху):</strong><br>
+      НДС = ${fmt(amount)} × ${rate} ÷ 100 = <span class="num num-blue">${fmt(vatUSD)}</span> USD<br>
+      С НДС = ${fmt(amount)} + ${fmt(vatUSD)} = <span class="num">${fmt(totalUSD)}</span> USD<br>
+      В UZS = ${fmt(totalUSD)} × ${fmt(fx)} = <span class="num">${fmt(totalUZS, 0)}</span> сум
+    `;
+  }
+}
+
+function setExample(amount, type, qty, unit) {
+  document.getElementById('calc-amount').value = amount;
+  document.getElementById('calc-type').value = type;
+  document.getElementById('calc-qty').value = qty;
+  document.getElementById('calc-unit').value = unit;
+  recalculate();
+}
+
+// Init calculator on load
+recalculate();
+</script>
+
+</body>
+</html>

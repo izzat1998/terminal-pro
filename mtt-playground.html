@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTT Architecture Playground</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   MTT Architecture Playground — Dark Theme CSS
+   ═══════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --border: #334155;
+  --accent: #3b82f6;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --pink: #ec4899;
+  --purple: #8b5cf6;
+  --cyan: #06b6d4;
+  --sidebar-w: 300px;
+  --radius: 8px;
+  --transition: 0.25s ease;
+}
+
+html, body {
+  height: 100%; width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  min-width: 1024px;
+}
+
+/* ── Layout ── */
+.app { display: flex; height: 100vh; }
+
+.sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.main-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ── Sidebar sections ── */
+.sidebar-header {
+  padding: 20px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-header h1 {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+}
+.sidebar-header .subtitle {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.sidebar-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-section h3 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+/* ── Preset buttons ── */
+.preset-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+  text-align: left;
+}
+.preset-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+.preset-btn.active {
+  background: rgba(59,130,246,0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.preset-btn .icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.preset-btn .count {
+  margin-left: auto;
+  font-size: 10px;
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 10px;
+  color: var(--text-dim);
+}
+
+/* ── Layer toggles ── */
+.layer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  transition: color var(--transition);
+  user-select: none;
+}
+.layer-toggle:hover { color: var(--text); }
+.layer-toggle .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.layer-toggle.disabled { opacity: 0.35; text-decoration: line-through; }
+
+/* ── Search ── */
+.search-box {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.search-box:focus { border-color: var(--accent); }
+.search-box::placeholder { color: var(--text-dim); }
+
+/* ── Detail panel ── */
+.detail-panel {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.detail-panel.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+  padding: 32px 16px;
+}
+
+.detail-card {
+  animation: fadeIn 0.2s ease;
+}
+.detail-card h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+.detail-card .detail-subtitle {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+  word-break: break-all;
+}
+.detail-card .detail-section {
+  margin-bottom: 12px;
+}
+.detail-card .detail-section h4 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.detail-card .detail-item {
+  font-size: 12px;
+  padding: 4px 0;
+  color: var(--text-muted);
+  border-bottom: 1px solid rgba(51,65,85,0.5);
+}
+.detail-card .detail-item:last-child { border-bottom: none; }
+.detail-card .detail-item code {
+  font-size: 11px;
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--cyan);
+}
+
+/* ── Method badges ── */
+.method-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-family: monospace;
+}
+.method-badge.get { background: rgba(16,185,129,0.2); color: #10b981; }
+.method-badge.post { background: rgba(59,130,246,0.2); color: #3b82f6; }
+.method-badge.patch { background: rgba(245,158,11,0.2); color: #f59e0b; }
+.method-badge.put { background: rgba(168,85,247,0.2); color: #a855f7; }
+.method-badge.delete { background: rgba(239,68,68,0.2); color: #ef4444; }
+
+/* ── SVG canvas ── */
+svg.canvas {
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+svg.canvas:active { cursor: grabbing; }
+
+/* ── SVG node styles ── */
+.node-group { cursor: pointer; }
+.node-group rect.node-bg {
+  transition: filter 0.2s ease, stroke-width 0.2s ease;
+}
+.node-group:hover rect.node-bg {
+  filter: brightness(1.3) drop-shadow(0 0 12px currentColor);
+  stroke-width: 2.5;
+}
+.node-group.selected rect.node-bg {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 16px currentColor);
+}
+.node-group.dimmed { opacity: 0.2; transition: opacity 0.3s ease; }
+.node-group text { pointer-events: none; }
+
+/* ── Connection animations ── */
+.connection-path {
+  fill: none;
+  stroke-width: 1.5;
+  opacity: 0.4;
+  transition: opacity 0.3s ease;
+}
+.connection-path.highlighted {
+  opacity: 1;
+  stroke-width: 2.5;
+}
+.connection-path.dimmed { opacity: 0.08; }
+
+.flow-arrow {
+  fill: none;
+  stroke-width: 2;
+  stroke-dasharray: 8 4;
+  animation: dashFlow 1s linear infinite;
+}
+@keyframes dashFlow {
+  to { stroke-dashoffset: -12; }
+}
+
+/* ── Zoom controls ── */
+.zoom-controls {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+}
+.zoom-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+.zoom-btn:hover { background: var(--bg-tertiary); border-color: var(--accent); }
+.zoom-level {
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 2px 0;
+}
+
+/* ── Legend ── */
+.legend {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(30,41,59,0.9);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  z-index: 5;
+  backdrop-filter: blur(8px);
+}
+.legend h4 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* ── View title overlay ── */
+.view-title {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 5;
+}
+.view-title h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+.view-title p {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* ── Keyboard hint ── */
+.kbd-hint {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  font-size: 10px;
+  color: var(--text-dim);
+  z-index: 5;
+}
+.kbd-hint kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 10px;
+  margin: 0 2px;
+}
+
+/* ── API explorer endpoint list ── */
+.api-group-card {
+  cursor: pointer;
+}
+.api-group-card rect {
+  transition: filter 0.2s ease;
+}
+.api-group-card:hover rect {
+  filter: brightness(1.2) drop-shadow(0 0 12px currentColor);
+}
+
+/* ── Animations ── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.fade-enter { animation: fadeIn 0.3s ease; }
+
+/* ── Tooltip ── */
+.tooltip {
+  position: fixed;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--text);
+  pointer-events: none;
+  z-index: 100;
+  max-width: 300px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  display: none;
+}
+.tooltip code {
+  font-size: 10px;
+  color: var(--cyan);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ═══ SIDEBAR ═══ -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>MTT Playground</h1>
+      <div class="subtitle">Container Terminal Architecture Explorer</div>
+    </div>
+
+    <!-- View Presets -->
+    <div class="sidebar-section">
+      <h3>Views</h3>
+      <button class="preset-btn active" data-view="architecture" onclick="switchView('architecture')">
+        <span class="icon">&#9635;</span> Architecture
+        <span class="count">25 nodes</span>
+      </button>
+      <button class="preset-btn" data-view="container" onclick="switchView('container')">
+        <span class="icon">&#9654;</span> Container Lifecycle
+        <span class="count">8 steps</span>
+      </button>
+      <button class="preset-btn" data-view="billing" onclick="switchView('billing')">
+        <span class="icon">&#9638;</span> Billing Cycle
+        <span class="count">12 steps</span>
+      </button>
+      <button class="preset-btn" data-view="api" onclick="switchView('api')">
+        <span class="icon">&#9672;</span> API Explorer
+        <span class="count">65+ endpoints</span>
+      </button>
+    </div>
+
+    <!-- Layer Toggles (architecture view only) -->
+    <div class="sidebar-section" id="layers-section">
+      <h3>Layers</h3>
+      <div id="layer-toggles"></div>
+    </div>
+
+    <!-- Search (api view) -->
+    <div class="sidebar-section" id="search-section" style="display:none">
+      <h3>Search Endpoints</h3>
+      <input class="search-box" id="search-input" type="text" placeholder="Search endpoints, methods, paths..." oninput="filterEndpoints(this.value)">
+    </div>
+
+    <!-- Detail Panel -->
+    <div class="detail-panel empty" id="detail-panel">
+      <div>Click a node to see details<br><br>
+        <span style="font-size:11px">Use <kbd>1</kbd>–<kbd>4</kbd> to switch views<br>
+        <kbd>Esc</kbd> to deselect<br>
+        <kbd>+</kbd> / <kbd>-</kbd> to zoom</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══ MAIN CANVAS ═══ -->
+  <div class="main-canvas" id="canvas-container">
+    <div class="view-title" id="view-title">
+      <h2>System Architecture</h2>
+      <p>5-layer view of the MTT container terminal system</p>
+    </div>
+
+    <div class="kbd-hint">
+      <kbd>1</kbd>–<kbd>4</kbd> views &middot; <kbd>+</kbd><kbd>-</kbd> zoom &middot; <kbd>Esc</kbd> deselect
+    </div>
+
+    <svg class="canvas" id="svg-canvas">
+      <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+        </marker>
+        <marker id="arrowhead-blue" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#3b82f6"/>
+        </marker>
+        <marker id="arrowhead-green" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#10b981"/>
+        </marker>
+        <marker id="arrowhead-amber" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b"/>
+        </marker>
+        <marker id="arrowhead-pink" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#ec4899"/>
+        </marker>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+    </svg>
+
+    <!-- Legend -->
+    <div class="legend" id="legend"></div>
+
+    <!-- Zoom Controls -->
+    <div class="zoom-controls">
+      <button class="zoom-btn" onclick="setZoom(0.15)">+</button>
+      <div class="zoom-level" id="zoom-level">100%</div>
+      <button class="zoom-btn" onclick="setZoom(-0.15)">−</button>
+      <button class="zoom-btn" onclick="resetZoom()" style="font-size:12px;margin-top:4px">⟲</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════════════ */
+const state = {
+  activeView: 'architecture',
+  layers: { frontend: true, api: true, services: true, models: true, db: true },
+  selectedNode: null,
+  searchQuery: '',
+  zoom: 1.0,
+  pan: { x: 0, y: 0 },
+  expandedApiGroup: null,
+  isDragging: false,
+  dragStart: { x: 0, y: 0 },
+  panStart: { x: 0, y: 0 },
+};
+
+/* ═══════════════════════════════════════════════════════════
+   DATA — Architecture Nodes
+   ═══════════════════════════════════════════════════════════ */
+const LAYER_COLORS = {
+  frontend: '#3b82f6',
+  api:      '#f59e0b',
+  services: '#10b981',
+  models:   '#ec4899',
+  db:       '#64748b',
+};
+
+const LAYER_LABELS = {
+  frontend: 'Frontend (Vue 3)',
+  api:      'API Layer (DRF)',
+  services: 'Service Layer',
+  models:   'Models (ORM)',
+  db:       'Database',
+};
+
+const architectureNodes = [
+  // Frontend layer (y=0)
+  { id: 'fe-dashboard', layer: 'frontend', col: 0, label: 'Dashboard', subtitle: 'Admin overview', file: 'frontend/src/views/Dashboard.vue', desc: 'Main admin dashboard with container stats, recent entries, and quick actions.' },
+  { id: 'fe-gate',      layer: 'frontend', col: 1, label: 'Gate & Vehicles', subtitle: 'Vehicle tracking', file: 'frontend/src/views/Vehicles.vue', desc: 'Gate operations view for vehicle entry/exit with plate recognition and pre-order matching.' },
+  { id: 'fe-yard',      layer: 'frontend', col: 2, label: 'Yard 3D', subtitle: '3D visualization', file: 'frontend/src/views/UnifiedYardView.vue', desc: 'Interactive 3D yard view showing container positions, zones (A-E), with drag-and-drop placement.' },
+  { id: 'fe-billing',   layer: 'frontend', col: 3, label: 'Billing', subtitle: 'Company billing', file: 'frontend/src/views/company/CompanyBilling.vue', desc: 'Company billing view with monthly statements, on-demand invoices, Excel/PDF export.' },
+  { id: 'fe-customer',  layer: 'frontend', col: 4, label: 'Customer Portal', subtitle: 'Customer self-service', file: 'frontend/src/views/customer/', desc: 'Customer views: dashboard, containers, pre-orders, billing statements.' },
+
+  // API layer (y=1)
+  { id: 'api-auth',     layer: 'api', col: 0, label: '/api/auth/*', subtitle: '10+ endpoints', file: 'apps/accounts/urls.py', desc: 'Authentication, profile, manager/customer/company CRUD. JWT token-based auth.' },
+  { id: 'api-terminal', layer: 'api', col: 1, label: '/api/terminal/*', subtitle: '9 ViewSets', file: 'apps/terminal_operations/urls.py', desc: 'Container entries, crane ops, pre-orders, placement, work orders, yard slots, terminal vehicles.' },
+  { id: 'api-vehicles', layer: 'api', col: 2, label: '/api/vehicles/*', subtitle: '5 endpoints', file: 'apps/vehicles/urls.py', desc: 'Vehicle entries, destinations, plate recognition, choices, statistics.' },
+  { id: 'api-billing',  layer: 'api', col: 3, label: '/api/billing/*', subtitle: '6+ endpoints', file: 'apps/billing/urls.py', desc: 'Tariffs, additional charges, expense types, storage cost calculation, bulk draft generation.' },
+  { id: 'api-customer', layer: 'api', col: 4, label: '/api/customer/*', subtitle: '15+ endpoints', file: 'apps/customer_portal/urls.py', desc: 'Customer-scoped: profile, containers, pre-orders, billing statements, storage costs, exports.' },
+
+  // Services layer (y=2)
+  { id: 'svc-accounts', layer: 'services', col: 0, label: 'Manager / Customer\nService', subtitle: 'User management', file: 'apps/accounts/services/', desc: 'ManagerService: create/update managers, Telegram linking.\nCustomerService: create/update customers, access control.\nCompanyService: company CRUD with slug generation.' },
+  { id: 'svc-terminal', layer: 'services', col: 1, label: 'ContainerEntry\nService', subtitle: 'Core operations', file: 'apps/terminal_operations/services/container_entry_service.py', desc: 'Entry creation with 3-stage workflow, crane operations, exit recording. Emits ContainerEvents for audit trail.' },
+  { id: 'svc-placement',layer: 'services', col: 2, label: 'Placement\nService', subtitle: 'Yard management', file: 'apps/terminal_operations/services/placement_service.py', desc: 'Auto-assign positions in zones A-E. Row segregation (laden/empty), weight distribution, size compatibility checks.' },
+  { id: 'svc-billing',  layer: 'services', col: 3, label: 'StorageCost\nService', subtitle: 'Cost calculation', file: 'apps/billing/services/storage_cost_service.py', desc: 'Tariff-period-aware cost calculation. Free days, split billing (entry_month vs exit_month), daily rates in USD+UZS.' },
+  { id: 'svc-statement', layer: 'services', col: 4, label: 'Statement\nService', subtitle: 'Invoice generation', file: 'apps/billing/services/statement_service.py', desc: 'Monthly statement generation, on-demand invoices, finalization with INV-YYYY-NNNN numbering, Excel/PDF export.' },
+
+  // Models layer (y=3)
+  { id: 'mdl-users',    layer: 'models', col: 0, label: 'CustomUser\nCompany', subtitle: 'Auth models', file: 'apps/accounts/models.py', desc: 'CustomUser: admin/manager/customer types, JWT auth.\nCompany: slug-based, billing_method, Telegram group integration.\nManagerProfile / CustomerProfile: OneToOne extensions.' },
+  { id: 'mdl-entries',  layer: 'models', col: 1, label: 'ContainerEntry\nPreOrder', subtitle: 'Core models', file: 'apps/terminal_operations/models.py', desc: 'ContainerEntry: entry/exit times, status (LADEN/EMPTY), transport info.\nPreOrder: PENDING→MATCHED→COMPLETED flow.\nContainerPosition: zone/row/bay/tier/sub_slot.\nWorkOrder: PLACEMENT/RETRIEVAL operations.' },
+  { id: 'mdl-vehicles', layer: 'models', col: 2, label: 'VehicleEntry\nDestination', subtitle: 'Gate models', file: 'apps/vehicles/models.py', desc: 'VehicleEntry: WAITING→ON_TERMINAL→EXITED status flow.\nDestination: zones with codes.\nVehicle types: LIGHT/CARGO with different validation rules.' },
+  { id: 'mdl-tariffs',  layer: 'models', col: 3, label: 'Tariff\nTariffRate', subtitle: 'Rate models', file: 'apps/billing/models.py', desc: 'Tariff: company-specific or general, date-range effective.\nTariffRate: per container_size (20ft/40ft) × status (laden/empty).\nExpenseType: default rates for additional charges.' },
+  { id: 'mdl-statements', layer: 'models', col: 4, label: 'MonthlyStatement\nOnDemandInvoice', subtitle: 'Billing docs', file: 'apps/billing/models.py', desc: 'MonthlyStatement: draft→finalized→paid flow, INV-YYYY-NNNN.\nOnDemandInvoice: exited containers only, OD-YYYY-NNNN.\nStatementLineItem / OnDemandInvoiceItem: per-container breakdown.' },
+
+  // Database layer (y=4)
+  { id: 'db-main', layer: 'db', col: 2, label: 'PostgreSQL (prod) / SQLite (dev)', subtitle: 'Data storage', file: 'backend/terminal_app/settings.py', desc: 'PostgreSQL in production via DATABASE_URL.\nSQLite for local development.\nRedis for Telegram bot FSM state.' },
+];
+
+const architectureConnections = [
+  // Frontend → API
+  { from: 'fe-dashboard', to: 'api-auth' },
+  { from: 'fe-dashboard', to: 'api-terminal' },
+  { from: 'fe-gate',      to: 'api-vehicles' },
+  { from: 'fe-gate',      to: 'api-terminal' },
+  { from: 'fe-yard',      to: 'api-terminal' },
+  { from: 'fe-billing',   to: 'api-billing' },
+  { from: 'fe-customer',  to: 'api-customer' },
+  // API → Services
+  { from: 'api-auth',     to: 'svc-accounts' },
+  { from: 'api-terminal', to: 'svc-terminal' },
+  { from: 'api-terminal', to: 'svc-placement' },
+  { from: 'api-vehicles', to: 'svc-placement' },
+  { from: 'api-billing',  to: 'svc-billing' },
+  { from: 'api-billing',  to: 'svc-statement' },
+  { from: 'api-customer', to: 'svc-billing' },
+  { from: 'api-customer', to: 'svc-statement' },
+  // Services → Models
+  { from: 'svc-accounts',  to: 'mdl-users' },
+  { from: 'svc-terminal',  to: 'mdl-entries' },
+  { from: 'svc-placement', to: 'mdl-entries' },
+  { from: 'svc-placement', to: 'mdl-vehicles' },
+  { from: 'svc-billing',   to: 'mdl-tariffs' },
+  { from: 'svc-billing',   to: 'mdl-entries' },
+  { from: 'svc-statement', to: 'mdl-statements' },
+  { from: 'svc-statement', to: 'mdl-tariffs' },
+  // Models → DB
+  { from: 'mdl-users',      to: 'db-main' },
+  { from: 'mdl-entries',    to: 'db-main' },
+  { from: 'mdl-vehicles',   to: 'db-main' },
+  { from: 'mdl-tariffs',    to: 'db-main' },
+  { from: 'mdl-statements', to: 'db-main' },
+  // Cross-layer
+  { from: 'svc-terminal',  to: 'mdl-vehicles', label: 'gate matching' },
+  { from: 'svc-statement', to: 'mdl-entries', label: 'billing lookup' },
+];
+
+/* ═══════════════════════════════════════════════════════════
+   DATA — Container Lifecycle Flow
+   ═══════════════════════════════════════════════════════════ */
+const containerFlow = [
+  {
+    id: 'cf-gate', label: 'Gate Entry', desc: 'Vehicle arrives at gate. License plate scanned (PlateRecognizer API). Pre-order auto-matching via GateMatchingService.',
+    endpoints: [{ method: 'POST', path: '/api/terminal/entries/' }, { method: 'POST', path: '/api/vehicles/entries/' }],
+    services: ['GateMatchingService.check_preorder_match()', 'VehicleEntryService.create_entry()'],
+    models: ['VehicleEntry', 'PreOrder'],
+    color: '#3b82f6',
+  },
+  {
+    id: 'cf-created', label: 'Container Created', desc: 'Container record validated (ISO type, status LADEN/EMPTY). ContainerEntry created with entry_time, transport info.',
+    endpoints: [{ method: 'POST', path: '/api/terminal/entries/' }],
+    services: ['ContainerEntryService.create_entry()'],
+    models: ['Container', 'ContainerEntry', 'ContainerEvent'],
+    color: '#8b5cf6',
+  },
+  {
+    id: 'cf-position', label: 'Position Assigned', desc: 'Auto-assignment to zone A-E, row/bay/tier/sub_slot. Row segregation (laden/empty), weight distribution, size checks.',
+    endpoints: [{ method: 'POST', path: '/api/terminal/placement/' }],
+    services: ['PlacementService.auto_assign_position()'],
+    models: ['ContainerPosition'],
+    color: '#06b6d4',
+  },
+  {
+    id: 'cf-workorder', label: 'Work Order', desc: 'PLACEMENT or RETRIEVAL work order created. Priority levels: LOW/MEDIUM/HIGH/URGENT. Assigned to terminal vehicle.',
+    endpoints: [{ method: 'POST', path: '/api/terminal/work-orders/' }],
+    services: ['WorkOrderService.create_work_order()'],
+    models: ['WorkOrder', 'TerminalVehicle'],
+    color: '#f59e0b',
+  },
+  {
+    id: 'cf-crane', label: 'Crane Operation', desc: 'Crane lifts container into place. Operation date recorded. Multiple crane operations per entry possible.',
+    endpoints: [{ method: 'POST', path: '/api/terminal/crane-operations/' }],
+    services: ['CraneOperationService.create_operation()', 'ContainerEntryService.add_crane_operation()'],
+    models: ['CraneOperation'],
+    color: '#10b981',
+  },
+  {
+    id: 'cf-onterminal', label: 'On Terminal', desc: 'Container is active on terminal. ContainerEvent logged for each lifecycle change. Telegram notifications sent to company groups.',
+    endpoints: [{ method: 'GET', path: '/api/terminal/entries/' }],
+    services: ['ContainerEventService.create_event()', 'TelegramNotificationService'],
+    models: ['ContainerEntry (active)', 'ContainerEvent'],
+    color: '#10b981',
+  },
+  {
+    id: 'cf-billing', label: 'Billing Accrues', desc: 'Storage cost calculated daily. Free days applied first, then tariff rates per container_size × status. Split billing or exit-month billing.',
+    endpoints: [{ method: 'GET', path: '/api/billing/container-entries/{id}/storage-cost/' }],
+    services: ['StorageCostService.calculate_cost()'],
+    models: ['Tariff', 'TariffRate'],
+    color: '#f59e0b',
+  },
+  {
+    id: 'cf-exit', label: 'Exit Recorded', desc: 'Exit date set, exit transport details recorded. Position freed. EXIT_RECORDED event logged. Billing finalized.',
+    endpoints: [{ method: 'PATCH', path: '/api/terminal/entries/{id}/' }],
+    services: ['ContainerEntryService.update_entry()', 'PlacementService.remove_position()'],
+    models: ['ContainerEntry', 'ContainerPosition (freed)'],
+    color: '#ef4444',
+  },
+];
+
+/* ═══════════════════════════════════════════════════════════
+   DATA — Billing Cycle Flow
+   ═══════════════════════════════════════════════════════════ */
+const billingFlow = [
+  { id: 'bf-tariff', label: 'Tariff Setup', desc: 'Tariff with effective date range, company-specific or general. TariffRate per 20ft/40ft × laden/empty. Daily rates in USD + UZS.', services: ['StorageCostService.get_active_tariff()'], models: ['Tariff', 'TariffRate'], color: '#8b5cf6', x: 400, y: 40 },
+  { id: 'bf-stored', label: 'Container Stored', desc: 'Days accumulate from entry_time. Free days apply first (per TariffRate.free_days). Clock stops at exit_date.', services: [], models: ['ContainerEntry'], color: '#3b82f6', x: 400, y: 130 },
+  { id: 'bf-cost', label: 'Cost Calculated', desc: 'Period splitting across tariff boundaries. Applies correct rate for each period. Handles mid-month tariff changes.', services: ['StorageCostService.calculate_cost()'], models: ['Tariff', 'TariffRate'], color: '#10b981', x: 400, y: 220 },
+  { id: 'bf-charges', label: 'Additional Charges', desc: 'Manual service charges added per container. ExpenseType provides default rates. Linked to container_entry.', services: [], models: ['AdditionalCharge', 'ExpenseType'], color: '#f59e0b', x: 400, y: 310 },
+  { id: 'bf-fork', label: 'Invoice Path', desc: 'Two billing paths diverge based on company need. Monthly for ongoing, on-demand for immediate billing of exited containers.', services: [], models: [], color: '#64748b', x: 400, y: 400 },
+  // Path A — Monthly
+  { id: 'bf-monthly-gen', label: 'Monthly Statement\nGenerated', desc: 'get_or_generate_statement() creates draft with all containers active in that month. Split/exit billing methods.', services: ['MonthlyStatementService.get_or_generate_statement()'], models: ['MonthlyStatement', 'StatementLineItem', 'StatementServiceItem'], color: '#3b82f6', x: 180, y: 510, path: 'A' },
+  { id: 'bf-monthly-final', label: 'Finalized', desc: 'Assigns INV-YYYY-NNNN invoice number. Locks data. Race condition prevention with retry logic.', services: ['MonthlyStatementService.finalize_statement()'], models: ['MonthlyStatement'], color: '#3b82f6', x: 180, y: 600, path: 'A' },
+  { id: 'bf-monthly-paid', label: 'Paid', desc: 'Toggle between FINALIZED and PAID status. Audit trail via paid_marked_by user and paid_at timestamp.', services: ['MonthlyStatementService.mark_paid()'], models: ['MonthlyStatement'], color: '#3b82f6', x: 180, y: 690, path: 'A' },
+  // Path B — On-Demand
+  { id: 'bf-od-create', label: 'On-Demand Invoice\nCreated', desc: 'Create for exited containers only. Validates containers not already invoiced. Multiple containers per invoice.', services: ['OnDemandInvoiceService.create_invoice()'], models: ['OnDemandInvoice', 'OnDemandInvoiceItem', 'OnDemandInvoiceServiceItem'], color: '#f59e0b', x: 620, y: 510, path: 'B' },
+  { id: 'bf-od-final', label: 'Finalized', desc: 'Assigns OD-YYYY-NNNN invoice number. Retry logic for concurrent access prevention.', services: ['OnDemandInvoiceService.finalize_invoice()'], models: ['OnDemandInvoice'], color: '#f59e0b', x: 620, y: 600, path: 'B' },
+  { id: 'bf-od-paid', label: 'Paid', desc: 'Toggle between FINALIZED and PAID. Can also be cancelled if not yet paid.', services: ['OnDemandInvoiceService.mark_paid()'], models: ['OnDemandInvoice'], color: '#f59e0b', x: 620, y: 690, path: 'B' },
+  // Convergence
+  { id: 'bf-exclusion', label: 'Exclusion Logic', desc: 'On-demand invoiced containers are EXCLUDED from monthly statements. Prevents double-billing. Checked during statement generation.', services: ['MonthlyStatementService._get_containers_for_split_billing()'], models: [], color: '#ef4444', x: 400, y: 770, path: 'both' },
+  { id: 'bf-export', label: 'Export', desc: 'StatementExportService generates Excel and PDF for both monthly and on-demand. Uses openpyxl for Excel, WeasyPrint/HTML for PDF.', services: ['StatementExportService.export_to_excel()', 'StatementExportService.export_to_pdf()'], models: [], color: '#06b6d4', x: 400, y: 850, path: 'both' },
+];
+
+/* ═══════════════════════════════════════════════════════════
+   DATA — API Explorer
+   ═══════════════════════════════════════════════════════════ */
+const apiGroups = [
+  { id: 'auth', label: '/api/auth', color: '#8b5cf6', endpoints: [
+    { method: 'POST', path: '/api/auth/login/', purpose: 'User login (admin/manager/customer)', service: 'LoginView', auth: 'None' },
+    { method: 'POST', path: '/api/auth/logout/', purpose: 'Logout and invalidate token', service: 'LogoutView', auth: 'JWT' },
+    { method: 'GET', path: '/api/auth/profile/', purpose: 'Current user profile', service: 'ProfileView', auth: 'JWT' },
+    { method: 'GET', path: '/api/auth/manager/profile/', purpose: 'Manager-specific profile', service: 'ManagerProfileView', auth: 'JWT' },
+    { method: 'POST', path: '/api/auth/register/', purpose: 'Register new user', service: 'RegisterView', auth: 'None' },
+    { method: 'POST', path: '/api/auth/token/refresh/', purpose: 'Refresh JWT access token', service: 'TokenRefreshView', auth: 'Refresh token' },
+    { method: 'GET', path: '/api/auth/managers/', purpose: 'List all managers', service: 'ManagerViewSet', auth: 'JWT (admin)' },
+    { method: 'POST', path: '/api/auth/managers/', purpose: 'Create new manager', service: 'ManagerViewSet', auth: 'JWT (admin)' },
+    { method: 'PATCH', path: '/api/auth/managers/{id}/', purpose: 'Update manager', service: 'ManagerViewSet', auth: 'JWT (admin)' },
+    { method: 'DELETE', path: '/api/auth/managers/{id}/', purpose: 'Delete manager', service: 'ManagerViewSet', auth: 'JWT (admin)' },
+    { method: 'GET', path: '/api/auth/customers/', purpose: 'List all customers', service: 'CustomerViewSet', auth: 'JWT (admin)' },
+    { method: 'POST', path: '/api/auth/customers/', purpose: 'Create new customer', service: 'CustomerViewSet', auth: 'JWT (admin)' },
+    { method: 'PATCH', path: '/api/auth/customers/{id}/', purpose: 'Update customer', service: 'CustomerViewSet', auth: 'JWT (admin)' },
+    { method: 'GET', path: '/api/auth/companies/', purpose: 'List all companies', service: 'CompanyViewSet', auth: 'JWT (admin)' },
+    { method: 'POST', path: '/api/auth/companies/', purpose: 'Create new company', service: 'CompanyViewSet', auth: 'JWT (admin)' },
+    { method: 'PATCH', path: '/api/auth/companies/{id}/', purpose: 'Update company', service: 'CompanyViewSet', auth: 'JWT (admin)' },
+    { method: 'GET', path: '/api/auth/managers/gate-access/', purpose: 'Check gate access for manager', service: 'GateAccessCheckView', auth: 'JWT' },
+  ]},
+  { id: 'terminal', label: '/api/terminal', color: '#3b82f6', endpoints: [
+    { method: 'GET', path: '/api/terminal/entries/', purpose: 'List container entries', service: 'ContainerEntryViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/terminal/entries/', purpose: 'Create container entry', service: 'ContainerEntryViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/terminal/entries/{id}/', purpose: 'Get entry details', service: 'ContainerEntryViewSet', auth: 'JWT' },
+    { method: 'PATCH', path: '/api/terminal/entries/{id}/', purpose: 'Update entry (exit, status)', service: 'ContainerEntryViewSet', auth: 'JWT' },
+    { method: 'DELETE', path: '/api/terminal/entries/{id}/', purpose: 'Delete entry', service: 'ContainerEntryViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/terminal/crane-operations/', purpose: 'List crane operations', service: 'CraneOperationViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/terminal/crane-operations/', purpose: 'Create crane operation', service: 'CraneOperationViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/terminal/preorders/', purpose: 'List pre-orders', service: 'PreOrderViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/terminal/preorders/', purpose: 'Create pre-order', service: 'PreOrderViewSet', auth: 'JWT' },
+    { method: 'PATCH', path: '/api/terminal/preorders/{id}/', purpose: 'Update pre-order', service: 'PreOrderViewSet', auth: 'JWT' },
+    { method: 'DELETE', path: '/api/terminal/preorders/{id}/', purpose: 'Cancel pre-order', service: 'PreOrderViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/terminal/placement/', purpose: 'Get yard layout with positions', service: 'PlacementViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/terminal/placement/', purpose: 'Assign container position', service: 'PlacementViewSet', auth: 'JWT' },
+    { method: 'DELETE', path: '/api/terminal/placement/{id}/', purpose: 'Remove container position', service: 'PlacementViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/terminal/work-orders/', purpose: 'List work orders', service: 'WorkOrderViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/terminal/work-orders/', purpose: 'Create work order', service: 'WorkOrderViewSet', auth: 'JWT' },
+    { method: 'PATCH', path: '/api/terminal/work-orders/{id}/', purpose: 'Complete/update work order', service: 'WorkOrderViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/terminal/yard/', purpose: 'Get yard slot layout', service: 'YardSlotViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/terminal/owners/', purpose: 'List container owners', service: 'ContainerOwnerViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/terminal/owners/', purpose: 'Create container owner', service: 'ContainerOwnerViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/terminal/terminal-vehicles/', purpose: 'List terminal vehicles', service: 'TerminalVehicleViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/terminal/terminal-vehicles/', purpose: 'Register terminal vehicle', service: 'TerminalVehicleViewSet', auth: 'JWT' },
+  ]},
+  { id: 'vehicles', label: '/api/vehicles', color: '#10b981', endpoints: [
+    { method: 'GET', path: '/api/vehicles/entries/', purpose: 'List vehicle entries', service: 'VehicleEntryViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/vehicles/entries/', purpose: 'Create vehicle entry (gate in)', service: 'VehicleEntryViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/vehicles/entries/{id}/', purpose: 'Get vehicle entry details', service: 'VehicleEntryViewSet', auth: 'JWT' },
+    { method: 'PATCH', path: '/api/vehicles/entries/{id}/', purpose: 'Update vehicle entry (exit)', service: 'VehicleEntryViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/vehicles/destinations/', purpose: 'List destinations/zones', service: 'DestinationViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/vehicles/destinations/', purpose: 'Create destination', service: 'DestinationViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/vehicles/plate-recognize/', purpose: 'Recognize license plate from photo', service: 'PlateRecognizerAPIView', auth: 'JWT' },
+    { method: 'GET', path: '/api/vehicles/choices/', purpose: 'Get vehicle type/status choices', service: 'VehicleChoicesAPIView', auth: 'JWT' },
+    { method: 'GET', path: '/api/vehicles/statistics/', purpose: 'Vehicle statistics (on-terminal, dwell)', service: 'VehicleStatisticsAPIView', auth: 'JWT' },
+  ]},
+  { id: 'billing', label: '/api/billing', color: '#f59e0b', endpoints: [
+    { method: 'GET', path: '/api/billing/tariffs/', purpose: 'List tariffs', service: 'TariffViewSet', auth: 'JWT (admin)' },
+    { method: 'POST', path: '/api/billing/tariffs/', purpose: 'Create tariff', service: 'TariffViewSet', auth: 'JWT (admin)' },
+    { method: 'PATCH', path: '/api/billing/tariffs/{id}/', purpose: 'Update tariff', service: 'TariffViewSet', auth: 'JWT (admin)' },
+    { method: 'DELETE', path: '/api/billing/tariffs/{id}/', purpose: 'Delete tariff', service: 'TariffViewSet', auth: 'JWT (admin)' },
+    { method: 'GET', path: '/api/billing/additional-charges/', purpose: 'List additional charges', service: 'AdditionalChargeViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/billing/additional-charges/', purpose: 'Create additional charge', service: 'AdditionalChargeViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/billing/expense-types/', purpose: 'List expense types', service: 'ExpenseTypeViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/billing/container-entries/{id}/storage-cost/', purpose: 'Calculate storage cost for container', service: 'StorageCostView', auth: 'JWT' },
+    { method: 'POST', path: '/api/billing/storage-costs/calculate/', purpose: 'Bulk storage cost calculation', service: 'BulkStorageCostView', auth: 'JWT' },
+    { method: 'POST', path: '/api/billing/generate-all-drafts/', purpose: 'Generate draft statements for all companies', service: 'BulkGenerateDraftsView', auth: 'JWT (admin)' },
+  ]},
+  { id: 'files', label: '/api/files', color: '#ec4899', endpoints: [
+    { method: 'GET', path: '/api/files/files/', purpose: 'List uploaded files', service: 'FileViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/files/files/', purpose: 'Upload file', service: 'FileViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/files/files/{id}/', purpose: 'Get file details/download', service: 'FileViewSet', auth: 'JWT' },
+    { method: 'DELETE', path: '/api/files/files/{id}/', purpose: 'Delete file', service: 'FileViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/files/categories/', purpose: 'List file categories', service: 'FileCategoryViewSet', auth: 'JWT' },
+    { method: 'GET', path: '/api/files/attachments/', purpose: 'List file attachments', service: 'FileAttachmentViewSet', auth: 'JWT' },
+    { method: 'POST', path: '/api/files/attachments/', purpose: 'Create file attachment', service: 'FileAttachmentViewSet', auth: 'JWT' },
+  ]},
+  { id: 'customer', label: '/api/customer', color: '#06b6d4', endpoints: [
+    { method: 'GET', path: '/api/customer/profile/', purpose: 'Get customer profile', service: 'CustomerProfileViewSet', auth: 'JWT (customer)' },
+    { method: 'PATCH', path: '/api/customer/profile/update_profile/', purpose: 'Update customer profile', service: 'CustomerProfileViewSet', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/containers/', purpose: 'List customer containers', service: 'CustomerContainerEntryViewSet', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/containers/{id}/', purpose: 'Get container details', service: 'CustomerContainerEntryViewSet', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/preorders/', purpose: 'List customer pre-orders', service: 'CustomerPreOrderViewSet', auth: 'JWT (customer)' },
+    { method: 'POST', path: '/api/customer/preorders/', purpose: 'Create pre-order', service: 'CustomerPreOrderViewSet', auth: 'JWT (customer)' },
+    { method: 'PATCH', path: '/api/customer/preorders/{id}/', purpose: 'Update pre-order', service: 'CustomerPreOrderViewSet', auth: 'JWT (customer)' },
+    { method: 'DELETE', path: '/api/customer/preorders/{id}/', purpose: 'Cancel pre-order', service: 'CustomerPreOrderViewSet', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/preorders/pending/', purpose: 'Get pending pre-orders', service: 'CustomerPreOrderViewSet', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/storage-costs/', purpose: 'View storage costs', service: 'CustomerStorageCostView', auth: 'JWT (customer)' },
+    { method: 'POST', path: '/api/customer/storage-costs/calculate/', purpose: 'Calculate customer storage costs', service: 'CustomerBulkStorageCostView', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/billing/statements/', purpose: 'List billing statements', service: 'CustomerStatementListView', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/billing/statements/{year}/{month}/', purpose: 'Get specific month statement', service: 'CustomerStatementView', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/billing/available-periods/', purpose: 'Get available billing periods', service: 'CustomerAvailablePeriodsView', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/billing/statements/{y}/{m}/export/excel/', purpose: 'Export statement to Excel', service: 'CustomerStatementExportExcelView', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/billing/statements/{y}/{m}/export/pdf/', purpose: 'Export statement to PDF', service: 'CustomerStatementExportPdfView', auth: 'JWT (customer)' },
+    { method: 'GET', path: '/api/customer/additional-charges/', purpose: 'View additional charges', service: 'CustomerAdditionalChargeView', auth: 'JWT (customer)' },
+  ]},
+];
+
+/* ═══════════════════════════════════════════════════════════
+   SVG UTILITIES
+   ═══════════════════════════════════════════════════════════ */
+const svg = document.getElementById('svg-canvas');
+const NS = 'http://www.w3.org/2000/svg';
+
+function el(tag, attrs = {}, children = []) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v !== undefined && v !== null) e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (typeof c === 'string') {
+      e.appendChild(document.createTextNode(c));
+    } else if (c) {
+      e.appendChild(c);
+    }
+  }
+  return e;
+}
+
+function clearCanvas() {
+  // Keep defs
+  const defs = svg.querySelector('defs');
+  svg.innerHTML = '';
+  svg.appendChild(defs);
+}
+
+function drawNode(x, y, w, h, label, subtitle, color, id, extraClass = '') {
+  const g = el('g', { class: `node-group ${extraClass}`, 'data-id': id, transform: `translate(${x},${y})` });
+
+  const rect = el('rect', {
+    class: 'node-bg',
+    x: 0, y: 0, width: w, height: h,
+    rx: 8, ry: 8,
+    fill: color + '15',
+    stroke: color,
+    'stroke-width': 1.5,
+  });
+  g.appendChild(rect);
+
+  // Label (supports \n for multiline)
+  const lines = label.split('\n');
+  const labelY = subtitle ? (h / 2 - (lines.length - 1) * 8 - 4) : (h / 2 + (lines.length - 1) * 0);
+  lines.forEach((line, i) => {
+    g.appendChild(el('text', {
+      x: w / 2, y: labelY + i * 16,
+      'text-anchor': 'middle',
+      'dominant-baseline': 'middle',
+      fill: '#e2e8f0',
+      'font-size': '12',
+      'font-weight': '600',
+    }, [line]));
+  });
+
+  if (subtitle) {
+    g.appendChild(el('text', {
+      x: w / 2, y: labelY + lines.length * 16,
+      'text-anchor': 'middle',
+      'dominant-baseline': 'middle',
+      fill: '#64748b',
+      'font-size': '10',
+    }, [subtitle]));
+  }
+
+  // Click handler
+  g.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectNode(id);
+  });
+
+  // Hover tooltip
+  g.addEventListener('mouseenter', (e) => showTooltip(e, id));
+  g.addEventListener('mouseleave', hideTooltip);
+
+  return g;
+}
+
+function drawConnection(x1, y1, x2, y2, color, id = '', curved = true) {
+  let d;
+  if (curved) {
+    const midY = (y1 + y2) / 2;
+    d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+  } else {
+    d = `M ${x1} ${y1} L ${x2} ${y2}`;
+  }
+  return el('path', {
+    class: 'connection-path',
+    d: d,
+    stroke: color || '#64748b',
+    'marker-end': 'url(#arrowhead)',
+    'data-connection': id,
+  });
+}
+
+function drawFlowArrow(x1, y1, x2, y2, color, animated = true) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  let d;
+  if (Math.abs(dy) < 10) {
+    // Horizontal
+    d = `M ${x1} ${y1} L ${x2} ${y2}`;
+  } else if (Math.abs(dx) < 10) {
+    // Vertical
+    d = `M ${x1} ${y1} L ${x2} ${y2}`;
+  } else {
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    d = `M ${x1} ${y1} Q ${midX} ${y1}, ${midX} ${midY} Q ${midX} ${y2}, ${x2} ${y2}`;
+  }
+
+  const path = el('path', {
+    class: animated ? 'flow-arrow' : 'connection-path',
+    d: d,
+    stroke: color || '#64748b',
+    'marker-end': 'url(#arrowhead)',
+  });
+  if (animated) {
+    path.style.animation = `dashFlow ${Math.max(0.5, dist / 200)}s linear infinite`;
+  }
+  return path;
+}
+
+function drawBadge(x, y, method) {
+  const colors = { GET: '#10b981', POST: '#3b82f6', PATCH: '#f59e0b', PUT: '#a855f7', DELETE: '#ef4444' };
+  const color = colors[method] || '#64748b';
+  const w = method.length * 7 + 8;
+  const g = el('g', { transform: `translate(${x},${y})` });
+  g.appendChild(el('rect', { x: 0, y: -8, width: w, height: 16, rx: 3, fill: color + '30', stroke: color, 'stroke-width': 0.5 }));
+  g.appendChild(el('text', { x: w / 2, y: 1, 'text-anchor': 'middle', 'dominant-baseline': 'middle', fill: color, 'font-size': '9', 'font-weight': '700', 'font-family': 'monospace' }, [method]));
+  return g;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDERERS
+   ═══════════════════════════════════════════════════════════ */
+
+function getNodePosition(node) {
+  const layerY = { frontend: 80, api: 230, services: 380, models: 530, db: 700 };
+  const colX = [100, 340, 580, 820, 1060];
+  const w = node.layer === 'db' ? 700 : 200;
+  const h = node.layer === 'db' ? 50 : 70;
+  const x = node.layer === 'db' ? colX[2] - 250 : colX[node.col];
+  const y = layerY[node.layer];
+  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+}
+
+function renderArchitecture() {
+  clearCanvas();
+  const vb = '0 0 1400 820';
+  svg.setAttribute('viewBox', vb);
+
+  const g = el('g', { class: 'architecture-view fade-enter' });
+
+  // Layer bands
+  const layers = ['frontend', 'api', 'services', 'models', 'db'];
+  const layerYStart = { frontend: 55, api: 205, services: 355, models: 505, db: 675 };
+  layers.forEach(layer => {
+    if (!state.layers[layer]) return;
+    const y = layerYStart[layer];
+    const rect = el('rect', {
+      x: 50, y: y, width: 1300, height: layer === 'db' ? 95 : 100,
+      rx: 12, fill: LAYER_COLORS[layer] + '08',
+      stroke: LAYER_COLORS[layer] + '20', 'stroke-width': 1,
+    });
+    g.appendChild(rect);
+    g.appendChild(el('text', {
+      x: 65, y: y + 16, fill: LAYER_COLORS[layer] + '80',
+      'font-size': '10', 'font-weight': '600', 'text-transform': 'uppercase',
+      'letter-spacing': '1',
+    }, [LAYER_LABELS[layer]]));
+  });
+
+  // Connections (draw first, behind nodes)
+  architectureConnections.forEach(conn => {
+    const fromNode = architectureNodes.find(n => n.id === conn.from);
+    const toNode = architectureNodes.find(n => n.id === conn.to);
+    if (!fromNode || !toNode) return;
+    if (!state.layers[fromNode.layer] || !state.layers[toNode.layer]) return;
+
+    const fp = getNodePosition(fromNode);
+    const tp = getNodePosition(toNode);
+
+    const path = drawConnection(fp.cx, fp.y + fp.h, tp.cx, tp.y, LAYER_COLORS[fromNode.layer] + '60', `${conn.from}-${conn.to}`);
+    g.appendChild(path);
+  });
+
+  // Nodes
+  architectureNodes.forEach(node => {
+    if (!state.layers[node.layer]) return;
+    const p = getNodePosition(node);
+    const n = drawNode(p.x, p.y, p.w, p.h, node.label, node.subtitle, LAYER_COLORS[node.layer], node.id);
+    g.appendChild(n);
+  });
+
+  svg.appendChild(g);
+  updateLegend('architecture');
+  highlightSelected();
+}
+
+function renderContainerFlow() {
+  clearCanvas();
+  svg.setAttribute('viewBox', '0 0 1400 400');
+
+  const g = el('g', { class: 'container-flow-view fade-enter' });
+
+  const startX = 60;
+  const stepW = 150;
+  const stepH = 90;
+  const gap = 20;
+  const y = 155;
+
+  // Arrows between steps
+  for (let i = 0; i < containerFlow.length - 1; i++) {
+    const x1 = startX + i * (stepW + gap) + stepW;
+    const x2 = startX + (i + 1) * (stepW + gap);
+    g.appendChild(drawFlowArrow(x1, y + stepH / 2, x2, y + stepH / 2, containerFlow[i].color));
+  }
+
+  // Step numbers above
+  containerFlow.forEach((step, i) => {
+    const x = startX + i * (stepW + gap);
+    g.appendChild(el('text', {
+      x: x + stepW / 2, y: y - 15,
+      'text-anchor': 'middle', fill: step.color + '80',
+      'font-size': '11', 'font-weight': '600',
+    }, [`Step ${i + 1}`]));
+  });
+
+  // Nodes
+  containerFlow.forEach((step, i) => {
+    const x = startX + i * (stepW + gap);
+    const n = drawNode(x, y, stepW, stepH, step.label, '', step.color, step.id);
+    g.appendChild(n);
+  });
+
+  svg.appendChild(g);
+  updateLegend('container');
+  highlightSelected();
+}
+
+function renderBillingFlow() {
+  clearCanvas();
+  svg.setAttribute('viewBox', '0 0 900 950');
+
+  const g = el('g', { class: 'billing-flow-view fade-enter' });
+  const nodeW = 180;
+  const nodeH = 60;
+
+  // Draw connections first
+  const connData = [
+    { from: 'bf-tariff', to: 'bf-stored' },
+    { from: 'bf-stored', to: 'bf-cost' },
+    { from: 'bf-cost', to: 'bf-charges' },
+    { from: 'bf-charges', to: 'bf-fork' },
+    // Fork
+    { from: 'bf-fork', to: 'bf-monthly-gen', label: 'Path A: Monthly' },
+    { from: 'bf-fork', to: 'bf-od-create', label: 'Path B: On-Demand' },
+    // Monthly path
+    { from: 'bf-monthly-gen', to: 'bf-monthly-final' },
+    { from: 'bf-monthly-final', to: 'bf-monthly-paid' },
+    // On-demand path
+    { from: 'bf-od-create', to: 'bf-od-final' },
+    { from: 'bf-od-final', to: 'bf-od-paid' },
+    // Convergence
+    { from: 'bf-monthly-paid', to: 'bf-exclusion' },
+    { from: 'bf-od-paid', to: 'bf-exclusion' },
+    { from: 'bf-exclusion', to: 'bf-export' },
+  ];
+
+  connData.forEach(conn => {
+    const fromStep = billingFlow.find(s => s.id === conn.from);
+    const toStep = billingFlow.find(s => s.id === conn.to);
+    if (!fromStep || !toStep) return;
+
+    const x1 = fromStep.x + nodeW / 2;
+    const y1 = fromStep.y + nodeH;
+    const x2 = toStep.x + nodeW / 2;
+    const y2 = toStep.y;
+
+    if (conn.from === 'bf-fork') {
+      // Fork arrows
+      g.appendChild(drawFlowArrow(x1, y1, x2, y2, fromStep.color, true));
+      // Label
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      g.appendChild(el('text', {
+        x: mx, y: my - 5,
+        'text-anchor': 'middle', fill: '#94a3b8', 'font-size': '9', 'font-style': 'italic',
+      }, [conn.label || '']));
+    } else if (conn.from === 'bf-monthly-paid' && conn.to === 'bf-exclusion') {
+      g.appendChild(drawFlowArrow(x1, y1, x2, y2, '#ef4444', true));
+    } else if (conn.from === 'bf-od-paid' && conn.to === 'bf-exclusion') {
+      g.appendChild(drawFlowArrow(x1, y1, x2, y2, '#ef4444', true));
+    } else {
+      g.appendChild(drawFlowArrow(x1, y1, x2, y2, fromStep.color));
+    }
+  });
+
+  // Exclusion cross-arrow (between paths)
+  const monthlyPaid = billingFlow.find(s => s.id === 'bf-monthly-paid');
+  const odPaid = billingFlow.find(s => s.id === 'bf-od-paid');
+  const exclusionArrow = el('path', {
+    class: 'flow-arrow',
+    d: `M ${monthlyPaid.x + nodeW} ${monthlyPaid.y + nodeH / 2} L ${odPaid.x} ${odPaid.y + nodeH / 2}`,
+    stroke: '#ef4444',
+    'stroke-dasharray': '4 4',
+    'marker-end': 'url(#arrowhead)',
+    opacity: '0.5',
+  });
+  g.appendChild(exclusionArrow);
+  g.appendChild(el('text', {
+    x: (monthlyPaid.x + nodeW + odPaid.x) / 2,
+    y: monthlyPaid.y + nodeH / 2 - 10,
+    'text-anchor': 'middle', fill: '#ef4444', 'font-size': '9', 'font-style': 'italic',
+  }, ['excludes from monthly']));
+
+  // Path A / Path B labels
+  g.appendChild(el('text', {
+    x: 180, y: 485, 'text-anchor': 'middle', fill: '#3b82f680', 'font-size': '12', 'font-weight': '700',
+  }, ['PATH A — Monthly Statement']));
+  g.appendChild(el('text', {
+    x: 620, y: 485, 'text-anchor': 'middle', fill: '#f59e0b80', 'font-size': '12', 'font-weight': '700',
+  }, ['PATH B — On-Demand Invoice']));
+
+  // Nodes
+  billingFlow.forEach(step => {
+    const n = drawNode(step.x - nodeW / 2 + nodeW / 2, step.y, nodeW, nodeH, step.label, '', step.color, step.id);
+    g.appendChild(n);
+  });
+
+  svg.appendChild(g);
+  updateLegend('billing');
+  highlightSelected();
+}
+
+function renderApiExplorer() {
+  clearCanvas();
+  svg.setAttribute('viewBox', '0 0 1400 800');
+
+  const g = el('g', { class: 'api-explorer-view fade-enter' });
+
+  const groupPositions = [
+    { x: 120, y: 80 },   // auth
+    { x: 520, y: 80 },   // terminal
+    { x: 920, y: 80 },   // vehicles
+    { x: 120, y: 420 },  // billing
+    { x: 520, y: 420 },  // files
+    { x: 920, y: 420 },  // customer
+  ];
+
+  apiGroups.forEach((group, gi) => {
+    const pos = groupPositions[gi];
+    const isExpanded = state.expandedApiGroup === group.id;
+    const filtered = state.searchQuery
+      ? group.endpoints.filter(ep =>
+          ep.method.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+          ep.path.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+          ep.purpose.toLowerCase().includes(state.searchQuery.toLowerCase()))
+      : group.endpoints;
+
+    if (state.searchQuery && filtered.length === 0) return;
+
+    const cardW = 320;
+    const headerH = 56;
+    const endpointH = 24;
+    const cardH = isExpanded ? headerH + filtered.length * endpointH + 16 : headerH;
+
+    const cardG = el('g', { class: 'api-group-card', 'data-group': group.id, transform: `translate(${pos.x},${pos.y})` });
+
+    // Card background
+    cardG.appendChild(el('rect', {
+      x: 0, y: 0, width: cardW, height: cardH,
+      rx: 10, fill: group.color + '10',
+      stroke: group.color + (isExpanded ? '80' : '40'),
+      'stroke-width': isExpanded ? 2 : 1,
+    }));
+
+    // Header
+    cardG.appendChild(el('text', {
+      x: 16, y: 24, fill: group.color, 'font-size': '14', 'font-weight': '700',
+    }, [group.label]));
+    cardG.appendChild(el('text', {
+      x: 16, y: 42, fill: '#64748b', 'font-size': '11',
+    }, [`${filtered.length} endpoint${filtered.length !== 1 ? 's' : ''} ${isExpanded ? '▾' : '▸'}`]));
+
+    // Count badge
+    const countBadge = el('g', { transform: `translate(${cardW - 50}, 16)` });
+    countBadge.appendChild(el('rect', { x: 0, y: -8, width: 36, height: 20, rx: 10, fill: group.color + '30' }));
+    countBadge.appendChild(el('text', { x: 18, y: 3, 'text-anchor': 'middle', 'dominant-baseline': 'middle', fill: group.color, 'font-size': '11', 'font-weight': '600' }, [String(filtered.length)]));
+    cardG.appendChild(countBadge);
+
+    // Expanded endpoint list
+    if (isExpanded) {
+      filtered.forEach((ep, ei) => {
+        const ey = headerH + ei * endpointH + 4;
+
+        // Method badge
+        const colors = { GET: '#10b981', POST: '#3b82f6', PATCH: '#f59e0b', PUT: '#a855f7', DELETE: '#ef4444' };
+        const mc = colors[ep.method] || '#64748b';
+        const mw = ep.method.length * 6.5 + 10;
+        cardG.appendChild(el('rect', { x: 12, y: ey, width: mw, height: 18, rx: 3, fill: mc + '25' }));
+        cardG.appendChild(el('text', { x: 12 + mw / 2, y: ey + 10, 'text-anchor': 'middle', 'dominant-baseline': 'middle', fill: mc, 'font-size': '8', 'font-weight': '700', 'font-family': 'monospace' }, [ep.method]));
+
+        // Path
+        const pathText = ep.path.replace('/api/', '/');
+        cardG.appendChild(el('text', {
+          x: 12 + mw + 6, y: ey + 10,
+          'dominant-baseline': 'middle', fill: '#cbd5e1', 'font-size': '10', 'font-family': 'monospace',
+        }, [pathText.length > 30 ? pathText.slice(0, 30) + '…' : pathText]));
+
+        // Click area for endpoint
+        const clickArea = el('rect', {
+          x: 8, y: ey - 2, width: cardW - 16, height: endpointH,
+          fill: 'transparent', cursor: 'pointer',
+        });
+        clickArea.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectApiEndpoint(group.id, ei);
+        });
+        cardG.appendChild(clickArea);
+      });
+    }
+
+    // Click to expand/collapse
+    const headerClick = el('rect', { x: 0, y: 0, width: cardW, height: headerH, fill: 'transparent', cursor: 'pointer' });
+    headerClick.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.expandedApiGroup = state.expandedApiGroup === group.id ? null : group.id;
+      render();
+    });
+    cardG.appendChild(headerClick);
+
+    g.appendChild(cardG);
+  });
+
+  svg.appendChild(g);
+  updateLegend('api');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   INTERACTION
+   ═══════════════════════════════════════════════════════════ */
+
+function selectNode(nodeId) {
+  if (state.selectedNode === nodeId) {
+    state.selectedNode = null;
+    updateDetailPanel(null);
+    highlightSelected();
+    return;
+  }
+  state.selectedNode = nodeId;
+
+  // Find node data based on active view
+  let nodeData = null;
+  if (state.activeView === 'architecture') {
+    nodeData = architectureNodes.find(n => n.id === nodeId);
+  } else if (state.activeView === 'container') {
+    nodeData = containerFlow.find(n => n.id === nodeId);
+  } else if (state.activeView === 'billing') {
+    nodeData = billingFlow.find(n => n.id === nodeId);
+  }
+
+  updateDetailPanel(nodeData);
+  highlightSelected();
+}
+
+function selectApiEndpoint(groupId, epIndex) {
+  const group = apiGroups.find(g => g.id === groupId);
+  const filtered = state.searchQuery
+    ? group.endpoints.filter(ep =>
+        ep.method.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+        ep.path.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+        ep.purpose.toLowerCase().includes(state.searchQuery.toLowerCase()))
+    : group.endpoints;
+  const ep = filtered[epIndex];
+  if (!ep) return;
+
+  state.selectedNode = `${groupId}-${epIndex}`;
+  updateDetailPanel(ep, 'endpoint');
+}
+
+function highlightSelected() {
+  const allNodes = svg.querySelectorAll('.node-group');
+  const allConns = svg.querySelectorAll('.connection-path');
+
+  if (!state.selectedNode) {
+    allNodes.forEach(n => { n.classList.remove('selected', 'dimmed'); });
+    allConns.forEach(c => { c.classList.remove('highlighted', 'dimmed'); });
+    return;
+  }
+
+  const selectedId = state.selectedNode;
+
+  // Find connected node IDs
+  const connectedIds = new Set([selectedId]);
+  if (state.activeView === 'architecture') {
+    architectureConnections.forEach(conn => {
+      if (conn.from === selectedId) connectedIds.add(conn.to);
+      if (conn.to === selectedId) connectedIds.add(conn.from);
+    });
+  }
+
+  allNodes.forEach(n => {
+    const id = n.getAttribute('data-id');
+    if (id === selectedId) {
+      n.classList.add('selected');
+      n.classList.remove('dimmed');
+    } else if (connectedIds.has(id)) {
+      n.classList.remove('selected', 'dimmed');
+    } else {
+      n.classList.add('dimmed');
+      n.classList.remove('selected');
+    }
+  });
+
+  allConns.forEach(c => {
+    const connId = c.getAttribute('data-connection') || '';
+    if (connId.includes(selectedId)) {
+      c.classList.add('highlighted');
+      c.classList.remove('dimmed');
+    } else {
+      c.classList.add('dimmed');
+      c.classList.remove('highlighted');
+    }
+  });
+}
+
+function updateDetailPanel(data, type = 'node') {
+  const panel = document.getElementById('detail-panel');
+
+  if (!data) {
+    panel.className = 'detail-panel empty';
+    panel.innerHTML = '<div>Click a node to see details</div>';
+    return;
+  }
+
+  panel.className = 'detail-panel';
+
+  if (type === 'endpoint') {
+    const mc = { GET: 'get', POST: 'post', PATCH: 'patch', PUT: 'put', DELETE: 'delete' };
+    panel.innerHTML = `
+      <div class="detail-card">
+        <h2><span class="method-badge ${mc[data.method]}">${data.method}</span> ${data.path.replace('/api/', '/')}</h2>
+        <div class="detail-subtitle">${data.path}</div>
+        <div class="detail-section">
+          <h4>Purpose</h4>
+          <div class="detail-item">${data.purpose}</div>
+        </div>
+        <div class="detail-section">
+          <h4>View / Service</h4>
+          <div class="detail-item"><code>${data.service}</code></div>
+        </div>
+        <div class="detail-section">
+          <h4>Authentication</h4>
+          <div class="detail-item">${data.auth}</div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  let html = `<div class="detail-card">`;
+  html += `<h2>${data.label.replace('\n', ' ')}</h2>`;
+  if (data.file) html += `<div class="detail-subtitle"><code>${data.file}</code></div>`;
+  if (data.subtitle) html += `<div class="detail-item" style="margin-bottom:12px;color:#94a3b8">${data.subtitle}</div>`;
+
+  // Description
+  if (data.desc) {
+    html += `<div class="detail-section"><h4>Description</h4>`;
+    data.desc.split('\n').forEach(line => {
+      html += `<div class="detail-item">${line}</div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Endpoints (flow views)
+  if (data.endpoints && data.endpoints.length) {
+    html += `<div class="detail-section"><h4>Endpoints</h4>`;
+    data.endpoints.forEach(ep => {
+      const mc = { GET: 'get', POST: 'post', PATCH: 'patch', PUT: 'put', DELETE: 'delete' };
+      const method = ep.method || 'GET';
+      const path = ep.path || ep;
+      html += `<div class="detail-item"><span class="method-badge ${mc[method]}">${method}</span> <code>${path}</code></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Services
+  if (data.services && data.services.length) {
+    html += `<div class="detail-section"><h4>Services</h4>`;
+    data.services.forEach(s => {
+      html += `<div class="detail-item"><code>${s}</code></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Models
+  if (data.models && data.models.length) {
+    html += `<div class="detail-section"><h4>Models</h4>`;
+    data.models.forEach(m => {
+      html += `<div class="detail-item"><code>${m}</code></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Connected nodes (architecture view)
+  if (state.activeView === 'architecture' && data.id) {
+    const connected = [];
+    architectureConnections.forEach(conn => {
+      if (conn.from === data.id) {
+        const target = architectureNodes.find(n => n.id === conn.to);
+        if (target) connected.push({ dir: '→', node: target, label: conn.label });
+      }
+      if (conn.to === data.id) {
+        const source = architectureNodes.find(n => n.id === conn.from);
+        if (source) connected.push({ dir: '←', node: source, label: conn.label });
+      }
+    });
+    if (connected.length) {
+      html += `<div class="detail-section"><h4>Connections</h4>`;
+      connected.forEach(c => {
+        html += `<div class="detail-item">${c.dir} ${c.node.label.replace('\n', ' ')}${c.label ? ` <span style="color:var(--text-dim)">(${c.label})</span>` : ''}</div>`;
+      });
+      html += `</div>`;
+    }
+  }
+
+  html += `</div>`;
+  panel.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   VIEW SWITCHING
+   ═══════════════════════════════════════════════════════════ */
+
+function switchView(viewName) {
+  state.activeView = viewName;
+  state.selectedNode = null;
+  state.expandedApiGroup = null;
+  state.searchQuery = '';
+
+  // Update buttons
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === viewName);
+  });
+
+  // Show/hide sections
+  document.getElementById('layers-section').style.display = viewName === 'architecture' ? '' : 'none';
+  document.getElementById('search-section').style.display = viewName === 'api' ? '' : 'none';
+  document.getElementById('search-input').value = '';
+
+  // Update title
+  const titles = {
+    architecture: { h: 'System Architecture', p: '5-layer view of the MTT container terminal system' },
+    container: { h: 'Container Lifecycle', p: '8-step journey from gate entry to exit' },
+    billing: { h: 'Billing Cycle', p: 'Monthly statements & on-demand invoices with fork/merge flow' },
+    api: { h: 'API Explorer', p: 'Click a group to expand endpoints. Search to filter.' },
+  };
+  const t = titles[viewName];
+  document.getElementById('view-title').innerHTML = `<h2>${t.h}</h2><p>${t.p}</p>`;
+
+  updateDetailPanel(null);
+  resetZoom();
+  render();
+}
+
+function render() {
+  switch (state.activeView) {
+    case 'architecture': renderArchitecture(); break;
+    case 'container':    renderContainerFlow(); break;
+    case 'billing':      renderBillingFlow(); break;
+    case 'api':          renderApiExplorer(); break;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LAYER TOGGLES
+   ═══════════════════════════════════════════════════════════ */
+
+function initLayerToggles() {
+  const container = document.getElementById('layer-toggles');
+  container.innerHTML = '';
+  Object.entries(LAYER_LABELS).forEach(([key, label]) => {
+    const div = document.createElement('div');
+    div.className = `layer-toggle ${state.layers[key] ? '' : 'disabled'}`;
+    div.innerHTML = `<span class="dot" style="background:${LAYER_COLORS[key]}"></span> ${label}`;
+    div.addEventListener('click', () => toggleLayer(key));
+    container.appendChild(div);
+  });
+}
+
+function toggleLayer(layer) {
+  state.layers[layer] = !state.layers[layer];
+  initLayerToggles();
+  state.selectedNode = null;
+  updateDetailPanel(null);
+  render();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SEARCH
+   ═══════════════════════════════════════════════════════════ */
+
+function filterEndpoints(query) {
+  state.searchQuery = query;
+  state.expandedApiGroup = null;
+  // Auto-expand groups with matches
+  if (query) {
+    apiGroups.forEach(group => {
+      const hasMatch = group.endpoints.some(ep =>
+        ep.method.toLowerCase().includes(query.toLowerCase()) ||
+        ep.path.toLowerCase().includes(query.toLowerCase()) ||
+        ep.purpose.toLowerCase().includes(query.toLowerCase())
+      );
+      if (hasMatch && !state.expandedApiGroup) {
+        state.expandedApiGroup = group.id;
+      }
+    });
+  }
+  render();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ZOOM & PAN
+   ═══════════════════════════════════════════════════════════ */
+
+function setZoom(delta) {
+  state.zoom = Math.max(0.4, Math.min(2.0, state.zoom + delta));
+  applyZoom();
+}
+
+function resetZoom() {
+  state.zoom = 1.0;
+  state.pan = { x: 0, y: 0 };
+  applyZoom();
+}
+
+function applyZoom() {
+  document.getElementById('zoom-level').textContent = Math.round(state.zoom * 100) + '%';
+
+  // Get current viewBox
+  const vb = svg.getAttribute('viewBox');
+  if (!vb) return;
+  const [ox, oy, ow, oh] = vb.split(' ').map(Number);
+
+  const nw = ow / state.zoom;
+  const nh = oh / state.zoom;
+  const nx = (ow - nw) / 2 + state.pan.x;
+  const ny = (oh - nh) / 2 + state.pan.y;
+
+  svg.setAttribute('viewBox', `${nx} ${ny} ${nw} ${nh}`);
+}
+
+// Pan with drag
+const canvasContainer = document.getElementById('canvas-container');
+canvasContainer.addEventListener('mousedown', (e) => {
+  if (e.target === svg || e.target.tagName === 'svg') {
+    state.isDragging = true;
+    state.dragStart = { x: e.clientX, y: e.clientY };
+    state.panStart = { ...state.pan };
+  }
+});
+canvasContainer.addEventListener('mousemove', (e) => {
+  if (!state.isDragging) return;
+  const dx = (e.clientX - state.dragStart.x) / state.zoom;
+  const dy = (e.clientY - state.dragStart.y) / state.zoom;
+  state.pan.x = state.panStart.x - dx;
+  state.pan.y = state.panStart.y - dy;
+  applyZoom();
+});
+canvasContainer.addEventListener('mouseup', () => { state.isDragging = false; });
+canvasContainer.addEventListener('mouseleave', () => { state.isDragging = false; });
+
+// Scroll to zoom
+canvasContainer.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.1 : 0.1;
+  setZoom(delta);
+}, { passive: false });
+
+// Click on empty space deselects
+svg.addEventListener('click', (e) => {
+  if (e.target === svg || e.target.tagName === 'rect' && !e.target.closest('.node-group') && !e.target.closest('.api-group-card')) {
+    state.selectedNode = null;
+    updateDetailPanel(null);
+    highlightSelected();
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════
+   TOOLTIP
+   ═══════════════════════════════════════════════════════════ */
+
+function showTooltip(e, nodeId) {
+  const tooltip = document.getElementById('tooltip');
+  let data = null;
+
+  if (state.activeView === 'architecture') data = architectureNodes.find(n => n.id === nodeId);
+  else if (state.activeView === 'container') data = containerFlow.find(n => n.id === nodeId);
+  else if (state.activeView === 'billing') data = billingFlow.find(n => n.id === nodeId);
+
+  if (!data || !data.file) return;
+
+  tooltip.innerHTML = `<code>${data.file}</code>`;
+  tooltip.style.display = 'block';
+  tooltip.style.left = (e.clientX + 12) + 'px';
+  tooltip.style.top = (e.clientY - 10) + 'px';
+}
+
+function hideTooltip() {
+  document.getElementById('tooltip').style.display = 'none';
+}
+
+// Follow mouse for tooltip
+document.addEventListener('mousemove', (e) => {
+  const tooltip = document.getElementById('tooltip');
+  if (tooltip.style.display === 'block') {
+    tooltip.style.left = (e.clientX + 12) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════
+   LEGEND
+   ═══════════════════════════════════════════════════════════ */
+
+function updateLegend(view) {
+  const legend = document.getElementById('legend');
+
+  if (view === 'architecture') {
+    legend.innerHTML = `<h4>Layers</h4>` +
+      Object.entries(LAYER_LABELS).map(([key, label]) =>
+        `<div class="legend-item"><span class="legend-dot" style="background:${LAYER_COLORS[key]}"></span>${label}</div>`
+      ).join('');
+  } else if (view === 'container') {
+    legend.innerHTML = `<h4>Container Lifecycle</h4>
+      <div class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span>Entry phase</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#10b981"></span>On terminal</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>Operations</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>Exit</div>
+      <div class="legend-item" style="margin-top:4px"><span style="color:#64748b">─ ─ ▸</span> Animated flow</div>`;
+  } else if (view === 'billing') {
+    legend.innerHTML = `<h4>Billing Flow</h4>
+      <div class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span>Path A: Monthly</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>Path B: On-Demand</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>Exclusion logic</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#06b6d4"></span>Export</div>`;
+  } else if (view === 'api') {
+    legend.innerHTML = `<h4>HTTP Methods</h4>
+      <div class="legend-item"><span class="method-badge get">GET</span> Read data</div>
+      <div class="legend-item"><span class="method-badge post">POST</span> Create / Action</div>
+      <div class="legend-item"><span class="method-badge patch">PATCH</span> Partial update</div>
+      <div class="legend-item"><span class="method-badge delete">DELETE</span> Remove</div>`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+   ═══════════════════════════════════════════════════════════ */
+
+document.addEventListener('keydown', (e) => {
+  // Don't capture when typing in search
+  if (e.target.tagName === 'INPUT') return;
+
+  switch (e.key) {
+    case '1': switchView('architecture'); break;
+    case '2': switchView('container'); break;
+    case '3': switchView('billing'); break;
+    case '4': switchView('api'); break;
+    case 'Escape':
+      state.selectedNode = null;
+      state.expandedApiGroup = null;
+      updateDetailPanel(null);
+      highlightSelected();
+      render();
+      break;
+    case '+': case '=': setZoom(0.15); break;
+    case '-': setZoom(-0.15); break;
+    case '0': resetZoom(); break;
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════════════════════ */
+
+initLayerToggles();
+render();
+</script>
+</body>
+</html>
