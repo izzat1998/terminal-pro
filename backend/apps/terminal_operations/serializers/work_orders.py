@@ -104,7 +104,7 @@ class TerminalVehicleSerializer(serializers.ModelSerializer):
             "is_active",
             "operator",
         ]
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
     def get_vehicle_type_display(self, obj):
         return obj.get_vehicle_type_display()
@@ -270,7 +270,7 @@ class WorkOrderListSerializer(serializers.ModelSerializer):
             "assigned_to_vehicle",
             "created_at",
         ]
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_container_size(self, obj):

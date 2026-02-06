@@ -383,7 +383,7 @@ class StatementLineItemSerializer(serializers.ModelSerializer):
             "amount_usd",
             "amount_uzs",
         ]
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
 
 class StatementServiceItemSerializer(serializers.ModelSerializer):
@@ -399,7 +399,7 @@ class StatementServiceItemSerializer(serializers.ModelSerializer):
             "amount_usd",
             "amount_uzs",
         ]
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
 
 class MonthlyStatementListSerializer(_AuditUserNamesMixin, serializers.ModelSerializer):
@@ -441,7 +441,7 @@ class MonthlyStatementListSerializer(_AuditUserNamesMixin, serializers.ModelSeri
             "summary",
             "generated_at",
         ]
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
     def get_summary(self, obj: MonthlyStatement) -> dict:
         return _get_statement_summary(obj)
@@ -489,7 +489,7 @@ class MonthlyStatementSerializer(_AuditUserNamesMixin, serializers.ModelSerializ
             "pending_containers_data",
             "generated_at",
         ]
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
     def get_summary(self, obj: MonthlyStatement) -> dict:
         return _get_statement_summary(obj)
@@ -601,7 +601,7 @@ class OnDemandInvoiceItemSerializer(serializers.ModelSerializer):
             "amount_usd",
             "amount_uzs",
         ]
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
 
 class OnDemandInvoiceServiceItemSerializer(serializers.ModelSerializer):
@@ -617,7 +617,7 @@ class OnDemandInvoiceServiceItemSerializer(serializers.ModelSerializer):
             "amount_usd",
             "amount_uzs",
         ]
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
 
 class OnDemandInvoiceListSerializer(_AuditUserNamesMixin, serializers.ModelSerializer):
@@ -656,7 +656,7 @@ class OnDemandInvoiceListSerializer(_AuditUserNamesMixin, serializers.ModelSeria
             "cancellation_reason",
             "created_at",
         ]
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
     def get_pending_exit_count(self, obj: OnDemandInvoice) -> int:
         """Count items where container hasn't exited yet (still on terminal)."""
@@ -703,7 +703,7 @@ class OnDemandInvoiceDetailSerializer(_AuditUserNamesMixin, serializers.ModelSer
             "cancellation_reason",
             "created_at",
         ]
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
 
 class OnDemandInvoiceCreateSerializer(serializers.Serializer):

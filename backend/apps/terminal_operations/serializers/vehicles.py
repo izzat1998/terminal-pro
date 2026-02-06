@@ -93,7 +93,7 @@ class VehicleEntryListSerializer(serializers.ModelSerializer):
             "entry_time",
             "created_at",
         )
-        read_only_fields = "__all__"
+        read_only_fields = fields
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_status_display(self, obj):
