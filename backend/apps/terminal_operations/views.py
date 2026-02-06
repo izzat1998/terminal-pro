@@ -682,7 +682,10 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
             return Response(
                 {
                     "success": False,
-                    "message": "Ошибка при импорте файла",
+                    "error": {
+                        "code": "IMPORT_FAILED",
+                        "message": "Ошибка при импорте файла",
+                    },
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
@@ -1656,7 +1659,7 @@ class WorkOrderViewSet(
 
         service = self.get_work_order_service()
         work_order = service.assign_to_vehicle(
-            work_order_id=int(pk),
+            work_order_id=safe_int_param(pk, default=0),
             vehicle_id=serializer.validated_data["vehicle_id"],
         )
 
@@ -1685,7 +1688,7 @@ class WorkOrderViewSet(
         vehicle_id = request.query_params.get("vehicle_id")
 
         work_order = work_order_service.complete_order(
-            work_order_id=int(pk),
+            work_order_id=safe_int_param(pk, default=0),
             vehicle_id=safe_int_param(vehicle_id, default=None) if vehicle_id else None,
             operator=request.user if request.user.is_authenticated else None,
         )

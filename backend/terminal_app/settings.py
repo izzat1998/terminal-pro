@@ -273,8 +273,6 @@ CORS_ALLOWED_ORIGINS = [
 # Production CORS - add your frontend URLs
 if not DEBUG:
     CORS_ALLOWED_ORIGINS += [
-        "http://173.212.243.40",   # Production server direct IP access
-        "https://173.212.243.40",  # Production server direct IP (HTTPS)
         "http://mtt.xlog.uz",
         "https://mtt.xlog.uz",
         "https://mtt-pro.xlog.uz",
