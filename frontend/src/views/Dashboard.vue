@@ -72,8 +72,8 @@
               Журнал транспорта
             </a-button>
             <a-button block @click="$router.push('/accounts/companies')">
-              <template #icon><BankOutlined /></template>
-              Управление компаниями
+              <template #icon><DollarOutlined /></template>
+              Биллинг компаний
             </a-button>
           </a-space>
         </a-card>
@@ -103,7 +103,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { message } from 'ant-design-vue';
-import { ContainerOutlined, CarOutlined, BankOutlined, TeamOutlined } from '@ant-design/icons-vue';
+import { ContainerOutlined, CarOutlined, BankOutlined, TeamOutlined, DollarOutlined } from '@ant-design/icons-vue';
 import { http } from '../utils/httpClient';
 import dayjs from '@/config/dayjs';
 

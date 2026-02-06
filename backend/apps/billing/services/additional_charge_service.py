@@ -44,6 +44,17 @@ class AdditionalChargeService(BaseService):
                 error_code="CONTAINER_ENTRY_REQUIRED",
             )
 
+        # Block charges on containers with active on-demand invoices
+        has_active_invoice = container_entry.on_demand_items.filter(
+            invoice__status__in=["draft", "finalized", "paid"],
+        ).exists()
+        if has_active_invoice:
+            raise BusinessLogicError(
+                "На этот контейнер уже выставлен разовый счёт. "
+                "Добавление начислений невозможно.",
+                error_code="CONTAINER_ALREADY_INVOICED",
+            )
+
         charge = AdditionalCharge.objects.create(
             **data,
             created_by=user,

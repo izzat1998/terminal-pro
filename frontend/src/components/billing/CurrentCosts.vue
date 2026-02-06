@@ -99,7 +99,7 @@
       size="small"
       :custom-row="(record: StorageCostItem) => ({
         onDblclick: () => handleRowDoubleClick(record),
-        style: isAdmin ? 'cursor: pointer;' : '',
+        style: isAdmin && !record.is_on_demand_invoiced ? 'cursor: pointer;' : '',
       })"
       @change="handleTableChange"
     >
@@ -138,11 +138,23 @@
           <span class="amount-uzs">{{ formatUzs(record.total_uzs) }}</span>
         </template>
         <template v-if="column.key === 'actions'">
-          <a-tooltip title="Подробности расчёта">
-            <a-button type="link" size="small" @click="showCostDetails(record)">
-              <template #icon><EyeOutlined /></template>
-            </a-button>
-          </a-tooltip>
+          <a-space :size="0">
+            <a-tooltip title="Подробности расчёта">
+              <a-button type="link" size="small" @click="showCostDetails(record)">
+                <template #icon><EyeOutlined /></template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip v-if="isAdmin" :title="record.is_on_demand_invoiced ? 'Счёт уже выставлен' : 'Добавить начисление'">
+              <a-button
+                type="link"
+                size="small"
+                :disabled="record.is_on_demand_invoiced"
+                @click="handleRowDoubleClick(record)"
+              >
+                <template #icon><PlusOutlined /></template>
+              </a-button>
+            </a-tooltip>
+          </a-space>
         </template>
       </template>
     </a-table>
@@ -327,6 +339,7 @@ import {
   CalendarOutlined,
   EyeOutlined,
   FileTextOutlined,
+  PlusOutlined,
 } from '@ant-design/icons-vue';
 import { useRouter } from 'vue-router';
 import { http, downloadFile } from '../../utils/httpClient';
@@ -568,7 +581,7 @@ const columns: TableProps['columns'] = [
   {
     title: '',
     key: 'actions',
-    width: 60,
+    width: 80,
     align: 'center',
     fixed: 'right',
   },
@@ -613,7 +626,7 @@ const showCostDetails = (record: StorageCostItem) => {
 };
 
 const handleRowDoubleClick = (record: StorageCostItem) => {
-  if (isAdmin.value && additionalChargesRef.value) {
+  if (isAdmin.value && !record.is_on_demand_invoiced && additionalChargesRef.value) {
     additionalChargesRef.value.openAddModalForContainer(
       record.container_entry_id,
       record.container_number
