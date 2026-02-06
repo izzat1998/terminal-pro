@@ -104,6 +104,11 @@
             <a-menu-item key="billing-invoices">
               <template #icon><FileProtectOutlined /></template>
               Счета
+              <a-badge
+                v-if="company?.draft_invoices_count"
+                :count="company.draft_invoices_count"
+                :number-style="{ backgroundColor: '#faad14', marginLeft: '8px' }"
+              />
             </a-menu-item>
           </a-menu-item-group>
 

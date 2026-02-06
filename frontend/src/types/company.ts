@@ -20,6 +20,7 @@ export interface Company {
   entries_count: number;
   balance_usd: string;
   balance_uzs: string;
+  draft_invoices_count: number;
   created_at: string;
   updated_at: string;
 }

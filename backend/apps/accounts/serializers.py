@@ -404,6 +404,7 @@ class CompanySerializer(serializers.ModelSerializer):
     entries_count = serializers.SerializerMethodField()
     balance_usd = serializers.SerializerMethodField()
     balance_uzs = serializers.SerializerMethodField()
+    draft_invoices_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Company
@@ -428,6 +429,7 @@ class CompanySerializer(serializers.ModelSerializer):
             "entries_count",
             "balance_usd",
             "balance_uzs",
+            "draft_invoices_count",
             "created_at",
             "updated_at",
         )
@@ -460,6 +462,11 @@ class CompanySerializer(serializers.ModelSerializer):
         if hasattr(obj, "_balance_uzs"):
             return str(obj._balance_uzs)
         return "0"
+
+    @extend_schema_field(OpenApiTypes.INT)
+    def get_draft_invoices_count(self, obj):
+        """Count of on-demand invoices in draft status."""
+        return obj.on_demand_invoices.filter(status="draft").count()
 
 
 class CompanyCreateSerializer(serializers.ModelSerializer):
