@@ -99,10 +99,6 @@
             </a-input-password>
           </a-form-item>
 
-          <div class="form-options">
-            <a-checkbox v-model:checked="rememberMe">Запомнить меня</a-checkbox>
-          </div>
-
           <a-form-item class="submit-item">
             <a-button
               type="primary"
@@ -158,7 +154,6 @@ const formState = reactive({
   password: '',
 });
 
-const rememberMe = ref(false);
 const error = ref<string | null>(null);
 
 const onFinish = async () => {
@@ -432,23 +427,6 @@ const onFinish = async () => {
   color: #94a3b8;
   font-size: 18px;
   margin-right: 4px;
-}
-
-.form-options {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.form-options :deep(.ant-checkbox-wrapper) {
-  color: #64748b;
-  font-size: 14px;
-}
-
-.form-options :deep(.ant-checkbox-checked .ant-checkbox-inner) {
-  background-color: #3b82f6;
-  border-color: #3b82f6;
 }
 
 .submit-item {

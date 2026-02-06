@@ -29,12 +29,11 @@ except ImportError:
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv(
-    "SECRET_KEY", "x%d+m)$k!+bh_a&&$ju8rky-&26s2kt8)!qmo4k2p4iol048m%"
-)
+SECRET_KEY = os.environ["SECRET_KEY"]
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
+DEV_AUTO_AUTH = os.getenv("DEV_AUTO_AUTH", "False").lower() in ("true", "1", "yes")
 
 ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS", "localhost,127.0.0.1,10.0.2.76,api-mtt.xlog.uz"
@@ -185,7 +184,9 @@ AUTH_USER_MODEL = "accounts.CustomUser"
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         # Dev auto-login (first, so it catches requests without Authorization header)
-        ["apps.accounts.authentication.DevAutoAuthentication"] if DEBUG else []
+        ["apps.accounts.authentication.DevAutoAuthentication"]
+        if DEBUG and DEV_AUTO_AUTH
+        else []
     )
     + [
         "apps.accounts.authentication.UnifiedJWTAuthentication",
@@ -350,3 +351,14 @@ TELEGRAM_WEBHOOK_PORT = int(os.getenv("TELEGRAM_WEBHOOK_PORT", "8001"))
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 USE_X_FORWARDED_PORT = True
+
+# Production security headers
+if not DEBUG:
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
