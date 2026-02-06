@@ -25,7 +25,7 @@ class UserSerializer(serializers.ModelSerializer):
             "user_type",
             "company",
         )
-        read_only_fields = ("id", "is_staff", "is_active", "user_type", "company")
+        read_only_fields = ("id", "is_admin", "is_staff", "is_active", "user_type", "company")
 
     def get_company(self, obj):
         """Get company from profile (preferred) or legacy field."""
@@ -310,6 +310,7 @@ class ManagerCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = (
+            "id",
             "first_name",
             "phone_number",
             "password",
@@ -318,6 +319,7 @@ class ManagerCreateSerializer(serializers.ModelSerializer):
             "is_active",
             "telegram_user_id",
         )
+        read_only_fields = ("id",)
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)
@@ -731,7 +733,8 @@ class CustomerCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ("first_name", "phone_number", "company_id", "bot_access", "is_active")
+        fields = ("id", "first_name", "phone_number", "company_id", "bot_access", "is_active")
+        read_only_fields = ("id",)
 
     def create(self, validated_data):
         phone_number = validated_data.get("phone_number")

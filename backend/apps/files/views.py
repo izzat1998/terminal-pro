@@ -104,7 +104,7 @@ class FileViewSet(viewsets.ModelViewSet):
 
             return response
         except FileNotFoundError:
-            raise Http404("File not found on storage.")
+            raise Http404("Файл не найден в хранилище.")
 
     @action(detail=True, methods=["post"])
     def restore(self, request, pk=None):
@@ -117,7 +117,7 @@ class FileViewSet(viewsets.ModelViewSet):
 
         file_obj = File.objects.filter(id=pk).first()
         if not file_obj:
-            raise Http404("File not found.")
+            raise Http404("Файл не найден.")
 
         file_obj.restore()
 

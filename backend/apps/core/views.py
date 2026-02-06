@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.db.models import Count
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.models import TelegramActivityLog
+from apps.core.utils import safe_int_param
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.serializers import (
     TelegramActivityLogSerializer,
@@ -71,7 +72,7 @@ class TelegramActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
         - by_user_type: Breakdown by user type
         """
 
-        days = int(request.query_params.get("days", 7))
+        days = safe_int_param(request.query_params.get("days", 7), default=7, min_val=1, max_val=365)
         since = timezone.now() - timedelta(days=days)
 
         queryset = self.get_queryset().filter(created_at__gte=since)
@@ -112,7 +113,7 @@ class TelegramActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
         }
 
         serializer = TelegramActivityLogSummarySerializer(data)
-        return Response(serializer.data)
+        return Response({"success": True, "data": serializer.data})
 
     @action(detail=False, methods=["get"], url_path="recent")
     def recent(self, request):
@@ -124,7 +125,7 @@ class TelegramActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
         since = timezone.now() - timedelta(hours=24)
         queryset = self.get_queryset().filter(created_at__gte=since)[:50]
         serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return Response({"success": True, "data": serializer.data})
 
 
 class TestTelegramGroupView(APIView):
@@ -148,13 +149,12 @@ class TestTelegramGroupView(APIView):
             return Response(
                 {
                     "success": False,
-                    "data": {
-                        "accessible": False,
-                        "error_code": "INVALID_ID",
-                        "error_message": "ID группы не указан",
+                    "error": {
+                        "code": "INVALID_ID",
+                        "message": "ID группы не указан",
                     },
                 },
-                status=400,
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         service = TelegramGroupTestService()
@@ -176,10 +176,10 @@ class TestTelegramGroupView(APIView):
             return Response(
                 {
                     "success": False,
-                    "data": {
-                        "accessible": False,
-                        "error_code": result.error_code,
-                        "error_message": result.error_message,
+                    "error": {
+                        "code": result.error_code,
+                        "message": result.error_message,
                     },
-                }
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )

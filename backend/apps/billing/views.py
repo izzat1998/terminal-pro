@@ -13,6 +13,7 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.utils import safe_int_param
 from apps.customer_portal.permissions import IsCustomer
 from apps.terminal_operations.models import ContainerEntry
 
@@ -32,7 +33,7 @@ from .serializers import (
     TariffUpdateSerializer,
     TerminalSettingsSerializer,
 )
-from .services import StatementExportService, StorageCostService
+from .services import AdditionalChargeService, ExpenseTypeService, StatementExportService, StorageCostService, TariffService
 from .services.statement_service import MonthlyStatementService
 
 
@@ -137,9 +138,12 @@ class TariffViewSet(viewsets.ModelViewSet):
         """Create a new tariff with rates."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        tariff = serializer.save()
 
-        # Return the created tariff with full details
+        tariff_service = TariffService()
+        tariff = tariff_service.create_tariff(
+            data=serializer.validated_data, user=request.user
+        )
+
         response_serializer = TariffSerializer(tariff)
         return Response(
             {"success": True, "data": response_serializer.data},
@@ -160,14 +164,24 @@ class TariffViewSet(viewsets.ModelViewSet):
             context={"request": request, "instance": instance},
         )
         serializer.is_valid(raise_exception=True)
-        serializer.update(instance, serializer.validated_data)
 
-        response_serializer = TariffSerializer(instance)
+        tariff_service = TariffService()
+        tariff = tariff_service.update_tariff(
+            tariff_id=instance.pk,
+            data=serializer.validated_data,
+            user=request.user,
+        )
+
+        response_serializer = TariffSerializer(tariff)
         return Response({"success": True, "data": response_serializer.data})
 
     def destroy(self, request, *args, **kwargs):
         """Delete a tariff."""
-        self.get_object().delete()
+        instance = self.get_object()
+
+        tariff_service = TariffService()
+        tariff_service.delete_tariff(tariff_id=instance.pk, user=request.user)
+
         return Response(
             {"success": True, "message": "Тариф удален"},
             status=status.HTTP_200_OK,
@@ -235,7 +249,7 @@ class BulkGenerateDraftsView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        year, month = int(year), int(month)
+        year, month = safe_int_param(year, default=0), safe_int_param(month, default=0)
         if not 1 <= month <= 12:
             return Response(
                 {"success": False, "error": {"code": "INVALID_MONTH", "message": "Неверный месяц"}},
@@ -1211,7 +1225,10 @@ class AdditionalChargeViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        charge = serializer.save()
+        service = AdditionalChargeService()
+        charge = service.create_charge(
+            data=serializer.validated_data, user=request.user
+        )
         response_serializer = AdditionalChargeSerializer(charge)
         return Response(
             {"success": True, "data": response_serializer.data},
@@ -1222,12 +1239,19 @@ class AdditionalChargeViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        response_serializer = AdditionalChargeSerializer(instance)
+        service = AdditionalChargeService()
+        charge = service.update_charge(
+            charge_id=instance.id,
+            data=serializer.validated_data,
+            user=request.user,
+        )
+        response_serializer = AdditionalChargeSerializer(charge)
         return Response({"success": True, "data": response_serializer.data})
 
     def destroy(self, request, *args, **kwargs):
-        self.get_object().delete()
+        instance = self.get_object()
+        service = AdditionalChargeService()
+        service.delete_charge(charge_id=instance.id, user=request.user)
         return Response({"success": True, "message": "Начисление удалено"}, status=status.HTTP_200_OK)
 
     def list(self, request, *args, **kwargs):
@@ -1364,6 +1388,10 @@ class ExpenseTypeViewSet(viewsets.ModelViewSet):
     serializer_class = ExpenseTypeSerializer
     permission_classes = [IsAuthenticated, IsAdminUser]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.expense_type_service = ExpenseTypeService()
+
     def get_queryset(self):
         queryset = super().get_queryset()
         # Filter by active status if requested
@@ -1375,7 +1403,9 @@ class ExpenseTypeViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        expense_type = serializer.save()
+        expense_type = self.expense_type_service.create_expense_type(
+            data=serializer.validated_data, user=request.user
+        )
         return Response(
             {"success": True, "data": ExpenseTypeSerializer(expense_type).data},
             status=status.HTTP_201_CREATED,
@@ -1385,11 +1415,18 @@ class ExpenseTypeViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response({"success": True, "data": serializer.data})
+        expense_type = self.expense_type_service.update_expense_type(
+            expense_type_id=instance.pk, data=serializer.validated_data, user=request.user
+        )
+        return Response(
+            {"success": True, "data": ExpenseTypeSerializer(expense_type).data}
+        )
 
     def destroy(self, request, *args, **kwargs):
-        self.get_object().delete()
+        instance = self.get_object()
+        self.expense_type_service.delete_expense_type(
+            expense_type_id=instance.pk, user=request.user
+        )
         return Response(
             {"success": True, "message": "Тип расхода удален"},
             status=status.HTTP_200_OK,

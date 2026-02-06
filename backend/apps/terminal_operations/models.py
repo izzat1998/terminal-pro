@@ -338,7 +338,8 @@ class PreOrder(TimestampedModel):
     # Customer who created this pre-order
     customer = models.ForeignKey(
         "accounts.CustomUser",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
         related_name="pre_orders",
         limit_choices_to={"user_type": "customer"},
         help_text="Клиент, создавший заявку",
@@ -711,7 +712,7 @@ class WorkOrder(TimestampedModel):
     # Container entry to be placed or retrieved
     container_entry = models.ForeignKey(
         ContainerEntry,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="work_orders",
         help_text="Контейнер для размещения или извлечения",
     )

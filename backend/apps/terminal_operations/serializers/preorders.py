@@ -192,6 +192,7 @@ class PreOrderListSerializer(serializers.ModelSerializer):
             "status_display",
             "created_at",
         )
+        read_only_fields = "__all__"
 
     @extend_schema_field({"type": "string", "nullable": True})
     def get_customer_name(self, obj):

@@ -183,6 +183,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "recorded_by",
             # Note: "status" removed to allow frontend to set status for exit/revert operations
             "created_at",
             "updated_at",

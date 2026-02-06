@@ -404,7 +404,7 @@ class MonthlyStatement(TimestampedModel):
 
     company = models.ForeignKey(
         "accounts.Company",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="statements",
         verbose_name="Компания",
     )
@@ -778,7 +778,7 @@ class AdditionalCharge(TimestampedModel):
 
     container_entry = models.ForeignKey(
         "terminal_operations.ContainerEntry",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="additional_charges",
         verbose_name="Запись контейнера",
     )
@@ -843,7 +843,7 @@ class OnDemandInvoice(TimestampedModel):
 
     company = models.ForeignKey(
         "accounts.Company",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="on_demand_invoices",
         verbose_name="Компания",
     )

@@ -135,7 +135,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
                     "success": False,
                     "error": {
                         "code": "COMPANY_REQUIRED",
-                        "message": "company_id is required for customers",
+                        "message": "Для клиентов необходимо указать company_id",
                     },
                 },
                 status=status.HTTP_400_BAD_REQUEST,

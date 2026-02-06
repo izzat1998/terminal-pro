@@ -4,7 +4,7 @@ Terminal Vehicle Service.
 Handles CRUD operations for terminal yard equipment (Reach Stackers, Forklifts, etc.).
 """
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 
 from apps.accounts.models import CustomUser
@@ -66,6 +66,7 @@ class TerminalVehicleService(BaseService):
                 error_code="VEHICLE_NOT_FOUND",
             )
 
+    @transaction.atomic
     def create_vehicle(
         self,
         name: str,
@@ -126,6 +127,7 @@ class TerminalVehicleService(BaseService):
                 error_code="CREATE_FAILED",
             )
 
+    @transaction.atomic
     def update_vehicle(
         self,
         vehicle_id: int,
@@ -192,6 +194,7 @@ class TerminalVehicleService(BaseService):
         self.logger.info(f"Updated terminal vehicle: {vehicle.name} (ID: {vehicle_id})")
         return vehicle
 
+    @transaction.atomic
     def delete_vehicle(self, vehicle_id: int) -> None:
         """
         Delete a terminal vehicle.
@@ -218,6 +221,7 @@ class TerminalVehicleService(BaseService):
         vehicle.delete()
         self.logger.info(f"Deleted terminal vehicle: {vehicle_name} (ID: {vehicle_id})")
 
+    @transaction.atomic
     def assign_operator(
         self, vehicle_id: int, operator_id: int | None
     ) -> TerminalVehicle:

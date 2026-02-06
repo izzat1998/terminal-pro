@@ -222,6 +222,7 @@ class YardSlotSerializer(serializers.ModelSerializer):
             "container_size",
             "container_entry",
         ]
+        read_only_fields = "__all__"
 
     def get_container_entry(self, obj):
         if not obj.container_entry:

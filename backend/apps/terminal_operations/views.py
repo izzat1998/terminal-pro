@@ -9,7 +9,7 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 
@@ -399,7 +399,7 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
         )
 
         if not container_number or len(container_number) < 4:
-            return Response({"on_terminal": False})
+            return Response({"success": True, "data": {"on_terminal": False}})
 
         # Check for containers currently on terminal (no exit_date)
         entry = (
@@ -414,17 +414,20 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
         if entry:
             return Response(
                 {
-                    "on_terminal": True,
-                    "entry": {
-                        "id": entry.id,
-                        "container_number": entry.container.container_number,
-                        "entry_time": entry.entry_time,
-                        "status": entry.status,
+                    "success": True,
+                    "data": {
+                        "on_terminal": True,
+                        "entry": {
+                            "id": entry.id,
+                            "container_number": entry.container.container_number,
+                            "entry_time": entry.entry_time,
+                            "status": entry.status,
+                        },
                     },
                 }
             )
 
-        return Response({"on_terminal": False})
+        return Response({"success": True, "data": {"on_terminal": False}})
 
     @action(detail=False, methods=["get"], url_path="customer-names")
     def customer_names(self, request):
@@ -647,8 +650,11 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
             return Response(
                 {
                     "success": False,
-                    "message": "Invalid file upload",
-                    "errors": serializer.errors,
+                    "error": {
+                        "code": "INVALID_FILE",
+                        "message": "Некорректный файл для загрузки",
+                        "details": serializer.errors,
+                    },
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -814,8 +820,10 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
             return Response(
                 {
                     "success": False,
-                    "message": f"Export failed: {e!s}",
-                    "errors": [str(e)],
+                    "error": {
+                        "code": "EXPORT_FAILED",
+                        "message": "Ошибка при экспорте данных",
+                    },
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
@@ -827,8 +835,7 @@ class PlateRecognizerAPIView(viewsets.GenericViewSet):
     Uses shared PlateRecognizerAPIService for plate recognition.
     """
 
-    permission_classes = [AllowAny]
-    authentication_classes = []
+    permission_classes = [IsAuthenticated]
     throttle_classes = [AnonRateThrottle]
     parser_classes = [MultiPartParser, FormParser]
     serializer_class = PlateRecognitionRequestSerializer
@@ -864,8 +871,11 @@ class PlateRecognizerAPIView(viewsets.GenericViewSet):
             return Response(
                 {
                     "success": False,
-                    "error_message": "Invalid request",
-                    "details": serializer.errors,
+                    "error": {
+                        "code": "INVALID_REQUEST",
+                        "message": "Некорректный запрос",
+                        "details": serializer.errors,
+                    },
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -877,10 +887,13 @@ class PlateRecognizerAPIView(viewsets.GenericViewSet):
 
         response_data = {
             "success": result.success,
-            "plate_number": result.plate_number,
-            "confidence": result.confidence,
-            "error_message": result.error_message,
+            "data": {
+                "plate_number": result.plate_number,
+                "confidence": result.confidence,
+            },
         }
+        if not result.success:
+            response_data["error"] = {"code": "RECOGNITION_FAILED", "message": result.error_message or "Ошибка распознавания"}
 
         return Response(
             response_data,
@@ -920,8 +933,11 @@ class PlateRecognizerAPIView(viewsets.GenericViewSet):
             return Response(
                 {
                     "success": False,
-                    "error_message": "Invalid request",
-                    "details": serializer.errors,
+                    "error": {
+                        "code": "INVALID_REQUEST",
+                        "message": "Некорректный запрос",
+                        "details": serializer.errors,
+                    },
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -933,15 +949,18 @@ class PlateRecognizerAPIView(viewsets.GenericViewSet):
 
         response_data = {
             "success": result.success,
-            "plate_number": result.plate_number,
-            "plate_confidence": result.plate_confidence,
-            "vehicle_type": result.vehicle_type,
-            "vehicle_type_confidence": result.vehicle_type_confidence,
-            "vehicle_make": result.vehicle_make,
-            "vehicle_model": result.vehicle_model,
-            "vehicle_color": result.vehicle_color,
-            "error_message": result.error_message,
+            "data": {
+                "plate_number": result.plate_number,
+                "plate_confidence": result.plate_confidence,
+                "vehicle_type": result.vehicle_type,
+                "vehicle_type_confidence": result.vehicle_type_confidence,
+                "vehicle_make": result.vehicle_make,
+                "vehicle_model": result.vehicle_model,
+                "vehicle_color": result.vehicle_color,
+            },
         }
+        if not result.success:
+            response_data["error"] = {"code": "DETECTION_FAILED", "message": result.error_message or "Ошибка обнаружения"}
 
         return Response(
             response_data,
@@ -1272,7 +1291,7 @@ class PlacementViewSet(viewsets.GenericViewSet):
         service = self.get_placement_service()
 
         position = service.move_container(
-            position_id=int(pk),
+            position_id=safe_int_param(pk, default=0),
             new_zone=new_position["zone"],
             new_row=new_position["row"],
             new_bay=new_position["bay"],
@@ -1308,7 +1327,7 @@ class PlacementViewSet(viewsets.GenericViewSet):
     def remove(self, request, pk=None):
         """Remove container from its position."""
         service = self.get_placement_service()
-        service.remove_position(position_id=int(pk))
+        service.remove_position(position_id=safe_int_param(pk, default=0))
 
         return Response(
             {
@@ -1667,7 +1686,7 @@ class WorkOrderViewSet(
 
         work_order = work_order_service.complete_order(
             work_order_id=int(pk),
-            vehicle_id=int(vehicle_id) if vehicle_id else None,
+            vehicle_id=safe_int_param(vehicle_id, default=None) if vehicle_id else None,
             operator=request.user if request.user.is_authenticated else None,
         )
 
@@ -1700,7 +1719,7 @@ class WorkOrderViewSet(
             )
 
         service = self.get_work_order_service()
-        queryset = service.get_vehicle_orders(vehicle_id=int(vehicle_id))
+        queryset = service.get_vehicle_orders(vehicle_id=safe_int_param(vehicle_id, default=0))
 
         return self._paginated_list_response(queryset, request)
 
@@ -1763,7 +1782,7 @@ class WorkOrderViewSet(
                     "count": 0,
                     "next": None,
                     "previous": None,
-                    "results": [],
+                    "data": [],
                 }
             )
 
@@ -1791,7 +1810,7 @@ class WorkOrderViewSet(
                 "count": queryset.count(),
                 "next": None,
                 "previous": None,
-                "results": serializer.data,
+                "data": serializer.data,
             }
         )
 

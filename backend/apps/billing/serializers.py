@@ -383,6 +383,7 @@ class StatementLineItemSerializer(serializers.ModelSerializer):
             "amount_usd",
             "amount_uzs",
         ]
+        read_only_fields = "__all__"
 
 
 class StatementServiceItemSerializer(serializers.ModelSerializer):
@@ -398,6 +399,7 @@ class StatementServiceItemSerializer(serializers.ModelSerializer):
             "amount_usd",
             "amount_uzs",
         ]
+        read_only_fields = "__all__"
 
 
 class MonthlyStatementListSerializer(_AuditUserNamesMixin, serializers.ModelSerializer):
@@ -439,6 +441,7 @@ class MonthlyStatementListSerializer(_AuditUserNamesMixin, serializers.ModelSeri
             "summary",
             "generated_at",
         ]
+        read_only_fields = "__all__"
 
     def get_summary(self, obj: MonthlyStatement) -> dict:
         return _get_statement_summary(obj)
@@ -486,6 +489,7 @@ class MonthlyStatementSerializer(_AuditUserNamesMixin, serializers.ModelSerializ
             "pending_containers_data",
             "generated_at",
         ]
+        read_only_fields = "__all__"
 
     def get_summary(self, obj: MonthlyStatement) -> dict:
         return _get_statement_summary(obj)
@@ -597,6 +601,7 @@ class OnDemandInvoiceItemSerializer(serializers.ModelSerializer):
             "amount_usd",
             "amount_uzs",
         ]
+        read_only_fields = "__all__"
 
 
 class OnDemandInvoiceServiceItemSerializer(serializers.ModelSerializer):
@@ -612,6 +617,7 @@ class OnDemandInvoiceServiceItemSerializer(serializers.ModelSerializer):
             "amount_usd",
             "amount_uzs",
         ]
+        read_only_fields = "__all__"
 
 
 class OnDemandInvoiceListSerializer(_AuditUserNamesMixin, serializers.ModelSerializer):
@@ -650,6 +656,7 @@ class OnDemandInvoiceListSerializer(_AuditUserNamesMixin, serializers.ModelSeria
             "cancellation_reason",
             "created_at",
         ]
+        read_only_fields = "__all__"
 
     def get_pending_exit_count(self, obj: OnDemandInvoice) -> int:
         """Count items where container hasn't exited yet (still on terminal)."""
@@ -696,6 +703,7 @@ class OnDemandInvoiceDetailSerializer(_AuditUserNamesMixin, serializers.ModelSer
             "cancellation_reason",
             "created_at",
         ]
+        read_only_fields = "__all__"
 
 
 class OnDemandInvoiceCreateSerializer(serializers.Serializer):

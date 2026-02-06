@@ -12,8 +12,13 @@ from .models import CustomUser
 
 class DevAutoAuthentication(BaseAuthentication):
     """
-    Development-only authentication that auto-logs in as admin.
+    ⚠️  WARNING: Development-only authentication that auto-logs in as admin.
     Only active when DEBUG=True. Returns None if admin not found (falls through to next auth).
+
+    SECURITY: This class MUST NEVER be active in production.
+    It is conditionally included in REST_FRAMEWORK settings only when DEV_AUTO_AUTH=True
+    AND DEBUG=True. If you see this class active in production logs, it is a critical
+    security incident — disable DEV_AUTO_AUTH immediately.
     """
 
     def authenticate(self, request):
