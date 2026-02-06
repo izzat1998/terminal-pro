@@ -9,8 +9,17 @@ from django.conf import settings
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "terminal_app.settings")
 
+# Use SQLite for tests to avoid PostgreSQL CREATE DATABASE permission issues
+os.environ["DATABASE_URL"] = ""
+
 if not settings.configured:
     django.setup()
+
+# Force SQLite after Django setup
+settings.DATABASES["default"] = {
+    "ENGINE": "django.db.backends.sqlite3",
+    "NAME": ":memory:",
+}
 
 import pytest
 from django.contrib.auth import get_user_model

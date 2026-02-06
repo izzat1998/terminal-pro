@@ -22,6 +22,10 @@
           {
             "type": "command",
             "command": ".claude/hooks/format-on-edit.sh \"$FILE_PATH\""
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/syntax-check.sh \"$FILE_PATH\""
           }
         ]
       }

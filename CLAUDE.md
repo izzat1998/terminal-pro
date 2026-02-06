@@ -97,6 +97,14 @@ Examples:
 - `fix: correct JWT refresh token rotation`
 - `docs: update API endpoint documentation`
 
+### Git Workflow
+
+- Always run `git status` and `git diff` before committing to review changes
+- Report commit hashes after committing
+- Do NOT push unless explicitly asked
+- Separate backend/frontend/test changes into logical commits when independent
+- Do NOT re-commit already-pushed changes
+
 ## User Types
 
 | Type | Access Method | Capabilities |
@@ -193,6 +201,22 @@ npm run build
 ```
 
 **IMPORTANT:** After frontend code changes, always run `npm run build` - the dev server is NOT used in production.
+
+## Business Logic / Financial Rules
+
+When implementing billing, invoicing, or financial calculations:
+
+| Concern | Rule |
+|---------|------|
+| Money types | Always use `Decimal`, never `float` |
+| Rounding | Round at the final step only, not intermediate calculations |
+| Free days | Containers may have grace periods with zero cost — always account for this |
+| Immutability | Never modify historical billing records — create adjustments instead |
+| Race conditions | Use `select_for_update()` when modifying billing records concurrently |
+| Backdating | Validate that date ranges are logical before processing |
+| State tracking | `current_status` must be updated atomically with related fields |
+
+**Before writing financial code:** List edge cases and get user approval (see `.claude/rules/workflow.md` Rule 2).
 
 ## AI Assistant Guidelines
 
