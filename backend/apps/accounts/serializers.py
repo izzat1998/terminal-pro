@@ -418,6 +418,10 @@ class CompanySerializer(serializers.ModelSerializer):
             "mfo",
             "bank_account",
             "bank_name",
+            "contract_number",
+            "contract_date",
+            "contract_expires",
+            "contract_file",
             "customers_count",
             "entries_count",
             "balance_usd",
@@ -490,6 +494,10 @@ class CompanyUpdateSerializer(serializers.ModelSerializer):
             "mfo",
             "bank_account",
             "bank_name",
+            "contract_number",
+            "contract_date",
+            "contract_expires",
+            "contract_file",
         )
 
     def validate_name(self, value):

@@ -419,6 +419,31 @@ class Company(TimestampedModel):
         verbose_name="Банк",
     )
 
+    # Contract details
+    contract_number = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Номер договора",
+    )
+    contract_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Дата договора",
+    )
+    contract_expires = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Срок действия",
+        help_text="Оставьте пустым для бессрочного договора",
+    )
+    contract_file = models.FileField(
+        upload_to="contracts/%Y/",
+        blank=True,
+        verbose_name="Файл договора",
+        help_text="PDF или скан договора",
+    )
+
     class Meta:
         verbose_name = "Компания"
         verbose_name_plural = "Компании"

@@ -43,6 +43,54 @@
         <a-input v-model:value="formState.bank_name" placeholder="Название банка и филиала" />
       </a-form-item>
 
+      <a-divider>Договор</a-divider>
+
+      <a-form-item label="Номер договора">
+        <a-input v-model:value="formState.contract_number" placeholder="Напр. ДХК-2025/047" />
+      </a-form-item>
+
+      <a-form-item label="Дата договора">
+        <a-date-picker
+          v-model:value="formState.contract_date"
+          format="DD.MM.YYYY"
+          value-format="YYYY-MM-DD"
+          placeholder="Дата подписания"
+          style="width: 100%"
+        />
+      </a-form-item>
+
+      <a-form-item label="Срок действия">
+        <a-date-picker
+          v-model:value="formState.contract_expires"
+          format="DD.MM.YYYY"
+          value-format="YYYY-MM-DD"
+          placeholder="Бессрочный (если пусто)"
+          style="width: 100%"
+        />
+      </a-form-item>
+
+      <a-form-item label="Файл договора">
+        <div v-if="company?.contract_file && !contractFileRemoved" style="margin-bottom: 8px">
+          <a :href="company.contract_file" target="_blank" rel="noopener">
+            <PaperClipOutlined /> Текущий файл
+          </a>
+          <a-button type="link" danger size="small" @click="contractFileRemoved = true">
+            Удалить
+          </a-button>
+        </div>
+        <a-upload
+          :before-upload="handleContractFile"
+          :max-count="1"
+          :file-list="contractFileList"
+          accept=".pdf,.jpg,.jpeg,.png"
+          @remove="handleRemoveContractFile"
+        >
+          <a-button>
+            <UploadOutlined /> Загрузить договор
+          </a-button>
+        </a-upload>
+      </a-form-item>
+
       <a-form-item :wrapper-col="{ offset: 6, span: 14 }">
         <a-space>
           <a-button type="primary" :loading="saveLoading" @click="handleSave">
@@ -76,7 +124,8 @@
 import { ref, watch, createVNode } from 'vue';
 import { useRouter } from 'vue-router';
 import { message, Modal } from 'ant-design-vue';
-import { SaveOutlined, DeleteOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue';
+import { SaveOutlined, DeleteOutlined, ExclamationCircleOutlined, UploadOutlined, PaperClipOutlined } from '@ant-design/icons-vue';
+import type { UploadFile } from 'ant-design-vue';
 import { http } from '../../utils/httpClient';
 import type { Company } from '../../types/company';
 
@@ -101,10 +150,25 @@ const formState = ref({
   mfo: '',
   bank_account: '',
   bank_name: '',
+  contract_number: '',
+  contract_date: null as string | null,
+  contract_expires: null as string | null,
 });
 
 const saveLoading = ref(false);
 const deleteLoading = ref(false);
+const contractFileList = ref<UploadFile[]>([]);
+const newContractFile = ref<File | null>(null);
+const contractFileRemoved = ref(false);
+
+const handleContractFile = (file: File): false => {
+  newContractFile.value = file;
+  return false;
+};
+
+const handleRemoveContractFile = (): void => {
+  newContractFile.value = null;
+};
 
 const populateForm = (c: Company) => {
   formState.value = {
@@ -115,7 +179,13 @@ const populateForm = (c: Company) => {
     mfo: c.mfo || '',
     bank_account: c.bank_account || '',
     bank_name: c.bank_name || '',
+    contract_number: c.contract_number || '',
+    contract_date: c.contract_date,
+    contract_expires: c.contract_expires,
   };
+  newContractFile.value = null;
+  contractFileList.value = [];
+  contractFileRemoved.value = false;
 };
 
 watch(() => props.company, (c) => {
@@ -131,13 +201,36 @@ const handleSave = async () => {
 
   saveLoading.value = true;
   try {
-    const result = await http.put<{ success: boolean; data: Company; error?: { message: string }; message?: string }>(
-      `/auth/companies/${props.company.slug}/`,
-      formState.value,
-    );
+    const hasFile = newContractFile.value || contractFileRemoved.value;
+    type SaveResponse = { success: boolean; data: Company; error?: { message: string }; message?: string };
+    let result: SaveResponse;
+
+    if (hasFile) {
+      const fd = new FormData();
+      for (const [key, val] of Object.entries(formState.value)) {
+        if (val !== null && val !== undefined) fd.append(key, String(val));
+      }
+      if (newContractFile.value) {
+        fd.append('contract_file', newContractFile.value);
+      } else if (contractFileRemoved.value) {
+        fd.append('contract_file', '');
+      }
+      result = await http.put<SaveResponse>(
+        `/auth/companies/${props.company.slug}/`,
+        fd,
+      );
+    } else {
+      result = await http.put<SaveResponse>(
+        `/auth/companies/${props.company.slug}/`,
+        formState.value,
+      );
+    }
     if (result.success) {
       message.success('Компания успешно обновлена');
       emit('updated', result.data);
+      newContractFile.value = null;
+      contractFileList.value = [];
+      contractFileRemoved.value = false;
     } else {
       message.error(result.error?.message || result.message || 'Ошибка обновления компании');
     }

@@ -215,7 +215,7 @@
         действующее на основании Устава, и &laquo;{{ statement.company.name }}&raquo;,
         составили настоящий акт в том, что работы на сумму
         <strong>{{ grand_total_usd }} долларов США</strong>,
-        выполненные Исполнителем, полностью удовлетворяют условиям Договора хранения контейнеров.
+        выполненные Исполнителем, полностью удовлетворяют условиям Договора хранения контейнеров{% if statement.company.contract_number %} № {{ statement.company.contract_number }}{% endif %}{% if contract_date_formatted %} от {{ contract_date_formatted }}{% endif %}.
         Заказчик претензий и замечаний к Исполнителю не имеет.
     </div>
 
@@ -282,7 +282,7 @@
         Счёт-фактура {% if statement.invoice_number %}№ {{ statement.invoice_number }}{% endif %}
         от {{ act_date }}
     </div>
-    <div class="sf-ref">к товаро-отгрузочным документам: Договор хранения контейнеров</div>
+    <div class="sf-ref">к товаро-отгрузочным документам: Договор хранения контейнеров{% if statement.company.contract_number %} № {{ statement.company.contract_number }}{% endif %}{% if contract_date_formatted %} от {{ contract_date_formatted }}{% endif %}</div>
 
     <div class="parties">
         <div class="party">

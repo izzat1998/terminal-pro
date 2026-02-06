@@ -12,6 +12,10 @@ export interface Company {
   mfo: string;
   bank_account: string;
   bank_name: string;
+  contract_number: string;
+  contract_date: string | null;
+  contract_expires: string | null;
+  contract_file: string | null;
   customers_count: number;
   entries_count: number;
   balance_usd: string;

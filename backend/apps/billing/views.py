@@ -1085,10 +1085,16 @@ def _render_act_html_preview(statement, settings_obj):
             "total_with_vat_uzs": f"{svc_total_uzs:,.0f}",
         })
 
+    # Format contract date if available
+    contract_date_formatted = ""
+    if statement.company.contract_date:
+        contract_date_formatted = statement.company.contract_date.strftime("%d.%m.%Y г.")
+
     return render_to_string("billing/schet_factura_html_preview.html", {
         "statement": statement,
         "settings": settings_obj,
         "act_date": act_date,
+        "contract_date_formatted": contract_date_formatted,
         "exchange_rate": f"{rate:,.2f}",
         "grouped_items": grouped_items,
         "service_items": svc_items,

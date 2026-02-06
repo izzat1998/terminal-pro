@@ -51,6 +51,37 @@
         Редактировать можно в разделе «Настройки → Общие».
       </div>
     </a-card>
+
+    <a-card :bordered="false" :loading="loading" style="margin-top: 16px">
+      <template #title>Договор</template>
+      <template #extra>
+        <a-tag v-if="hasContract" color="green">Есть</a-tag>
+        <a-tag v-else color="default">Не указан</a-tag>
+      </template>
+
+      <a-descriptions bordered :column="1">
+        <a-descriptions-item label="Номер договора">
+          {{ company?.contract_number || '—' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="Дата договора">
+          {{ company?.contract_date ? formatDate(company.contract_date) : '—' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="Срок действия">
+          <template v-if="company?.contract_expires">
+            {{ formatDate(company.contract_expires) }}
+            <a-tag v-if="isExpired" color="red" style="margin-left: 8px">Истёк</a-tag>
+            <a-tag v-else color="green" style="margin-left: 8px">Действует</a-tag>
+          </template>
+          <template v-else>Бессрочный</template>
+        </a-descriptions-item>
+        <a-descriptions-item label="Файл договора">
+          <a v-if="company?.contract_file" :href="company.contract_file" target="_blank" rel="noopener">
+            Скачать
+          </a>
+          <span v-else style="color: rgba(0,0,0,0.25)">Не загружен</span>
+        </a-descriptions-item>
+      </a-descriptions>
+    </a-card>
   </div>
 </template>
 
@@ -71,4 +102,16 @@ const hasCredentials = computed(() => {
   if (!c) return false;
   return !!(c.legal_address || c.inn || c.bank_account);
 });
+
+const hasContract = computed(() => !!props.company?.contract_number);
+
+const isExpired = computed(() => {
+  if (!props.company?.contract_expires) return false;
+  return new Date(props.company.contract_expires) < new Date();
+});
+
+const formatDate = (dateStr: string): string => {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
 </script>

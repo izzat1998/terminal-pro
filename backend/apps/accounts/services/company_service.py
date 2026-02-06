@@ -159,8 +159,11 @@ class CompanyService(BaseService):
         if "notifications_enabled" in kwargs:
             company.notifications_enabled = kwargs["notifications_enabled"]
 
-        # Legal / billing credentials
-        for field in ("legal_address", "inn", "mfo", "bank_account", "bank_name"):
+        # Legal / billing credentials + contract
+        for field in (
+            "legal_address", "inn", "mfo", "bank_account", "bank_name",
+            "contract_number", "contract_date", "contract_expires", "contract_file",
+        ):
             if field in kwargs:
                 setattr(company, field, kwargs[field])
 
