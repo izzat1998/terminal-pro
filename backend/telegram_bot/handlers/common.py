@@ -323,3 +323,42 @@ async def btn_crane_operation(message: Message, state: FSMContext, user=None):
     from telegram_bot.handlers.crane_operation import cmd_crane_operation
 
     await cmd_crane_operation(message, state, user=user)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Fallback router for stale inline buttons (FSM state lost)
+# MUST be registered LAST in bot.py to catch unhandled callbacks
+# ═══════════════════════════════════════════════════════════════════════════
+fallback_router = Router()
+
+
+@fallback_router.callback_query()
+async def fallback_callback_handler(callback: CallbackQuery, state: FSMContext):
+    """
+    Catch-all handler for callback queries that weren't handled by any other router.
+    This happens when a user's FSM state is lost but they click old inline buttons.
+
+    Clears stale data and prompts user to restart with /start.
+    """
+    logger.warning(
+        f"Unhandled callback from user {callback.from_user.id}: {callback.data} "
+        f"(state lost or expired)"
+    )
+
+    # Get language from data if available, default to Russian
+    data = await state.get_data()
+    lang = data.get("language", "ru")
+
+    # Clear all stale FSM data
+    await state.clear()
+
+    # Answer the callback to stop loading indicator
+    await callback.answer()
+
+    # Send message asking user to restart
+    restart_message = {
+        "ru": "⚠️ Сессия устарела. Пожалуйста, нажмите /start чтобы начать заново.",
+        "uz": "⚠️ Sessiya eskirgan. Iltimos, /start bosing va qaytadan boshlang.",
+    }
+
+    await callback.message.answer(restart_message.get(lang, restart_message["ru"]))

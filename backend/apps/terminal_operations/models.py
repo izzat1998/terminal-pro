@@ -69,6 +69,7 @@ class ContainerEntry(TimestampedModel):
 
     # Container status
     STATUS_CHOICES = [
+        ("-", "-"),
         ("EMPTY", "Порожний"),
         ("LADEN", "Гружёный"),
     ]

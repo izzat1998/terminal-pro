@@ -810,12 +810,38 @@ async def confirm_exit(callback: CallbackQuery, state: FSMContext, user=None):
 
         # Send owner notifications (combined per owner group)
         try:
-            await owner_notification_service.notify_container_exits_batch(
+            notification_results = await owner_notification_service.notify_container_exits_batch(
                 bot=callback.bot,
                 entries=updated_entries,
                 manager=user,
                 photo_file_ids=photo_file_ids or None,
             )
+            # Store notification message IDs in activity logs for cancel functionality
+            for result in notification_results:
+                if result.status == "sent" and result.message_ids and result.chat_id:
+                    def update_exit_logs(entries, notif_result):
+                        from apps.core.models import TelegramActivityLog
+                        from django.contrib.contenttypes.models import ContentType
+                        ct = ContentType.objects.get_for_model(entries[0])
+                        # Only update logs for entries whose owner matches this notification's group
+                        for entry in entries:
+                            owner = getattr(entry, 'container_owner', None)
+                            if not owner or str(owner.telegram_group_id).strip() != notif_result.chat_id:
+                                continue
+                            log = TelegramActivityLog.objects.filter(
+                                content_type=ct,
+                                object_id=entry.id,
+                                action="container_exit_recorded",
+                            ).order_by("-created_at").first()
+                            if log:
+                                log.group_notification_status = notif_result.status
+                                log.group_message_ids = notif_result.message_ids
+                                log.group_chat_id = notif_result.chat_id
+                                log.save(update_fields=["group_notification_status", "group_message_ids", "group_chat_id"])
+                    try:
+                        await sync_to_async(update_exit_logs)(updated_entries, result)
+                    except Exception as log_err:
+                        logger.error(f"Failed to update exit notification log: {log_err}", exc_info=True)
         except Exception as e:
             logger.error(f"Failed to send exit notifications: {e}", exc_info=True)
 

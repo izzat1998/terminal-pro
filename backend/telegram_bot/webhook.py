@@ -109,8 +109,10 @@ from telegram_bot.handlers import (
     customer,
     entry,
     exit,
+    group_entry,
     manager_access,
 )
+from telegram_bot.handlers.common import fallback_router
 from telegram_bot.health import health_check, readiness_check
 from telegram_bot.middleware import ManagerAccessMiddleware, UpdateDeduplicationMiddleware
 
@@ -230,6 +232,8 @@ def create_dispatcher() -> Dispatcher:
     dp.include_router(common.router)
     dp.include_router(entry.router)
     dp.include_router(exit.exit_router)
+    dp.include_router(group_entry.router)  # Group message entry creation
+    dp.include_router(fallback_router)  # MUST be LAST - catches unhandled callbacks
 
     logger.info("Dispatcher configured with all handlers")
     return dp

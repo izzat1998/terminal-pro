@@ -1,7 +1,7 @@
 import { http } from '../utils/httpClient';
 import type { PaginatedResponse } from '../types/api';
 
-export type GroupNotificationStatus = 'sent' | 'skipped' | 'error' | 'not_applicable';
+export type GroupNotificationStatus = 'sent' | 'skipped' | 'error' | 'not_applicable' | 'cancelled';
 
 export interface TelegramActivityLog {
   id: number;
@@ -92,6 +92,13 @@ class TelegramActivityService {
    */
   async getRecentLogs(): Promise<TelegramActivityLog[]> {
     return http.get<TelegramActivityLog[]>('/telegram/activity-logs/recent/');
+  }
+
+  /**
+   * Cancel (delete) group notification messages for an activity log
+   */
+  async cancelNotification(logId: number): Promise<{ success: boolean; message: string }> {
+    return http.post(`/telegram/activity-logs/${logId}/cancel-notification/`);
   }
 }
 

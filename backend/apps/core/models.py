@@ -41,6 +41,7 @@ class TelegramActivityLog(TimestampedModel):
         ("skipped", "Пропущено"),
         ("error", "Ошибка"),
         ("not_applicable", "Не применимо"),
+        ("cancelled", "Отменено"),
     ]
 
     # Who performed the action
@@ -85,6 +86,21 @@ class TelegramActivityLog(TimestampedModel):
         blank=True,
         default="",
         verbose_name="Ошибка уведомления группы",
+    )
+
+    # Group message tracking (for cancel/delete functionality)
+    group_message_ids = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="ID сообщений в группе",
+        help_text="List of Telegram message_ids sent to the group (for deletion)",
+    )
+    group_chat_id = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="ID чата группы",
+        help_text="Telegram chat_id where notification was sent",
     )
 
     class Meta:

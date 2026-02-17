@@ -870,11 +870,13 @@ async def confirm_entry(
             photo_file_ids=all_photo_file_ids if all_photo_file_ids else None,
         )
 
-        # Update activity log with notification result
+        # Update activity log with notification result (including message IDs for cancel)
         await sync_to_async(activity_log_service.update_group_notification_status)(
             activity_log_id=activity_log.id,
             status=notification_result.status,
             error_message=notification_result.error_message,
+            message_ids=notification_result.message_ids,
+            chat_id=notification_result.chat_id,
         )
 
         # Complete pre-order match if one was found

@@ -127,6 +127,91 @@ class TelegramActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response({"success": True, "data": serializer.data})
 
+    @action(detail=True, methods=["post"], url_path="cancel-notification")
+    def cancel_notification(self, request, pk=None):
+        """
+        Delete group notification message(s) for this activity log.
+        Removes the message from the Telegram group and marks the log as cancelled.
+        """
+        import asyncio
+        import threading
+
+        log = self.get_object()
+
+        if log.group_notification_status == "cancelled":
+            return Response(
+                {"success": False, "message": "Уведомление уже отменено"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not log.group_message_ids or not log.group_chat_id:
+            return Response(
+                {"success": False, "message": "Нет данных для удаления сообщений"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        messages_to_delete = [
+            (log.group_chat_id, msg_id) for msg_id in log.group_message_ids
+        ]
+
+        deleted_count = 0
+        errors: list[str] = []
+
+        def delete_messages():
+            nonlocal deleted_count
+
+            from django.conf import settings
+
+            from aiogram import Bot
+
+            bot_token = getattr(settings, "TELEGRAM_BOT_TOKEN", None)
+            if not bot_token:
+                errors.append("TELEGRAM_BOT_TOKEN not configured")
+                return
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            try:
+                bot = Bot(token=bot_token)
+                try:
+                    for chat_id, msg_id in messages_to_delete:
+                        try:
+                            loop.run_until_complete(
+                                bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                            )
+                            deleted_count += 1
+                        except Exception as e:
+                            errors.append(f"Message {msg_id}: {e}")
+                finally:
+                    loop.run_until_complete(bot.session.close())
+            finally:
+                loop.close()
+
+        thread = threading.Thread(target=delete_messages)
+        thread.start()
+        thread.join(timeout=10)
+
+        if thread.is_alive():
+            return Response(
+                {"success": False, "message": "Превышено время ожидания удаления сообщений"},
+                status=status.HTTP_504_GATEWAY_TIMEOUT,
+            )
+
+        if deleted_count > 0:
+            log.group_notification_status = "cancelled"
+            log.save(update_fields=["group_notification_status"])
+
+        return Response({
+            "success": True,
+            "message": f"Удалено {deleted_count} из {len(messages_to_delete)} сообщений",
+            "data": {
+                "deleted_count": deleted_count,
+                "total_messages": len(messages_to_delete),
+                "errors": errors if errors else None,
+            },
+        })
+
 
 class TestTelegramGroupView(APIView):
     """

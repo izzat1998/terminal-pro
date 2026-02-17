@@ -91,13 +91,20 @@ class ActivityLogService(BaseService):
         )
 
     def update_group_notification_status(
-        self, activity_log_id: int, status: str, error_message: str = ""
+        self, activity_log_id: int, status: str, error_message: str = "",
+        message_ids: list[int] | None = None, chat_id: str = "",
     ) -> None:
         """Update group notification status for an activity log entry."""
-        TelegramActivityLog.objects.filter(pk=activity_log_id).update(
-            group_notification_status=status,
-            group_notification_error=error_message,
-        )
+        update_fields = {
+            "group_notification_status": status,
+            "group_notification_error": error_message,
+        }
+        if message_ids:
+            update_fields["group_message_ids"] = message_ids
+        if chat_id:
+            update_fields["group_chat_id"] = chat_id
+
+        TelegramActivityLog.objects.filter(pk=activity_log_id).update(**update_fields)
         self.logger.debug(
             f"Updated group notification status for log {activity_log_id}: {status}"
         )

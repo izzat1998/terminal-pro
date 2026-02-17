@@ -24,6 +24,7 @@ class Container(TimestampedModel):
 
     # ISO 6346 Size/Type Codes
     ISO_TYPE_CHOICES = [
+        ("-", "-"),
         ("22G1", "22G1"),
         ("22K2", "22K2"),
         ("25G1", "25G1"),

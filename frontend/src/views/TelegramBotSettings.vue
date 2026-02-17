@@ -168,6 +168,21 @@
                 <span v-if="record.relatedObjectStr">{{ record.relatedObjectStr }}</span>
                 <span v-else class="text-muted">—</span>
               </template>
+              <template v-else-if="column.key === 'actions'">
+                <a-tooltip v-if="record.groupNotificationStatus === 'sent'" title="Удалить уведомление из группы">
+                  <a-button
+                    type="link"
+                    size="small"
+                    danger
+                    :loading="cancellingLogId === record.id"
+                    @click="handleCancelNotification(record)"
+                  >
+                    <template #icon>
+                      <DeleteOutlined />
+                    </template>
+                  </a-button>
+                </a-tooltip>
+              </template>
             </template>
           </a-table>
         </a-tab-pane>
@@ -246,7 +261,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import {
   RobotOutlined,
   SendOutlined,
@@ -254,6 +269,7 @@ import {
   ReloadOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons-vue';
 import { http } from '../utils/httpClient';
 import { formatDateTime } from '../utils/dateFormat';
@@ -350,6 +366,7 @@ const activityColumns = [
   { title: 'Статус', key: 'success', width: 100, align: 'center' as const },
   { title: 'Группа', key: 'groupNotification', width: 120, align: 'center' as const },
   { title: 'Дата', dataIndex: 'createdAt', key: 'createdAt', width: 150 },
+  { title: '', key: 'actions', width: 60, align: 'center' as const, fixed: 'right' as const },
 ];
 
 // State
@@ -561,11 +578,43 @@ function getGroupNotificationColor(status: GroupNotificationStatus): string {
   switch (status) {
     case 'sent':
       return 'success';
+    case 'cancelled':
+      return 'warning';
     case 'error':
       return 'error';
     default:
       return 'default';
   }
+}
+
+// Cancel notification
+const cancellingLogId = ref<number | null>(null);
+
+function handleCancelNotification(record: ActivityLogRecord): void {
+  Modal.confirm({
+    title: 'Удалить уведомление из группы?',
+    content: `Сообщение будет удалено из Telegram группы (${record.relatedObjectStr || 'запись'}).`,
+    okText: 'Удалить',
+    okType: 'danger',
+    cancelText: 'Отмена',
+    maskClosable: true,
+    async onOk() {
+      cancellingLogId.value = record.id;
+      try {
+        const result = await telegramActivityService.cancelNotification(record.id);
+        if (result.success) {
+          message.success(result.message);
+          fetchActivity();
+        } else {
+          message.warning(result.message);
+        }
+      } catch {
+        message.error('Ошибка при удалении уведомления');
+      } finally {
+        cancellingLogId.value = null;
+      }
+    },
+  });
 }
 
 async function fetchActivity(page?: number, pageSize?: number): Promise<void> {

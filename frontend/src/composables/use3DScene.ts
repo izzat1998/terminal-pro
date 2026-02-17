@@ -18,7 +18,7 @@ export function use3DScene(canvasRef: Ref<HTMLCanvasElement | undefined>) {
   const renderer = shallowRef<THREE.WebGLRenderer>();
   const controls = shallowRef<OrbitControls>();
   const isInitialized = ref(false);
-  const currentPreset = ref<CameraPreset>('isometric');
+  const currentPreset = ref<CameraPreset>('top');
   let animationId: number | null = null;
 
   function initScene(): void {
@@ -41,8 +41,8 @@ export function use3DScene(canvasRef: Ref<HTMLCanvasElement | undefined>) {
       0.1,
       500
     );
-    // Center camera on Zone A (130m/2 = 65, 30m/2 = 15)
-    camera.value.position.set(65, 60, 50);
+    // Center camera on Zone A with top-down plan view (130m/2 = 65, 30m/2 = 15)
+    camera.value.position.set(65, 100, 15);
     camera.value.lookAt(65, 0, 15);
 
     // Renderer with shadow support
@@ -231,7 +231,7 @@ export function use3DScene(canvasRef: Ref<HTMLCanvasElement | undefined>) {
   const defaultTarget = new THREE.Vector3(65, 0, 15);
 
   function resetCamera(): void {
-    setCameraPreset('isometric');
+    setCameraPreset('top');
   }
 
   // Set camera to a specific preset view
@@ -295,7 +295,7 @@ export function use3DScene(canvasRef: Ref<HTMLCanvasElement | undefined>) {
 
     // If no containers, use default zone center
     if (positions.length === 0) {
-      setCameraPreset('isometric');
+      setCameraPreset('top');
       return;
     }
 
@@ -330,14 +330,12 @@ export function use3DScene(canvasRef: Ref<HTMLCanvasElement | undefined>) {
     const zoomZ = frustumSize / (size.z * padding);
     const zoom = Math.min(zoomX, zoomZ, 2.5) * 1.2;
 
-    // Position camera for isometric view - symmetric offset for centered view
+    // Position camera for top-down plan view - directly above container center
     // For orthographic camera, position determines viewing angle, not centering
-    // Using equal X and Z offsets creates balanced isometric view
-    const offset = Math.max(size.x, size.z) * 0.5;
     camera.value.position.set(
-      center.x + offset,   // Symmetric offset
-      60,
-      center.z + offset    // Symmetric offset
+      center.x,    // Centered on X
+      100,         // High above for plan view
+      center.z     // Centered on Z
     );
     camera.value.zoom = Math.max(zoom, 0.8);
     camera.value.lookAt(center);

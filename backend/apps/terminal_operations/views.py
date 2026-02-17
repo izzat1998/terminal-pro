@@ -832,6 +832,7 @@ class ContainerEntryViewSet(viewsets.ModelViewSet):
             )
 
 
+
 class PlateRecognizerAPIView(viewsets.GenericViewSet):
     """
     API endpoint for license plate recognition (public access for Telegram Mini App).

@@ -66,12 +66,14 @@ class TelegramNotificationService(BaseService):
             caption = await self._format_caption_async(entry)
 
             # Send notification
-            success = await self._send_media_album(group_id, photos, caption)
+            success, msg_ids = await self._send_media_album(group_id, photos, caption)
 
             if success:
                 self.logger.info(
                     f"Entry {entry.id}: Successfully sent notification to group {group_id} with {len(photos)} photo(s)"
                 )
+                # Store message IDs for cancel functionality
+                await self._store_notification_log(entry, group_id, msg_ids)
             else:
                 self.logger.warning(
                     f"Entry {entry.id}: Failed to send notification to group {group_id}"
@@ -208,7 +210,7 @@ class TelegramNotificationService(BaseService):
 
     async def _send_media_album(
         self, chat_id: str, photos: list[FileAttachment], caption: str
-    ) -> bool:
+    ) -> tuple[bool, list[int]]:
         """
         Send photos as media album to Telegram group.
 
@@ -218,14 +220,14 @@ class TelegramNotificationService(BaseService):
             caption: Caption text for the album
 
         Returns:
-            bool: True if sent successfully, False otherwise
+            tuple[bool, list[int]]: (success, list of sent message IDs)
         """
         bot = None
         try:
             # Check bot token
             if not self.bot_token:
                 self.logger.error("TELEGRAM_BOT_TOKEN not configured in settings")
-                return False
+                return False, []
 
             # Create bot instance
             bot = Bot(token=self.bot_token)
@@ -255,18 +257,18 @@ class TelegramNotificationService(BaseService):
             # Check if we have any photos to send
             if not media_group:
                 self.logger.error("No valid photos to send after preparation")
-                return False
+                return False, []
 
             # Send media group
-            await bot.send_media_group(chat_id=chat_id, media=media_group)
+            sent_messages = await bot.send_media_group(chat_id=chat_id, media=media_group)
 
-            return True
+            return True, [msg.message_id for msg in sent_messages]
 
         except Exception as e:
             self.logger.error(
                 f"Failed to send media album to group {chat_id}: {e}", exc_info=True
             )
-            return False
+            return False, []
 
         finally:
             # Clean up bot session
@@ -275,6 +277,32 @@ class TelegramNotificationService(BaseService):
                     await bot.session.close()
                 except Exception as e:
                     self.logger.debug(f"Error closing bot session: {e}")
+
+    async def _store_notification_log(
+        self, entry: ContainerEntry, chat_id: str, message_ids: list[int]
+    ) -> None:
+        """Store notification message IDs in activity log for cancel functionality."""
+        try:
+            from apps.core.models import TelegramActivityLog
+
+            def create_log():
+                content_type = ContentType.objects.get_for_model(ContainerEntry)
+                TelegramActivityLog.objects.create(
+                    action="container_entry_created",
+                    user_type="manager",
+                    user=entry.recorded_by,
+                    content_type=content_type,
+                    object_id=entry.id,
+                    group_notification_status="sent",
+                    group_message_ids=message_ids,
+                    group_chat_id=chat_id,
+                    details={"source": "signal", "company": entry.company.name if entry.company else ""},
+                )
+
+            await sync_to_async(create_log)()
+            self.logger.debug(f"Entry {entry.id}: Stored notification log with {len(message_ids)} message IDs")
+        except Exception as e:
+            self.logger.error(f"Entry {entry.id}: Failed to store notification log: {e}")
 
     # Async-safe wrappers for database access
     async def _should_notify_async(self, entry: ContainerEntry) -> bool:

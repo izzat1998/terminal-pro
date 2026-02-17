@@ -4,7 +4,7 @@ to container owner Telegram groups.
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html import escape
 
 from aiogram import Bot
@@ -26,6 +26,8 @@ class NotificationResult:
 
     status: str  # 'sent', 'skipped', 'error'
     error_message: str = ""
+    message_ids: list[int] = field(default_factory=list)
+    chat_id: str = ""
 
 
 @dataclass
@@ -142,20 +144,21 @@ class OwnerNotificationService:
 
             if photo_file_ids:
                 # Send photos as media group with caption on first photo
-                await self._send_with_photos(bot, chat_id, message, photo_file_ids)
+                msg_ids = await self._send_with_photos(bot, chat_id, message, photo_file_ids)
             else:
                 # Send text-only message
-                await bot.send_message(
+                sent_msg = await bot.send_message(
                     chat_id=chat_id,
                     text=message,
                     parse_mode=ParseMode.HTML,
                 )
+                msg_ids = [sent_msg.message_id]
 
             logger.info(
                 f"Sent container entry notification to {data.owner_name} "
                 f"(group: {chat_id}) for entry {data.entry_id}"
             )
-            return NotificationResult(status="sent")
+            return NotificationResult(status="sent", message_ids=msg_ids, chat_id=chat_id)
 
         except Exception as e:
             # Silent fail - log error but don't interrupt entry creation
@@ -171,8 +174,8 @@ class OwnerNotificationService:
         chat_id: str,
         caption: str,
         photo_file_ids: list[str],
-    ) -> None:
-        """Send photos as media group with caption on first photo."""
+    ) -> list[int]:
+        """Send photos as media group with caption on first photo. Returns list of message_ids."""
         media_group = []
 
         for idx, file_id in enumerate(photo_file_ids):
@@ -184,7 +187,8 @@ class OwnerNotificationService:
             else:
                 media_group.append(InputMediaPhoto(media=file_id))
 
-        await bot.send_media_group(chat_id=chat_id, media=media_group)
+        sent_messages = await bot.send_media_group(chat_id=chat_id, media=media_group)
+        return [msg.message_id for msg in sent_messages]
 
     def _build_message_from_data(self, data: NotificationData) -> str:
         """Build notification message in Russian from extracted data."""
@@ -389,13 +393,14 @@ class OwnerNotificationService:
 
             try:
                 if photo_file_ids:
-                    await self._send_with_photos(bot, chat_id, message, photo_file_ids)
+                    msg_ids = await self._send_with_photos(bot, chat_id, message, photo_file_ids)
                 else:
-                    await bot.send_message(
+                    sent_msg = await bot.send_message(
                         chat_id=chat_id,
                         text=message,
                         parse_mode=ParseMode.HTML,
                     )
+                    msg_ids = [sent_msg.message_id]
 
                 entry_ids = [d.entry_id for d in data_list]
                 owner_name = data_list[0].owner_name
@@ -403,7 +408,7 @@ class OwnerNotificationService:
                     f"Sent combined exit notification to {owner_name} "
                     f"(group: {chat_id}) for entries {entry_ids}"
                 )
-                results.append(NotificationResult(status="sent"))
+                results.append(NotificationResult(status="sent", message_ids=msg_ids, chat_id=chat_id))
 
             except Exception as e:
                 owner_name = data_list[0].owner_name
@@ -459,20 +464,21 @@ class OwnerNotificationService:
 
             if photo_file_ids:
                 # Send photos as media group with caption on first photo
-                await self._send_with_photos(bot, chat_id, message, photo_file_ids)
+                msg_ids = await self._send_with_photos(bot, chat_id, message, photo_file_ids)
             else:
                 # Send text-only message
-                await bot.send_message(
+                sent_msg = await bot.send_message(
                     chat_id=chat_id,
                     text=message,
                     parse_mode=ParseMode.HTML,
                 )
+                msg_ids = [sent_msg.message_id]
 
             logger.info(
                 f"Sent container exit notification to {data.owner_name} "
                 f"(group: {chat_id}) for entry {data.entry_id}"
             )
-            return NotificationResult(status="sent")
+            return NotificationResult(status="sent", message_ids=msg_ids, chat_id=chat_id)
 
         except Exception as e:
             # Silent fail - log error but don't interrupt exit processing
