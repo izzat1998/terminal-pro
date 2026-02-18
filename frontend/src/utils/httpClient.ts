@@ -242,7 +242,19 @@ async function parseResponse<T>(response: Response): Promise<T> {
     return response.json();
   }
 
-  return undefined as unknown as T;
+  // Non-JSON responses (e.g. 204 No Content) — return empty object as T
+  // This is safe for our API where non-JSON success responses are empty
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    return {} as T;
+  }
+
+  throw new ApiError(
+    `Неожиданный формат ответа: ${contentType || 'unknown'}`,
+    'UNKNOWN_ERROR',
+    null,
+    new Date().toISOString(),
+    response.status,
+  );
 }
 
 // Convenience methods
