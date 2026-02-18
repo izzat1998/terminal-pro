@@ -7,171 +7,228 @@
  * Designed to be embedded in CSS3DRenderer for 3D yard canvas integration.
  */
 
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { message } from 'ant-design-vue'
-import { ToolOutlined, CameraOutlined, ScanOutlined, DownOutlined, UpOutlined, VideoCameraOutlined } from '@ant-design/icons-vue'
-import { useGateDetection, type VehicleDetectionResult } from '@/composables/useGateDetection'
-import { useGateWebSocket } from '@/composables/useGateWebSocket'
-import WebRTCPlayer from '@/components/gate/WebRTCPlayer.vue'
-import { gateVehicleService } from '@/services/gateVehicleService'
-import type { VehicleType } from '@/composables/useVehicleModels'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from "vue";
+import { message } from "ant-design-vue";
+import {
+  ToolOutlined,
+  CameraOutlined,
+  ScanOutlined,
+  DownOutlined,
+  UpOutlined,
+  VideoCameraOutlined,
+  ZoomInOutlined,
+  ZoomOutOutlined,
+} from "@ant-design/icons-vue";
+import { useGateDetection, type VehicleDetectionResult } from "@/composables/useGateDetection";
+import { useGateWebSocket } from "@/composables/useGateWebSocket";
+import WebRTCPlayer from "@/components/gate/WebRTCPlayer.vue";
+import { gateVehicleService } from "@/services/gateVehicleService";
+import { http } from "@/utils/httpClient";
+import type { VehicleType } from "@/composables/useVehicleModels";
 
-type CameraSource = 'webcam' | 'mock' | 'ipcam'
+type CameraSource = "webcam" | "mock" | "ipcam";
 
-type GateMode = 'entry' | 'exit'
+type GateMode = "entry" | "exit";
 
 interface Props {
   /** Show/hide the widget */
-  visible: boolean
+  visible: boolean;
   /** Initial camera source */
-  initialSource?: CameraSource
+  initialSource?: CameraSource;
   /** Gate identifier for display */
-  gateId?: string
+  gateId?: string;
   /** Gate mode - entry (inbound) or exit (outbound) */
-  mode?: GateMode
+  mode?: GateMode;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  initialSource: 'mock',
-  gateId: 'Gate 01',
-  mode: 'entry',
-})
+  initialSource: "mock",
+  gateId: "Gate 01",
+  mode: "entry",
+});
 
 const emit = defineEmits<{
-  vehicleDetected: [result: VehicleDetectionResult]
-}>()
+  vehicleDetected: [result: VehicleDetectionResult];
+}>();
 
 // WebRTC stream URL (mediamtx WHEP endpoint — sub stream for lower bandwidth)
-const webrtcUrl = import.meta.env.VITE_GATE_CAMERA_WEBRTC_URL || 'http://localhost:8889/gate-sub/whep'
+const webrtcUrl = import.meta.env.VITE_GATE_CAMERA_WEBRTC_URL || "http://localhost:8889/gate-sub/whep";
 
 // Refs
-const widgetRef = ref<HTMLDivElement>()
-const videoRef = ref<HTMLVideoElement>()
-const canvasRef = ref<HTMLCanvasElement>()
-const webrtcPlayerRef = ref<InstanceType<typeof WebRTCPlayer> | null>(null)
+const widgetRef = ref<HTMLDivElement>();
+const videoRef = ref<HTMLVideoElement>();
+const canvasRef = ref<HTMLCanvasElement>();
+const webrtcPlayerRef = ref<InstanceType<typeof WebRTCPlayer> | null>(null);
 
 // Camera state
-const currentSource = ref<CameraSource>(props.initialSource)
-const isWebcamActive = ref(false)
-const webcamError = ref<string | null>(null)
-const mediaStream = ref<MediaStream | null>(null)
+const currentSource = ref<CameraSource>(props.initialSource);
+const isWebcamActive = ref(false);
+const webcamError = ref<string | null>(null);
+const mediaStream = ref<MediaStream | null>(null);
 
 // Minimize state
-const isMinimized = ref(false)
+const isMinimized = ref(false);
+
+// Widget size presets (S → M → L)
+type WidgetSize = "sm" | "md" | "lg";
+const widgetSize = ref<WidgetSize>("sm");
+
+const sizeConfig = computed(() => {
+  const sizes: Record<WidgetSize, { width: number; videoHeight: number; label: string }> = {
+    sm: { width: 200, videoHeight: 90, label: "S" },
+    md: { width: 320, videoHeight: 180, label: "M" },
+    lg: { width: 480, videoHeight: 270, label: "L" },
+  };
+  return sizes[widgetSize.value];
+});
+
+function cycleSize(): void {
+  const order: WidgetSize[] = ["sm", "md", "lg"];
+  const idx = order.indexOf(widgetSize.value);
+  widgetSize.value = order[(idx + 1) % order.length]!;
+}
+
+// PTZ zoom control
+const isZooming = ref(false);
+
+function startZoom(action: "zoom_in" | "zoom_out"): void {
+  isZooming.value = true;
+  http.post("/gate/camera/ptz/", { action, speed: 50 }).catch(() => {
+    message.error("Ошибка управления камерой");
+  });
+}
+
+function stopZoom(): void {
+  if (!isZooming.value) return;
+  isZooming.value = false;
+  http.post("/gate/camera/ptz/", { action: "zoom_stop" }).catch(() => {
+    // Silent — stop failure is non-critical, motor auto-stops
+  });
+}
 
 // Detection
-const { isDetecting, lastResult, error: detectionError, useMockDetection, detectVehicle, clearError } = useGateDetection()
+const {
+  isDetecting,
+  lastResult,
+  error: detectionError,
+  useMockDetection,
+  detectVehicle,
+  clearError,
+} = useGateDetection();
 
 // IP Camera WebSocket
-const gateWS = useGateWebSocket({ gateId: 'main' })
-let wsUnsubscribe: (() => void) | null = null
+const gateWS = useGateWebSocket({ gateId: "main" });
+let wsUnsubscribe: (() => void) | null = null;
 
 function startIPCam(): void {
-  gateWS.connect()
+  gateWS.connect();
   wsUnsubscribe = gateWS.onVehicleDetected((detection) => {
-    lastResult.value = detection
-    message.success(`Распознан: ${detection.plateNumber}`)
-    emit('vehicleDetected', detection)
-  })
+    lastResult.value = detection;
+    message.success(`Распознан: ${detection.plateNumber}`);
+    emit("vehicleDetected", detection);
+  });
   // Connect WebRTC player (nextTick because ref may not be mounted yet)
   nextTick(() => {
-    webrtcPlayerRef.value?.connect()
-  })
+    webrtcPlayerRef.value?.connect();
+  });
 }
 
 function stopIPCam(): void {
   if (wsUnsubscribe) {
-    wsUnsubscribe()
-    wsUnsubscribe = null
+    wsUnsubscribe();
+    wsUnsubscribe = null;
   }
-  gateWS.disconnect()
-  webrtcPlayerRef.value?.disconnect()
+  gateWS.disconnect();
+  webrtcPlayerRef.value?.disconnect();
 }
 
 // Computed
 const canCapture = computed(() => {
-  if (currentSource.value === 'ipcam') return false
-  if (currentSource.value === 'mock') return true
-  if (currentSource.value === 'webcam') return isWebcamActive.value
-  return false
-})
+  if (currentSource.value === "ipcam") return false;
+  if (currentSource.value === "mock") return true;
+  if (currentSource.value === "webcam") return isWebcamActive.value;
+  return false;
+});
 
 const statusText = computed(() => {
-  if (isDetecting.value) return 'Сканирование...'
-  if (currentSource.value === 'ipcam') {
-    const wsStatus = gateWS.state.value.status
-    if (wsStatus === 'connected') return 'IP Камера активна'
-    if (wsStatus === 'connecting') return 'Подключение...'
-    if (gateWS.state.value.error) return gateWS.state.value.error
-    return 'Отключена'
+  if (isDetecting.value) return "Сканирование...";
+  if (currentSource.value === "ipcam") {
+    const wsStatus = gateWS.state.value.status;
+    if (wsStatus === "connected") return "IP Камера активна";
+    if (wsStatus === "connecting") return "Подключение...";
+    if (gateWS.state.value.error) return gateWS.state.value.error;
+    return "Отключена";
   }
-  if (currentSource.value === 'mock') return 'Тестовый режим'
-  if (isWebcamActive.value) return 'Камера активна'
-  if (webcamError.value) return 'Ошибка камеры'
-  return 'Камера отключена'
-})
+  if (currentSource.value === "mock") return "Тестовый режим";
+  if (isWebcamActive.value) return "Камера активна";
+  if (webcamError.value) return "Ошибка камеры";
+  return "Камера отключена";
+});
 
 const statusType = computed(() => {
-  if (isDetecting.value) return 'processing'
-  if (currentSource.value === 'ipcam') {
-    const wsStatus = gateWS.state.value.status
-    if (wsStatus === 'connected') return 'online'
-    if (wsStatus === 'connecting') return 'processing'
-    if (wsStatus === 'error') return 'error'
-    return 'offline'
+  if (isDetecting.value) return "processing";
+  if (currentSource.value === "ipcam") {
+    const wsStatus = gateWS.state.value.status;
+    if (wsStatus === "connected") return "online";
+    if (wsStatus === "connecting") return "processing";
+    if (wsStatus === "error") return "error";
+    return "offline";
   }
-  if (currentSource.value === 'mock') return 'test'
-  if (isWebcamActive.value) return 'online'
-  if (webcamError.value) return 'error'
-  return 'offline'
-})
+  if (currentSource.value === "mock") return "test";
+  if (isWebcamActive.value) return "online";
+  if (webcamError.value) return "error";
+  return "offline";
+});
 
 const vehicleTypeLabels: Record<VehicleType, string> = {
-  TRUCK: 'Грузовик',
-  CAR: 'Легковой',
-  WAGON: 'Вагон',
-  UNKNOWN: 'Не определен',
-}
+  TRUCK: "Грузовик",
+  CAR: "Легковой",
+  WAGON: "Вагон",
+  UNKNOWN: "Не определен",
+};
 
 const vehicleTypeIcons: Record<VehicleType, string> = {
-  TRUCK: '🚛',
-  CAR: '🚗',
-  WAGON: '🚃',
-  UNKNOWN: '❓',
-}
+  TRUCK: "🚛",
+  CAR: "🚗",
+  WAGON: "🚃",
+  UNKNOWN: "❓",
+};
 
 // Mode-specific styling and labels
 const modeConfig = computed(() => {
-  if (props.mode === 'exit') {
+  if (props.mode === "exit") {
     return {
-      badgeClass: 'gate-badge--exit',
-      modeLabel: 'ВЫЕЗД',
-    }
+      badgeClass: "gate-badge--exit",
+      modeLabel: "ВЫЕЗД",
+    };
   }
   return {
-    badgeClass: 'gate-badge--entry',
-    modeLabel: 'ВЪЕЗД',
-  }
-})
+    badgeClass: "gate-badge--entry",
+    modeLabel: "ВЪЕЗД",
+  };
+});
 
 // Watch for visibility changes
-watch(() => props.visible, (visible) => {
-  if (visible) {
-    if (currentSource.value === 'webcam') startWebcam()
-    else if (currentSource.value === 'ipcam') startIPCam()
-  } else {
-    stopWebcam()
-    stopIPCam()
-  }
-})
+watch(
+  () => props.visible,
+  (visible) => {
+    if (visible) {
+      if (currentSource.value === "webcam") startWebcam();
+      else if (currentSource.value === "ipcam") startIPCam();
+    } else {
+      stopWebcam();
+      stopIPCam();
+    }
+  },
+);
 
 // Webcam methods
 async function startWebcam(): Promise<void> {
-  webcamError.value = null
+  webcamError.value = null;
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    webcamError.value = 'Веб-камера не поддерживается'
-    return
+    webcamError.value = "Веб-камера не поддерживается";
+    return;
   }
 
   try {
@@ -179,156 +236,156 @@ async function startWebcam(): Promise<void> {
       video: {
         width: { ideal: 640 },
         height: { ideal: 480 },
-        facingMode: 'environment',
+        facingMode: "environment",
       },
       audio: false,
-    })
+    });
 
-    mediaStream.value = stream
+    mediaStream.value = stream;
 
     if (videoRef.value) {
-      videoRef.value.srcObject = stream
-      await videoRef.value.play()
-      isWebcamActive.value = true
+      videoRef.value.srcObject = stream;
+      await videoRef.value.play();
+      isWebcamActive.value = true;
     }
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка'
-    if (errorMessage.includes('Permission denied') || errorMessage.includes('NotAllowedError')) {
-      webcamError.value = 'Доступ к камере запрещен'
-    } else if (errorMessage.includes('NotFoundError')) {
-      webcamError.value = 'Камера не найдена'
+    const errorMessage = err instanceof Error ? err.message : "Неизвестная ошибка";
+    if (errorMessage.includes("Permission denied") || errorMessage.includes("NotAllowedError")) {
+      webcamError.value = "Доступ к камере запрещен";
+    } else if (errorMessage.includes("NotFoundError")) {
+      webcamError.value = "Камера не найдена";
     } else {
-      webcamError.value = `Ошибка: ${errorMessage}`
+      webcamError.value = `Ошибка: ${errorMessage}`;
     }
   }
 }
 
 function stopWebcam(): void {
   if (mediaStream.value) {
-    mediaStream.value.getTracks().forEach(track => track.stop())
-    mediaStream.value = null
+    mediaStream.value.getTracks().forEach((track) => track.stop());
+    mediaStream.value = null;
   }
 
   if (videoRef.value) {
-    videoRef.value.srcObject = null
+    videoRef.value.srcObject = null;
   }
 
-  isWebcamActive.value = false
+  isWebcamActive.value = false;
 }
 
 function onSourceChange(source: CameraSource): void {
-  if (currentSource.value === 'webcam') {
-    stopWebcam()
+  if (currentSource.value === "webcam") {
+    stopWebcam();
   }
-  if (currentSource.value === 'ipcam') {
-    stopIPCam()
+  if (currentSource.value === "ipcam") {
+    stopIPCam();
   }
 
-  currentSource.value = source
-  clearError()
+  currentSource.value = source;
+  clearError();
 
-  if (source === 'webcam') {
-    startWebcam()
-  } else if (source === 'ipcam') {
-    startIPCam()
+  if (source === "webcam") {
+    startWebcam();
+  } else if (source === "ipcam") {
+    startIPCam();
   }
 }
 
 // Capture and detection
 async function captureFrame(): Promise<Blob | null> {
-  const video = videoRef.value
-  const canvas = canvasRef.value
+  const video = videoRef.value;
+  const canvas = canvasRef.value;
 
-  if (!video || !canvas) return null
+  if (!video || !canvas) return null;
 
-  const context = canvas.getContext('2d')
-  if (!context) return null
+  const context = canvas.getContext("2d");
+  if (!context) return null;
 
-  canvas.width = video.videoWidth || 640
-  canvas.height = video.videoHeight || 480
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
 
-  context.drawImage(video, 0, 0, canvas.width, canvas.height)
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
   return new Promise<Blob | null>((resolve) => {
-    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85)
-  })
+    canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.85);
+  });
 }
 
 /** Mock exit: pick a random on-terminal vehicle from the DB */
 async function mockExitDetection(): Promise<VehicleDetectionResult | null> {
   try {
-    const onTerminal = await gateVehicleService.getOnTerminal()
+    const onTerminal = await gateVehicleService.getOnTerminal();
     if (!onTerminal || onTerminal.length === 0) {
-      message.warning('Нет транспорта на терминале для выезда')
-      return null
+      message.warning("Нет транспорта на терминале для выезда");
+      return null;
     }
-    const pick = onTerminal[Math.floor(Math.random() * onTerminal.length)]
-    if (!pick) return null
-    const typeMap: Record<string, VehicleType> = { LIGHT: 'CAR', CARGO: 'TRUCK' }
+    const pick = onTerminal[Math.floor(Math.random() * onTerminal.length)];
+    if (!pick) return null;
+    const typeMap: Record<string, VehicleType> = { LIGHT: "CAR", CARGO: "TRUCK" };
     return {
       plateNumber: pick.license_plate,
-      vehicleType: typeMap[pick.vehicle_type] ?? 'TRUCK',
+      vehicleType: typeMap[pick.vehicle_type] ?? "TRUCK",
       confidence: 0.85 + Math.random() * 0.14,
       timestamp: new Date().toISOString(),
-      source: 'mock',
-    }
+      source: "mock",
+    };
   } catch {
-    message.error('Не удалось загрузить транспорт на терминале')
-    return null
+    message.error("Не удалось загрузить транспорт на терминале");
+    return null;
   }
 }
 
 async function handleCapture(): Promise<void> {
-  if (!canCapture.value) return
+  if (!canCapture.value) return;
 
-  let result: VehicleDetectionResult | null = null
+  let result: VehicleDetectionResult | null = null;
 
-  if (currentSource.value === 'mock') {
-    if (props.mode === 'exit') {
-      result = await mockExitDetection()
+  if (currentSource.value === "mock") {
+    if (props.mode === "exit") {
+      result = await mockExitDetection();
     } else {
-      result = useMockDetection()
+      result = useMockDetection();
     }
-    if (result) message.info(`Тест: ${result.plateNumber}`)
+    if (result) message.info(`Тест: ${result.plateNumber}`);
   } else {
-    const imageBlob = await captureFrame()
+    const imageBlob = await captureFrame();
 
     if (!imageBlob) {
-      message.error('Не удалось захватить кадр')
-      return
+      message.error("Не удалось захватить кадр");
+      return;
     }
 
-    result = await detectVehicle(imageBlob)
+    result = await detectVehicle(imageBlob);
 
     if (result) {
-      message.success(`Распознан: ${result.plateNumber}`)
+      message.success(`Распознан: ${result.plateNumber}`);
     } else if (detectionError.value) {
-      message.error(detectionError.value)
+      message.error(detectionError.value);
     }
   }
 
   if (result) {
-    emit('vehicleDetected', result)
+    emit("vehicleDetected", result);
   }
 }
 
 // Minimize/Expand toggle
 function toggleMinimize(): void {
-  isMinimized.value = !isMinimized.value
+  isMinimized.value = !isMinimized.value;
 }
 
 // Lifecycle
 onMounted(() => {
   if (props.visible) {
-    if (currentSource.value === 'webcam') startWebcam()
-    else if (currentSource.value === 'ipcam') startIPCam()
+    if (currentSource.value === "webcam") startWebcam();
+    else if (currentSource.value === "ipcam") startIPCam();
   }
-})
+});
 
 onUnmounted(() => {
-  stopWebcam()
-  stopIPCam()
-})
+  stopWebcam();
+  stopIPCam();
+});
 </script>
 
 <template>
@@ -337,15 +394,16 @@ onUnmounted(() => {
       v-if="visible"
       ref="widgetRef"
       class="gate-camera-widget"
-      :class="{ 'gate-widget--minimized': isMinimized }"
+      :class="[`gate-widget--${widgetSize}`, { 'gate-widget--minimized': isMinimized }]"
+      :style="{ width: sizeConfig.width + 'px' }"
     >
       <!-- Header -->
       <header class="widget-header" @click="toggleMinimize">
         <div class="header-left">
           <div class="gate-badge" :class="modeConfig.badgeClass">
             <svg class="gate-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-              <circle cx="12" cy="13" r="4"/>
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+              <circle cx="12" cy="13" r="4" />
             </svg>
             <span class="gate-label">{{ gateId }}</span>
             <span class="gate-mode-badge">{{ modeConfig.modeLabel }}</span>
@@ -360,6 +418,9 @@ onUnmounted(() => {
         </div>
 
         <div class="header-right">
+          <button class="btn-icon btn-size" title="Изменить размер" @click.stop="cycleSize">
+            <span class="size-label">{{ sizeConfig.label }}</span>
+          </button>
           <button class="btn-icon btn-toggle" :title="isMinimized ? 'Развернуть' : 'Свернуть'">
             <UpOutlined v-if="isMinimized" />
             <DownOutlined v-else />
@@ -368,107 +429,127 @@ onUnmounted(() => {
       </header>
 
       <!-- Video Feed -->
-      <div v-show="!isMinimized" class="video-container">
-          <video
-            ref="videoRef"
-            class="video-feed"
-            playsinline
-            muted
-            :class="{ hidden: currentSource === 'mock' }"
-          />
+      <div v-show="!isMinimized" class="video-container" :style="{ height: sizeConfig.videoHeight + 'px' }">
+        <video ref="videoRef" class="video-feed" playsinline muted :class="{ hidden: currentSource === 'mock' }" />
 
-          <!-- Mock Feed -->
-          <div v-if="currentSource === 'mock'" class="mock-feed">
-            <div class="mock-pattern"></div>
-            <div class="mock-content">
-              <svg class="mock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                <line x1="8" y1="21" x2="16" y2="21"/>
-                <line x1="12" y1="17" x2="12" y2="21"/>
-              </svg>
-              <span class="mock-text">Тестовый режим</span>
-              <span class="mock-hint">Нажмите "Сканировать" для симуляции</span>
-            </div>
-          </div>
-
-          <!-- IP Camera Feed (live WebRTC via mediamtx) -->
-          <div v-if="currentSource === 'ipcam'" class="ipcam-feed">
-            <WebRTCPlayer
-              ref="webrtcPlayerRef"
-              :url="webrtcUrl"
-              :auto-connect="false"
-              :auto-reconnect="true"
-              :max-reconnect-attempts="10"
-              :reconnect-interval="3000"
-            />
-          </div>
-
-          <!-- Webcam Error -->
-          <div v-if="currentSource === 'webcam' && webcamError" class="feed-error">
-            <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
+        <!-- Mock Feed -->
+        <div v-if="currentSource === 'mock'" class="mock-feed">
+          <div class="mock-pattern"></div>
+          <div class="mock-content">
+            <svg class="mock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
-            <span class="error-text">{{ webcamError }}</span>
-            <button class="btn-retry" @click="startWebcam">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10"/>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-              </svg>
-              Повторить
-            </button>
+            <span class="mock-text">Тестовый режим</span>
+            <span class="mock-hint">Нажмите "Сканировать" для симуляции</span>
           </div>
-
-          <!-- Scan Overlay -->
-          <div v-if="isDetecting" class="scan-overlay">
-            <div class="scan-frame">
-              <span class="corner tl"></span>
-              <span class="corner tr"></span>
-              <span class="corner bl"></span>
-              <span class="corner br"></span>
-            </div>
-            <div class="scan-progress">
-              <div class="scan-bar"></div>
-            </div>
-          </div>
-
-          <!-- Hidden canvas -->
-          <canvas ref="canvasRef" class="capture-canvas" />
         </div>
+
+        <!-- IP Camera Feed (live WebRTC via mediamtx) -->
+        <div v-if="currentSource === 'ipcam'" class="ipcam-feed">
+          <WebRTCPlayer
+            ref="webrtcPlayerRef"
+            :url="webrtcUrl"
+            :auto-connect="false"
+            :auto-reconnect="true"
+            :max-reconnect-attempts="10"
+            :reconnect-interval="3000"
+          />
+        </div>
+
+        <!-- Webcam Error -->
+        <div v-if="currentSource === 'webcam' && webcamError" class="feed-error">
+          <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span class="error-text">{{ webcamError }}</span>
+          <button class="btn-retry" @click="startWebcam">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+            Повторить
+          </button>
+        </div>
+
+        <!-- Scan Overlay -->
+        <div v-if="isDetecting" class="scan-overlay">
+          <div class="scan-frame">
+            <span class="corner tl"></span>
+            <span class="corner tr"></span>
+            <span class="corner bl"></span>
+            <span class="corner br"></span>
+          </div>
+          <div class="scan-progress">
+            <div class="scan-bar"></div>
+          </div>
+        </div>
+
+        <!-- PTZ Zoom Controls (IP camera only) -->
+        <div v-if="currentSource === 'ipcam'" class="zoom-controls">
+          <button
+            class="zoom-btn"
+            @mousedown="startZoom('zoom_in')"
+            @mouseup="stopZoom"
+            @mouseleave="stopZoom"
+            @touchstart.prevent="startZoom('zoom_in')"
+            @touchend.prevent="stopZoom"
+          >
+            <ZoomInOutlined />
+          </button>
+          <button
+            class="zoom-btn"
+            @mousedown="startZoom('zoom_out')"
+            @mouseup="stopZoom"
+            @mouseleave="stopZoom"
+            @touchstart.prevent="startZoom('zoom_out')"
+            @touchend.prevent="stopZoom"
+          >
+            <ZoomOutOutlined />
+          </button>
+        </div>
+
+        <!-- Hidden canvas -->
+        <canvas ref="canvasRef" class="capture-canvas" />
+      </div>
 
       <!-- Detection Result -->
       <Transition name="result-slide">
         <div v-if="lastResult && !isMinimized" class="result-panel">
-            <div class="result-header">
-              <svg class="result-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                <polyline points="22 4 12 14.01 9 11.01"/>
-              </svg>
-              <span class="result-title">Распознано</span>
-              <span class="result-time">{{ new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) }}</span>
-            </div>
+          <div class="result-header">
+            <svg class="result-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+            <span class="result-title">Распознано</span>
+            <span class="result-time">{{
+              new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+            }}</span>
+          </div>
 
-            <div class="result-plate">
-              <span class="plate-number">{{ lastResult.plateNumber }}</span>
-            </div>
+          <div class="result-plate">
+            <span class="plate-number">{{ lastResult.plateNumber }}</span>
+          </div>
 
-            <div class="result-details">
-              <div class="detail-item">
-                <span class="detail-icon">{{ vehicleTypeIcons[lastResult.vehicleType] }}</span>
-                <span class="detail-label">Тип</span>
-                <span class="detail-value">{{ vehicleTypeLabels[lastResult.vehicleType] }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-icon">📊</span>
-                <span class="detail-label">Точность</span>
-                <span class="detail-value confidence" :class="{ high: lastResult.confidence >= 0.9 }">
-                  {{ Math.round(lastResult.confidence * 100) }}%
-                </span>
-              </div>
+          <div class="result-details">
+            <div class="detail-item">
+              <span class="detail-icon">{{ vehicleTypeIcons[lastResult.vehicleType] }}</span>
+              <span class="detail-label">Тип</span>
+              <span class="detail-value">{{ vehicleTypeLabels[lastResult.vehicleType] }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-icon">📊</span>
+              <span class="detail-label">Точность</span>
+              <span class="detail-value confidence" :class="{ high: lastResult.confidence >= 0.9 }">
+                {{ Math.round(lastResult.confidence * 100) }}%
+              </span>
             </div>
           </div>
-        </Transition>
+        </div>
+      </Transition>
 
       <!-- Controls -->
       <div v-show="!isMinimized" class="controls-panel">
@@ -495,10 +576,9 @@ onUnmounted(() => {
           @click.stop="handleCapture"
         >
           <template v-if="!isDetecting" #icon><ScanOutlined /></template>
-          {{ isDetecting ? 'Анализ...' : 'Сканировать' }}
+          {{ isDetecting ? "Анализ..." : "Сканировать" }}
         </a-button>
       </div>
-
     </div>
   </Transition>
 </template>
@@ -517,9 +597,7 @@ onUnmounted(() => {
 
   /* 3D Depth Effects */
   --widget-shadow-3d:
-    0 2px 4px rgba(0, 0, 0, 0.1),
-    0 8px 16px rgba(0, 0, 0, 0.1),
-    0 16px 32px rgba(0, 0, 0, 0.15),
+    0 2px 4px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.1), 0 16px 32px rgba(0, 0, 0, 0.15),
     0 32px 64px rgba(0, 0, 0, 0.1);
   --widget-border-glow: 0 0 0 1px rgba(255, 255, 255, 0.1);
 
@@ -544,12 +622,16 @@ onUnmounted(() => {
   --transition-base: 200ms ease;
   --transition-slow: 300ms ease;
 
-  width: 200px;
   background: var(--widget-bg);
   border: 1px solid var(--widget-border);
   border-radius: var(--radius-md);
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  transition:
+    width var(--transition-slow),
+    transform var(--transition-base),
+    box-shadow var(--transition-base),
+    height var(--transition-slow);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   user-select: none;
 
   /* 3D Depth Styling */
@@ -559,10 +641,6 @@ onUnmounted(() => {
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   transform: perspective(1000px) rotateX(1deg);
   transform-origin: center bottom;
-  transition:
-    transform var(--transition-base),
-    box-shadow var(--transition-base),
-    height var(--transition-slow);
 }
 
 /* Hover effect for subtle 3D lift */
@@ -718,8 +796,15 @@ onUnmounted(() => {
 }
 
 @keyframes pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.2); opacity: 0.7; }
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
 }
 
 .status-label {
@@ -758,12 +843,36 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+/* Size toggle button */
+.btn-size {
+  pointer-events: auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.btn-size .size-label {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.btn-size:hover .size-label {
+  color: var(--accent-primary);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 /* ============ VIDEO CONTAINER ============ */
 .video-container {
   position: relative;
-  height: 90px;
   background: var(--text-primary);
   overflow: hidden;
+  transition: height var(--transition-slow);
   /* Inset shadow for depth - video appears recessed */
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
 }
@@ -792,8 +901,8 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
@@ -815,12 +924,12 @@ onUnmounted(() => {
 .mock-text {
   font-size: 10px;
   font-weight: 500;
-  color: rgba(255,255,255,0.7);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .mock-hint {
   font-size: 9px;
-  color: rgba(255,255,255,0.4);
+  color: rgba(255, 255, 255, 0.4);
 }
 
 /* IP Camera Feed (live WebRTC) */
@@ -875,7 +984,7 @@ onUnmounted(() => {
 
 .error-text {
   font-size: 13px;
-  color: rgba(255,255,255,0.8);
+  color: rgba(255, 255, 255, 0.8);
   text-align: center;
   max-width: 80%;
 }
@@ -885,8 +994,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: var(--radius-sm);
   color: white;
   font-size: 12px;
@@ -896,8 +1005,8 @@ onUnmounted(() => {
 }
 
 .btn-retry:hover {
-  background: rgba(255,255,255,0.15);
-  border-color: rgba(255,255,255,0.3);
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .btn-retry svg {
@@ -931,10 +1040,30 @@ onUnmounted(() => {
   border-width: 0;
 }
 
-.corner.tl { top: 0; left: 0; border-top-width: 3px; border-left-width: 3px; }
-.corner.tr { top: 0; right: 0; border-top-width: 3px; border-right-width: 3px; }
-.corner.bl { bottom: 0; left: 0; border-bottom-width: 3px; border-left-width: 3px; }
-.corner.br { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; }
+.corner.tl {
+  top: 0;
+  left: 0;
+  border-top-width: 3px;
+  border-left-width: 3px;
+}
+.corner.tr {
+  top: 0;
+  right: 0;
+  border-top-width: 3px;
+  border-right-width: 3px;
+}
+.corner.bl {
+  bottom: 0;
+  left: 0;
+  border-bottom-width: 3px;
+  border-left-width: 3px;
+}
+.corner.br {
+  bottom: 0;
+  right: 0;
+  border-bottom-width: 3px;
+  border-right-width: 3px;
+}
 
 .scan-progress {
   position: absolute;
@@ -943,7 +1072,7 @@ onUnmounted(() => {
   transform: translateX(-50%);
   width: 120px;
   height: 4px;
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 255, 255, 0.2);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -956,9 +1085,15 @@ onUnmounted(() => {
 }
 
 @keyframes scan-progress {
-  0% { width: 0%; }
-  50% { width: 100%; }
-  100% { width: 0%; }
+  0% {
+    width: 0%;
+  }
+  50% {
+    width: 100%;
+  }
+  100% {
+    width: 0%;
+  }
 }
 
 .capture-canvas {
@@ -1015,7 +1150,7 @@ onUnmounted(() => {
   font-weight: 700;
   color: white;
   letter-spacing: 1px;
-  font-family: 'SF Mono', 'Consolas', 'Liberation Mono', monospace;
+  font-family: "SF Mono", "Consolas", "Liberation Mono", monospace;
 }
 
 .result-details {
@@ -1061,6 +1196,61 @@ onUnmounted(() => {
 
 .scan-btn {
   margin-top: 2px;
+}
+
+/* ============ PTZ ZOOM CONTROLS ============ */
+.zoom-controls {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+}
+
+.zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background var(--transition-fast);
+  touch-action: none;
+}
+
+.zoom-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.zoom-btn:active {
+  background: rgba(59, 130, 246, 0.8);
+}
+
+.zoom-btn :deep(svg) {
+  width: 16px;
+  height: 16px;
+}
+
+/* Larger zoom buttons for M/L sizes */
+.gate-widget--md .zoom-btn,
+.gate-widget--lg .zoom-btn {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+}
+
+.gate-widget--md .zoom-btn :deep(svg),
+.gate-widget--lg .zoom-btn :deep(svg) {
+  width: 18px;
+  height: 18px;
 }
 
 /* ============ TRANSITIONS ============ */
