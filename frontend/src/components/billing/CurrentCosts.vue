@@ -113,7 +113,7 @@
             </a-tag>
           </div>
         </template>
-        <template v-if="column.key === 'period'">
+        <template v-else-if="column.key === 'period'">
           <div>{{ formatDate(record.entry_date) }}</div>
           <div class="period-end">
             <template v-if="record.is_active">
@@ -124,25 +124,35 @@
             </template>
           </div>
         </template>
-        <template v-if="column.key === 'days'">
+        <template v-else-if="column.key === 'days'">
           <div class="days-breakdown">
             <a-tag color="blue">{{ record.total_days }} всего</a-tag>
             <a-tag color="green">{{ record.free_days_applied }} льгот.</a-tag>
             <a-tag color="orange">{{ record.billable_days }} опл.</a-tag>
           </div>
         </template>
-        <template v-if="column.key === 'total_usd'">
-          <span class="amount-usd">${{ parseFloat(record.total_usd).toFixed(2) }}</span>
+        <template v-else-if="column.key === 'total_usd'">
+          <span class="amount-usd clickable-amount" @click="showCostDetails(record)">${{ parseFloat(record.total_usd).toFixed(2) }}</span>
         </template>
-        <template v-if="column.key === 'billed_usd'">
-          <span v-if="parseFloat(record.billed_usd) > 0" class="amount-billed">${{ parseFloat(record.billed_usd).toFixed(2) }}</span>
+        <template v-else-if="column.key === 'billed_usd'">
+          <template v-if="parseFloat(record.billed_usd) > 0">
+            <span v-if="parseFloat(record.paid_usd) >= parseFloat(record.billed_usd)" class="amount-paid clickable-amount" @click="showBilledDetails(record)">
+              ${{ parseFloat(record.billed_usd).toFixed(2) }}
+            </span>
+            <span v-else-if="parseFloat(record.paid_usd) > 0" class="amount-partial clickable-amount" @click="showBilledDetails(record)">
+              <span class="amount-paid">${{ parseFloat(record.paid_usd).toFixed(2) }}</span>
+              <span style="color: #d9d9d9;"> / </span>
+              <span class="amount-unpaid">${{ parseFloat(record.billed_usd).toFixed(2) }}</span>
+            </span>
+            <span v-else class="amount-unpaid clickable-amount" @click="showBilledDetails(record)">${{ parseFloat(record.billed_usd).toFixed(2) }}</span>
+          </template>
           <span v-else style="color: #bfbfbf;">—</span>
         </template>
-        <template v-if="column.key === 'unbilled_usd'">
-          <span v-if="parseFloat(record.unbilled_usd) > 0" class="amount-unbilled">${{ parseFloat(record.unbilled_usd).toFixed(2) }}</span>
+        <template v-else-if="column.key === 'unbilled_usd'">
+          <span v-if="parseFloat(record.unbilled_usd) > 0" class="amount-unbilled clickable-amount" @click="showCostDetails(record)">${{ parseFloat(record.unbilled_usd).toFixed(2) }}</span>
           <span v-else style="color: #52c41a;">✓</span>
         </template>
-        <template v-if="column.key === 'actions'">
+        <template v-else-if="column.key === 'actions'">
           <a-space :size="0">
             <a-tooltip title="Подробности расчёта">
               <a-button type="link" size="small" @click="showCostDetails(record)">
@@ -251,7 +261,7 @@
               {{ record.container_size }} / {{ record.container_status }}
             </span>
           </template>
-          <template v-if="column.key === 'period'">
+          <template v-else-if="column.key === 'period'">
             {{ formatDate(record.entry_date) }} →
             <template v-if="record.is_active">
               <a-tag color="green" size="small">сегодня</a-tag>
@@ -260,20 +270,19 @@
               {{ formatDate(record.end_date) }}
             </template>
           </template>
-          <template v-if="column.key === 'days'">
+          <template v-else-if="column.key === 'days'">
             <span>{{ record.billable_days }} опл.</span>
             <span style="color: #999; margin-left: 4px;">({{ record.free_days_applied }} льгот.)</span>
           </template>
-          <template v-if="column.key === 'amount_usd'">
+          <template v-else-if="column.key === 'amount_usd'">
             <span class="amount-usd">${{ parseFloat(record.total_usd).toFixed(2) }}</span>
           </template>
-          <template v-if="column.key === 'amount_uzs'">
+          <template v-else-if="column.key === 'amount_uzs'">
             <span class="amount-uzs">{{ formatUzs(record.total_uzs) }}</span>
           </template>
         </template>
       </a-table>
 
-      <!-- Additional charges -->
       <template v-if="modalCharges.length > 0">
         <h4 style="margin: 16px 0 8px;">Дополнительные начисления</h4>
         <a-table
@@ -288,13 +297,13 @@
             <template v-if="column.key === 'container'">
               <a-tag color="blue">{{ record.container_number }}</a-tag>
             </template>
-            <template v-if="column.key === 'date'">
+            <template v-else-if="column.key === 'date'">
               {{ formatDate(record.charge_date) }}
             </template>
-            <template v-if="column.key === 'amount_usd'">
+            <template v-else-if="column.key === 'amount_usd'">
               <span class="amount-usd">${{ parseFloat(record.amount_usd).toFixed(2) }}</span>
             </template>
-            <template v-if="column.key === 'amount_uzs'">
+            <template v-else-if="column.key === 'amount_uzs'">
               <span class="amount-uzs">{{ formatUzs(record.amount_uzs) }}</span>
             </template>
           </template>
@@ -315,11 +324,17 @@
       </div>
     </a-modal>
 
-    <!-- Storage Cost Detail Modal -->
     <StorageCostModal
       v-model:open="detailModalVisible"
       :entry-id="selectedEntryId"
       :container-number="selectedContainerNumber"
+    />
+
+    <BilledDetailModal
+      v-model:open="billedModalVisible"
+      :entry-id="billedEntryId"
+      :container-number="billedContainerNumber"
+      :company-slug="companySlug"
     />
 
     <!-- Additional Charges Section -->
@@ -350,24 +365,23 @@ import { useRouter } from 'vue-router';
 import { http, downloadFile } from '../../utils/httpClient';
 import type { PaginatedResponse } from '../../types/api';
 import { formatDateLocale } from '../../utils/dateFormat';
+import { formatCurrency, formatUzs } from '../../utils/formatters';
 import StorageCostModal from '../StorageCostModal.vue';
+import BilledDetailModal from './BilledDetailModal.vue';
 import AdditionalCharges from './AdditionalCharges.vue';
 
 defineOptions({ inheritAttrs: false });
 
-// Props for admin mode (viewing company billing)
 interface Props {
   companySlug?: string;
 }
 
 const props = defineProps<Props>();
 
-// Admin mode detection and ref
 const isAdmin = computed(() => !!props.companySlug);
 const additionalChargesRef = ref<InstanceType<typeof AdditionalCharges>>();
 const router = useRouter();
 
-// Compute base URL based on whether we're in admin or customer mode
 const baseUrl = computed(() => {
   if (props.companySlug) {
     return `/auth/companies/${props.companySlug}/storage-costs`;
@@ -375,7 +389,6 @@ const baseUrl = computed(() => {
   return '/customer/storage-costs';
 });
 
-// --- Selection for on-demand invoicing (admin only) ---
 const selectedRowKeys = ref<number[]>([]);
 const creatingInvoice = ref(false);
 const invoiceNotes = ref('');
@@ -416,7 +429,6 @@ const grandTotal = computed(() => ({
   uzs: selectionSummary.value.totalUzs + chargesTotals.value.uzs,
 }));
 
-// Row selection config: block already-invoiced containers only
 const rowSelection = computed(() => {
   if (!isAdmin.value) return undefined;
   return {
@@ -450,7 +462,6 @@ const createOnDemandInvoice = async () => {
   }
 };
 
-// Fetch additional charges when modal opens
 watch(invoiceModalVisible, async (visible) => {
   if (!visible || selectedRowKeys.value.length === 0) {
     modalCharges.value = [];
@@ -502,6 +513,8 @@ interface StorageCostItem {
   total_uzs: string;
   billed_usd: string;
   billed_uzs: string;
+  paid_usd: string;
+  paid_uzs: string;
   unbilled_usd: string;
   unbilled_uzs: string;
   calculated_at: string;
@@ -529,19 +542,20 @@ const summary = ref<CostSummary>({
   total_uzs: '0',
 });
 
-// Detail modal state
 const detailModalVisible = ref(false);
 const selectedEntryId = ref<number | null>(null);
 const selectedContainerNumber = ref('');
 
-// Server-side pagination
+const billedModalVisible = ref(false);
+const billedEntryId = ref<number | null>(null);
+const billedContainerNumber = ref('');
+
 const pagination = ref({
   current: 1,
   pageSize: 20,
   total: 0,
 });
 
-// Debounce for search
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const debouncedFetch = () => {
@@ -603,15 +617,9 @@ const columns: TableProps['columns'] = [
   },
 ];
 
-const handleTableChange: TableProps['onChange'] = (pag, _filters, sorter) => {
+const handleTableChange: TableProps['onChange'] = (pag) => {
   pagination.value.current = pag.current || 1;
   pagination.value.pageSize = pag.pageSize || 20;
-
-  // Handle sorting (if implemented on backend)
-  if (!Array.isArray(sorter) && sorter.field) {
-    // Sorting would be handled here if backend supports it
-  }
-
   fetchStorageCosts();
 };
 
@@ -620,25 +628,17 @@ const formatDate = (dateStr: string): string => {
   return formatDateLocale(dateStr) || '—';
 };
 
-const formatCurrency = (value: string, currency: 'USD' | 'UZS'): string => {
-  const num = parseFloat(value);
-  if (isNaN(num)) return '—';
-  if (currency === 'USD') {
-    return `$${num.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}`;
-  }
-  return `${num.toLocaleString('ru-RU', { minimumFractionDigits: 0 })} сум`;
-};
-
-const formatUzs = (value: string): string => {
-  const num = parseFloat(value);
-  if (isNaN(num)) return '—';
-  return `${num.toLocaleString('ru-RU', { minimumFractionDigits: 0 })} сум`;
-};
-
 const showCostDetails = (record: StorageCostItem) => {
   selectedEntryId.value = record.container_entry_id;
   selectedContainerNumber.value = record.container_number;
   detailModalVisible.value = true;
+};
+
+const showBilledDetails = (record: StorageCostItem) => {
+  if (parseFloat(record.billed_usd) <= 0) return;
+  billedEntryId.value = record.container_entry_id;
+  billedContainerNumber.value = record.container_number;
+  billedModalVisible.value = true;
 };
 
 const handleRowDoubleClick = (record: StorageCostItem) => {
@@ -718,7 +718,6 @@ const exportToExcel = async () => {
   }
 };
 
-// Initial fetch
 onMounted(() => {
   fetchStorageCosts();
 });
@@ -747,7 +746,7 @@ onMounted(() => {
 
 .amount-usd {
   font-weight: 600;
-  color: var(--ant-color-success, #52c41a);
+  color: #1677ff;
 }
 
 .amount-uzs {
@@ -755,13 +754,29 @@ onMounted(() => {
   color: #722ed1;
 }
 
-.amount-billed {
+.amount-paid {
   color: #52c41a;
+}
+
+.amount-unpaid {
+  color: #fa8c16;
+}
+
+.amount-partial {
+  font-size: 12px;
 }
 
 .amount-unbilled {
   font-weight: 600;
-  color: #fa8c16;
+  color: #f5222d;
+}
+
+.clickable-amount {
+  cursor: pointer;
+}
+
+.clickable-amount:hover {
+  text-decoration: underline;
 }
 
 .selection-bar {

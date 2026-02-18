@@ -13,6 +13,7 @@ from .views import (
     CompanyStatementExportActPreviewView,
     CompanyStatementExportActView,
     CompanyStatementExportHtmlPreviewView,
+    ContainerBillingDetailView,
     CustomerAdditionalChargeView,
     CustomerStorageCostView,
     ExchangeRateView,
@@ -78,6 +79,12 @@ urlpatterns = [
         "companies/<slug:slug>/statements/<int:year>/<int:month>/export/act-html-preview/",
         CompanyStatementExportActHtmlPreviewView.as_view(),
         name="company-statement-export-act-html-preview",
+    ),
+    # Container billing detail (admin)
+    path(
+        "container-entry/<int:entry_id>/billing-detail/",
+        ContainerBillingDetailView.as_view(),
+        name="container-billing-detail",
     ),
 ]
 

@@ -9,6 +9,7 @@ from apps.billing.views import (
     CustomerAdditionalChargeView,
     CustomerAvailablePeriodsView,
     CustomerBulkStorageCostView,
+    CustomerContainerBillingDetailView,
     CustomerStatementExportActHtmlPreviewView,
     CustomerStatementExportActPreviewView,
     CustomerStatementExportActView,
@@ -113,5 +114,11 @@ urlpatterns = router.urls + [
         "additional-charges/",
         CustomerAdditionalChargeView.as_view(),
         name="customer-additional-charges",
+    ),
+    # Container billing detail (customer)
+    path(
+        "container-entry/<int:entry_id>/billing-detail/",
+        CustomerContainerBillingDetailView.as_view(),
+        name="customer-container-billing-detail",
     ),
 ]

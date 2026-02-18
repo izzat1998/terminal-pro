@@ -339,6 +339,9 @@ const props = defineProps<Props>();
 
 const isAdmin = computed(() => !!props.companySlug);
 
+// NOTE: Customer on-demand invoice endpoints (/customer/on-demand-invoices/)
+// are not yet implemented on the backend. Currently this component is only
+// used in the admin context (companySlug is always provided).
 const baseUrl = computed(() => {
   if (props.companySlug) {
     return `/auth/companies/${props.companySlug}/on-demand-invoices`;

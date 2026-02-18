@@ -52,9 +52,12 @@ def _get_customer_company(user):
 
 def build_storage_cost_row(result, invoiced_entry_ids: set, billed_amounts: dict | None = None) -> dict:
     """Build a single storage-cost response row with invoiced flag and billed amounts."""
+    zero = Decimal("0")
     billed = billed_amounts.get(result.container_entry_id) if billed_amounts else None
-    billed_usd = billed["usd"] if billed else Decimal("0")
-    billed_uzs = billed["uzs"] if billed else Decimal("0")
+    billed_usd = billed["usd"] if billed else zero
+    billed_uzs = billed["uzs"] if billed else zero
+    paid_usd = billed["paid_usd"] if billed else zero
+    paid_uzs = billed["paid_uzs"] if billed else zero
     return {
         "container_entry_id": result.container_entry_id,
         "container_number": result.container_number,
@@ -71,6 +74,8 @@ def build_storage_cost_row(result, invoiced_entry_ids: set, billed_amounts: dict
         "total_uzs": str(result.total_uzs),
         "billed_usd": str(billed_usd),
         "billed_uzs": str(billed_uzs),
+        "paid_usd": str(paid_usd),
+        "paid_uzs": str(paid_uzs),
         "unbilled_usd": str(result.total_usd - billed_usd),
         "unbilled_uzs": str(result.total_uzs - billed_uzs),
         "calculated_at": result.calculated_at.isoformat(),
@@ -91,29 +96,67 @@ def get_invoiced_entry_ids(container_entry_ids: list[int]) -> set[int]:
 
 
 def get_billed_amounts(container_entry_ids: list[int]) -> dict[int, dict]:
-    """Sum billed USD/UZS per container entry from non-cancelled monthly statements."""
-    from django.db.models import Sum
+    """Sum billed USD/UZS per container entry from non-cancelled statements and on-demand invoices.
 
-    from .models import StatementLineItem
+    Returns dict keyed by entry_id with:
+      usd/uzs      – total billed (draft + finalized + paid)
+      paid_usd/uzs – portion from paid statements/invoices only
+    """
+    from django.db.models import Q, Sum
 
-    rows = (
+    from .models import OnDemandInvoiceItem, StatementLineItem
+
+    result: dict[int, dict] = {}
+    zero = Decimal("0")
+
+    def _ensure(entry_id: int) -> dict:
+        if entry_id not in result:
+            result[entry_id] = {"usd": zero, "uzs": zero, "paid_usd": zero, "paid_uzs": zero}
+        return result[entry_id]
+
+    # Monthly statement line items – all non-cancelled
+    for row in (
         StatementLineItem.objects.filter(
             container_entry_id__in=container_entry_ids,
             statement__status__in=["draft", "finalized", "paid"],
         )
-        .values("container_entry_id")
+        .values("container_entry_id", "statement__status")
         .annotate(
             billed_usd=Sum("amount_usd"),
             billed_uzs=Sum("amount_uzs"),
         )
-    )
-    return {
-        row["container_entry_id"]: {
-            "usd": row["billed_usd"] or Decimal("0"),
-            "uzs": row["billed_uzs"] or Decimal("0"),
-        }
-        for row in rows
-    }
+    ):
+        entry = _ensure(row["container_entry_id"])
+        usd = row["billed_usd"] or zero
+        uzs = row["billed_uzs"] or zero
+        entry["usd"] += usd
+        entry["uzs"] += uzs
+        if row["statement__status"] == "paid":
+            entry["paid_usd"] += usd
+            entry["paid_uzs"] += uzs
+
+    # On-demand invoice items – all non-cancelled
+    for row in (
+        OnDemandInvoiceItem.objects.filter(
+            container_entry_id__in=container_entry_ids,
+            invoice__status__in=["draft", "finalized", "paid"],
+        )
+        .values("container_entry_id", "invoice__status")
+        .annotate(
+            billed_usd=Sum("amount_usd"),
+            billed_uzs=Sum("amount_uzs"),
+        )
+    ):
+        entry = _ensure(row["container_entry_id"])
+        usd = row["billed_usd"] or zero
+        uzs = row["billed_uzs"] or zero
+        entry["usd"] += usd
+        entry["uzs"] += uzs
+        if row["invoice__status"] == "paid":
+            entry["paid_usd"] += usd
+            entry["paid_uzs"] += uzs
+
+    return result
 
 
 NO_COMPANY_RESPONSE = {
@@ -370,7 +413,7 @@ class StorageCostView(APIView):
         serializer = StorageCostResultSerializer(result)
         data = serializer.data
 
-        # Add billed/unbilled amounts from monthly statements
+        # Add billed/unbilled amounts from statements and on-demand invoices
         billed = get_billed_amounts([entry.id]).get(entry.id)
         billed_usd = billed["usd"] if billed else Decimal("0")
         billed_uzs = billed["uzs"] if billed else Decimal("0")
@@ -556,11 +599,12 @@ class CustomerStorageCostView(APIView):
         service = StorageCostService()
         cost_results = service.calculate_bulk_costs(paginated_entries)
 
-        # Build response items with on-demand invoice flags
+        # Build response items with on-demand invoice flags and billed amounts
         entry_ids = [r.container_entry_id for r in cost_results]
         invoiced_entry_ids = get_invoiced_entry_ids(entry_ids)
+        billed_amounts = get_billed_amounts(entry_ids)
 
-        results = [build_storage_cost_row(r, invoiced_entry_ids) for r in cost_results]
+        results = [build_storage_cost_row(r, invoiced_entry_ids, billed_amounts) for r in cost_results]
 
         # Summary from the current page only -- avoids O(N) recalculation
         page_total_usd = sum(r.total_usd for r in cost_results)
@@ -1105,9 +1149,9 @@ def _render_act_html_preview(statement, settings_obj):
     for label, total_usd, qty, unit, period_start, period_end in grouped:
         item_no += 1
         total_uzs = total_usd * rate
-        # НДС inclusive: extract VAT from the total
-        vat_usd = total_usd * vat_rate / (Decimal("100") + vat_rate)
-        vat_uzs = total_uzs * vat_rate / (Decimal("100") + vat_rate)
+        # НДС added on top of net amount
+        vat_usd = (total_usd * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
+        vat_uzs = (total_uzs * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
         grand_total_usd += total_usd
         grand_total_uzs += total_uzs
         grand_vat_usd += vat_usd
@@ -1116,10 +1160,10 @@ def _render_act_html_preview(statement, settings_obj):
             "number": item_no, "label": label, "unit": unit, "qty": qty,
             "unit_price_usd": f"{total_usd / qty if qty else 0:,.2f}",
             "total_usd": f"{total_usd:,.2f}", "vat_usd": f"{vat_usd:,.2f}",
-            "total_with_vat_usd": f"{total_usd:,.2f}",
+            "total_with_vat_usd": f"{total_usd + vat_usd:,.2f}",
             "unit_price_uzs": f"{total_uzs / qty if qty else 0:,.0f}",
             "total_uzs": f"{total_uzs:,.0f}", "vat_uzs": f"{vat_uzs:,.0f}",
-            "total_with_vat_uzs": f"{total_uzs:,.0f}",
+            "total_with_vat_uzs": f"{total_uzs + vat_uzs:,.0f}",
             "period_start": period_start, "period_end": period_end,
         })
 
@@ -1127,8 +1171,8 @@ def _render_act_html_preview(statement, settings_obj):
     for desc, svc_total_usd, svc_qty, svc_unit in service_grouped:
         item_no += 1
         svc_total_uzs = svc_total_usd * rate
-        svc_vat_usd = svc_total_usd * vat_rate / (Decimal("100") + vat_rate)
-        svc_vat_uzs = svc_total_uzs * vat_rate / (Decimal("100") + vat_rate)
+        svc_vat_usd = (svc_total_usd * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
+        svc_vat_uzs = (svc_total_uzs * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
         grand_total_usd += svc_total_usd
         grand_total_uzs += svc_total_uzs
         grand_vat_usd += svc_vat_usd
@@ -1137,10 +1181,10 @@ def _render_act_html_preview(statement, settings_obj):
             "number": item_no, "label": desc, "unit": svc_unit, "qty": svc_qty,
             "unit_price_usd": f"{svc_total_usd / svc_qty if svc_qty else 0:,.2f}",
             "total_usd": f"{svc_total_usd:,.2f}", "vat_usd": f"{svc_vat_usd:,.2f}",
-            "total_with_vat_usd": f"{svc_total_usd:,.2f}",
+            "total_with_vat_usd": f"{svc_total_usd + svc_vat_usd:,.2f}",
             "unit_price_uzs": f"{svc_total_uzs / svc_qty if svc_qty else 0:,.0f}",
             "total_uzs": f"{svc_total_uzs:,.0f}", "vat_uzs": f"{svc_vat_uzs:,.0f}",
-            "total_with_vat_uzs": f"{svc_total_uzs:,.0f}",
+            "total_with_vat_uzs": f"{svc_total_uzs + svc_vat_uzs:,.0f}",
         })
 
     # Format contract date if available
@@ -1160,8 +1204,8 @@ def _render_act_html_preview(statement, settings_obj):
         "grand_total_uzs": f"{grand_total_uzs:,.0f}",
         "grand_vat_usd": f"{grand_vat_usd:,.2f}",
         "grand_vat_uzs": f"{grand_vat_uzs:,.0f}",
-        "grand_total_with_vat_usd": f"{grand_total_usd:,.2f}",
-        "grand_total_with_vat_uzs": f"{grand_total_uzs:,.0f}",
+        "grand_total_with_vat_usd": f"{grand_total_usd + grand_vat_usd:,.2f}",
+        "grand_total_with_vat_uzs": f"{grand_total_uzs + grand_vat_uzs:,.0f}",
     })
 
 
@@ -1574,3 +1618,155 @@ class ExchangeRateView(APIView):
                 },
             }
         )
+
+
+MONTHS_RU = [
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
+
+
+def _build_billing_detail(entry_id: int, act_url_builder) -> dict:
+    """Build billing detail response for a container entry."""
+    from django.db.models import Sum
+
+    from .models import OnDemandInvoiceItem, StatementLineItem
+
+    zero = Decimal("0")
+    documents = []
+    total_billed_usd = zero
+    total_billed_uzs = zero
+    total_paid_usd = zero
+    total_paid_uzs = zero
+
+    stmt_items = (
+        StatementLineItem.objects.filter(
+            container_entry_id=entry_id,
+            statement__status__in=["draft", "finalized", "paid"],
+        )
+        .values(
+            "statement_id",
+            "statement__status",
+            "statement__invoice_number",
+            "statement__year",
+            "statement__month",
+            "statement__company__slug",
+        )
+        .annotate(
+            sum_usd=Sum("amount_usd"),
+            sum_uzs=Sum("amount_uzs"),
+        )
+    )
+
+    for row in stmt_items:
+        usd = row["sum_usd"] or zero
+        uzs = row["sum_uzs"] or zero
+        total_billed_usd += usd
+        total_billed_uzs += uzs
+        if row["statement__status"] == "paid":
+            total_paid_usd += usd
+            total_paid_uzs += uzs
+
+        period_label = f"{MONTHS_RU[row['statement__month'] - 1]} {row['statement__year']}"
+
+        documents.append({
+            "type": "statement",
+            "id": row["statement_id"],
+            "number": row["statement__invoice_number"] or f"DRAFT-{row['statement_id']}",
+            "period": period_label,
+            "status": row["statement__status"],
+            "amount_usd": str(usd),
+            "amount_uzs": str(uzs),
+            "act_preview_url": act_url_builder(
+                slug=row["statement__company__slug"],
+                year=row["statement__year"],
+                month=row["statement__month"],
+            ),
+        })
+
+    od_items = (
+        OnDemandInvoiceItem.objects.filter(
+            container_entry_id=entry_id,
+            invoice__status__in=["draft", "finalized", "paid"],
+        )
+        .values(
+            "invoice_id",
+            "invoice__status",
+            "invoice__invoice_number",
+            "invoice__created_at",
+        )
+        .annotate(
+            sum_usd=Sum("amount_usd"),
+            sum_uzs=Sum("amount_uzs"),
+        )
+    )
+
+    for row in od_items:
+        usd = row["sum_usd"] or zero
+        uzs = row["sum_uzs"] or zero
+        total_billed_usd += usd
+        total_billed_uzs += uzs
+        if row["invoice__status"] == "paid":
+            total_paid_usd += usd
+            total_paid_uzs += uzs
+
+        created = row["invoice__created_at"]
+
+        documents.append({
+            "type": "on_demand_invoice",
+            "id": row["invoice_id"],
+            "number": row["invoice__invoice_number"] or f"OD-DRAFT-{row['invoice_id']}",
+            "period": created.strftime("%d.%m.%Y") if created else "",
+            "status": row["invoice__status"],
+            "amount_usd": str(usd),
+            "amount_uzs": str(uzs),
+            "act_preview_url": None,
+        })
+
+    return {
+        "container_entry_id": entry_id,
+        "total_billed_usd": str(total_billed_usd),
+        "total_billed_uzs": str(total_billed_uzs),
+        "total_paid_usd": str(total_paid_usd),
+        "total_paid_uzs": str(total_paid_uzs),
+        "documents": documents,
+    }
+
+
+class ContainerBillingDetailView(APIView):
+    """Billing documents for a container entry (admin)."""
+
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request, entry_id: int):
+        entry = get_object_or_404(ContainerEntry, id=entry_id)
+
+        def act_url_builder(slug: str, year: int, month: int) -> str:
+            return f"/api/billing/companies/{slug}/statements/{year}/{month}/export/act-html-preview/"
+
+        data = _build_billing_detail(entry.id, act_url_builder)
+        data["container_number"] = entry.container.container_number if entry.container else ""
+        return Response({"success": True, "data": data})
+
+
+class CustomerContainerBillingDetailView(APIView):
+    """Billing documents for a container entry (customer)."""
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def get(self, request, entry_id: int):
+        company = _get_customer_company(request.user)
+        if not company:
+            return Response(NO_COMPANY_RESPONSE, status=status.HTTP_400_BAD_REQUEST)
+
+        entry = get_object_or_404(
+            ContainerEntry.objects.filter(company=company),
+            id=entry_id,
+        )
+
+        def act_url_builder(slug: str, year: int, month: int) -> str:
+            return f"/api/customer/billing/statements/{year}/{month}/export/act-html-preview/"
+
+        data = _build_billing_detail(entry.id, act_url_builder)
+        data["container_number"] = entry.container.container_number if entry.container else ""
+        return Response({"success": True, "data": data})

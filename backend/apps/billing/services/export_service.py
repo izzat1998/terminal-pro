@@ -527,9 +527,9 @@ class StatementExportService(BaseService):
             item_no += 1
             total_uzs = total_usd * rate
 
-            # НДС inclusive: vat = total * rate / (100 + rate)
-            vat_usd = total_usd * vat_rate / (Decimal("100") + vat_rate)
-            vat_uzs = total_uzs * vat_rate / (Decimal("100") + vat_rate)
+            # НДС added on top of net amount
+            vat_usd = (total_usd * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
+            vat_uzs = (total_uzs * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
 
             grand_total_usd += total_usd
             grand_total_uzs += total_uzs
@@ -547,7 +547,7 @@ class StatementExportService(BaseService):
                   border=border_all, alignment=align_right, number_format="#,##0.00")
             _cell(row, 7, float(vat_usd),
                   border=border_all, alignment=align_right, number_format="#,##0.00")
-            _cell(row, 8, float(total_usd),
+            _cell(row, 8, float(total_usd + vat_usd),
                   border=border_all, alignment=align_right, number_format="#,##0.00")
             _cell(row, 9, period_start, border=border_all, alignment=align_center)
             _cell(row, 10, period_end, border=border_all, alignment=align_center)
@@ -564,7 +564,7 @@ class StatementExportService(BaseService):
                   border=border_all, alignment=align_right, number_format="#,##0")
             _cell(row, 7, float(vat_uzs),
                   border=border_all, alignment=align_right, number_format="#,##0")
-            _cell(row, 8, float(total_uzs),
+            _cell(row, 8, float(total_uzs + vat_uzs),
                   border=border_all, alignment=align_right, number_format="#,##0")
             _cell(row, 9, "", border=border_all)
             _cell(row, 10, "", border=border_all)
@@ -575,8 +575,9 @@ class StatementExportService(BaseService):
         for desc, svc_total_usd, svc_qty, svc_unit in service_grouped:
             item_no += 1
             svc_total_uzs = svc_total_usd * rate
-            svc_vat_usd = svc_total_usd * vat_rate / (Decimal("100") + vat_rate)
-            svc_vat_uzs = svc_total_uzs * vat_rate / (Decimal("100") + vat_rate)
+            # НДС added on top of net amount
+            svc_vat_usd = (svc_total_usd * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
+            svc_vat_uzs = (svc_total_uzs * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
 
             grand_total_usd += svc_total_usd
             grand_total_uzs += svc_total_uzs
@@ -593,7 +594,7 @@ class StatementExportService(BaseService):
                   border=border_all, alignment=align_right, number_format="#,##0.00")
             _cell(row, 7, float(svc_vat_usd),
                   border=border_all, alignment=align_right, number_format="#,##0.00")
-            _cell(row, 8, float(svc_total_usd),
+            _cell(row, 8, float(svc_total_usd + svc_vat_usd),
                   border=border_all, alignment=align_right, number_format="#,##0.00")
             _cell(row, 9, "", border=border_all)
             _cell(row, 10, "", border=border_all)
@@ -610,7 +611,7 @@ class StatementExportService(BaseService):
                   border=border_all, alignment=align_right, number_format="#,##0")
             _cell(row, 7, float(svc_vat_uzs),
                   border=border_all, alignment=align_right, number_format="#,##0")
-            _cell(row, 8, float(svc_total_uzs),
+            _cell(row, 8, float(svc_total_uzs + svc_vat_uzs),
                   border=border_all, alignment=align_right, number_format="#,##0")
             _cell(row, 9, "", border=border_all)
             _cell(row, 10, "", border=border_all)
@@ -628,7 +629,7 @@ class StatementExportService(BaseService):
               border=border_all, alignment=align_right, number_format="#,##0.00")
         _cell(row, 7, float(grand_vat_usd), font=bold,
               border=border_all, alignment=align_right, number_format="#,##0.00")
-        _cell(row, 8, float(grand_total_usd), font=bold,
+        _cell(row, 8, float(grand_total_usd + grand_vat_usd), font=bold,
               border=border_all, alignment=align_right, number_format="#,##0.00")
         _cell(row, 9, "", border=border_all)
         _cell(row, 10, "", border=border_all)
@@ -643,7 +644,7 @@ class StatementExportService(BaseService):
               border=border_all, alignment=align_right, number_format="#,##0")
         _cell(row, 7, float(grand_vat_uzs), font=bold,
               border=border_all, alignment=align_right, number_format="#,##0")
-        _cell(row, 8, float(grand_total_uzs), font=bold,
+        _cell(row, 8, float(grand_total_uzs + grand_vat_uzs), font=bold,
               border=border_all, alignment=align_right, number_format="#,##0")
         _cell(row, 9, "", border=border_all)
         _cell(row, 10, "", border=border_all)
@@ -710,8 +711,9 @@ class StatementExportService(BaseService):
         for label, total_usd, qty, unit, period_start, period_end in grouped:
             item_no += 1
             total_uzs = total_usd * rate
-            vat_usd = total_usd * vat_rate / (Decimal("100") + vat_rate)
-            vat_uzs = total_uzs * vat_rate / (Decimal("100") + vat_rate)
+            # НДС added on top of net amount
+            vat_usd = (total_usd * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
+            vat_uzs = (total_uzs * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
 
             grand_total_usd += total_usd
             grand_total_uzs += total_uzs
@@ -726,9 +728,11 @@ class StatementExportService(BaseService):
                 "unit_price_usd": f"{total_usd / qty if qty else 0:,.2f}",
                 "total_usd": f"{total_usd:,.2f}",
                 "vat_usd": f"{vat_usd:,.2f}",
+                "total_with_vat_usd": f"{total_usd + vat_usd:,.2f}",
                 "unit_price_uzs": f"{total_uzs / qty if qty else 0:,.0f}",
                 "total_uzs": f"{total_uzs:,.0f}",
                 "vat_uzs": f"{vat_uzs:,.0f}",
+                "total_with_vat_uzs": f"{total_uzs + vat_uzs:,.0f}",
                 "period_start": period_start,
                 "period_end": period_end,
             })
@@ -737,8 +741,9 @@ class StatementExportService(BaseService):
         for desc, svc_total_usd, svc_qty, svc_unit in service_grouped:
             item_no += 1
             svc_total_uzs = svc_total_usd * rate
-            svc_vat_usd = svc_total_usd * vat_rate / (Decimal("100") + vat_rate)
-            svc_vat_uzs = svc_total_uzs * vat_rate / (Decimal("100") + vat_rate)
+            # НДС added on top of net amount
+            svc_vat_usd = (svc_total_usd * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
+            svc_vat_uzs = (svc_total_uzs * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
 
             grand_total_usd += svc_total_usd
             grand_total_uzs += svc_total_uzs
@@ -753,9 +758,11 @@ class StatementExportService(BaseService):
                 "unit_price_usd": f"{svc_total_usd / svc_qty if svc_qty else 0:,.2f}",
                 "total_usd": f"{svc_total_usd:,.2f}",
                 "vat_usd": f"{svc_vat_usd:,.2f}",
+                "total_with_vat_usd": f"{svc_total_usd + svc_vat_usd:,.2f}",
                 "unit_price_uzs": f"{svc_total_uzs / svc_qty if svc_qty else 0:,.0f}",
                 "total_uzs": f"{svc_total_uzs:,.0f}",
                 "vat_uzs": f"{svc_vat_uzs:,.0f}",
+                "total_with_vat_uzs": f"{svc_total_uzs + svc_vat_uzs:,.0f}",
             })
 
         html_content = render_to_string(
@@ -770,6 +777,8 @@ class StatementExportService(BaseService):
                 "grand_total_uzs": f"{grand_total_uzs:,.0f}",
                 "grand_vat_usd": f"{grand_vat_usd:,.2f}",
                 "grand_vat_uzs": f"{grand_vat_uzs:,.0f}",
+                "grand_total_with_vat_usd": f"{grand_total_usd + grand_vat_usd:,.2f}",
+                "grand_total_with_vat_uzs": f"{grand_total_uzs + grand_vat_uzs:,.0f}",
             },
         )
 

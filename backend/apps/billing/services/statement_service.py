@@ -829,17 +829,29 @@ class MonthlyStatementService(BaseService):
                     entry, as_of_date=period_end
                 )
 
-                # Calculate days for this specific period
+                # Calculate residual amount by summing overlapping cost periods.
+                # This correctly handles tariff changes within the residual window.
                 residual_days = (period_end - period_start).days + 1
+                amount_usd = Decimal("0")
+                amount_uzs = Decimal("0")
+                daily_rate_usd = Decimal("0")
+                daily_rate_uzs = Decimal("0")
 
-                # Get rate from the last period (covers the most recent dates)
-                daily_rate_usd = cost_result.periods[-1].daily_rate_usd if cost_result.periods else Decimal("0")
-                daily_rate_uzs = cost_result.periods[-1].daily_rate_uzs if cost_result.periods else Decimal("0")
+                for period in cost_result.periods:
+                    # Find overlap between this cost period and the residual range
+                    overlap_start = max(period.start_date, period_start)
+                    overlap_end = min(period.end_date, period_end)
+                    if overlap_start > overlap_end:
+                        continue
+                    overlap_days = (overlap_end - overlap_start).days + 1
+                    amount_usd += (period.daily_rate_usd * overlap_days).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    amount_uzs += (period.daily_rate_uzs * overlap_days).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    # Use the last overlapping period's rate for the line item snapshot
+                    daily_rate_usd = period.daily_rate_usd
+                    daily_rate_uzs = period.daily_rate_uzs
 
                 # For residual billing, all days are billable (free days already used)
                 billable_days = residual_days
-                amount_usd = (daily_rate_usd * billable_days).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                amount_uzs = (daily_rate_uzs * billable_days).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
                 # Create line item marked as residual
                 StatementLineItem.objects.create(

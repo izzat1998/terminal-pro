@@ -214,7 +214,7 @@
         Мы, нижеподписавшиеся, {{ settings.company_name }} в лице {{ settings.director_title }} {{ settings.director_name }},
         действующее на основании Устава, и &laquo;{{ statement.company.name }}&raquo;,
         составили настоящий акт в том, что работы на сумму
-        <strong>{{ grand_total_usd }} долларов США</strong>,
+        <strong>{{ grand_total_with_vat_usd }} долларов США (в т.ч. НДС {{ grand_vat_usd }})</strong>,
         выполненные Исполнителем, полностью удовлетворяют условиям Договора хранения контейнеров{% if statement.company.contract_number %} № {{ statement.company.contract_number }}{% endif %}{% if contract_date_formatted %} от {{ contract_date_formatted }}{% endif %}.
         Заказчик претензий и замечаний к Исполнителю не имеет.
     </div>
