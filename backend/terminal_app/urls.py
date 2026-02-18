@@ -38,6 +38,7 @@ urlpatterns = [
     path("api/vehicles/", include("apps.vehicles.urls")),
     path("api/customer/", include("apps.customer_portal.urls")),
     path("api/billing/", include("apps.billing.urls")),
+    path("api/gate/", include("apps.gate.urls")),
     path("api/telegram/", include("apps.core.urls")),
     path(
         "api/schema/",

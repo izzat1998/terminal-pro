@@ -36,7 +36,7 @@ DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
 DEV_AUTO_AUTH = os.getenv("DEV_AUTO_AUTH", "False").lower() in ("true", "1", "yes")
 
 ALLOWED_HOSTS = os.getenv(
-    "ALLOWED_HOSTS", "localhost,127.0.0.1,10.0.2.76,api-mtt.xlog.uz"
+    "ALLOWED_HOSTS", "localhost,127.0.0.1,10.0.2.76,10.0.2.196,api-mtt.xlog.uz"
 ).split(",")
 
 # CSRF Trusted Origins - for production domains
@@ -343,6 +343,46 @@ TELEGRAM_WEBHOOK_URL = os.getenv("TELEGRAM_WEBHOOK_URL", "")
 TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 TELEGRAM_WEBHOOK_PORT = int(os.getenv("TELEGRAM_WEBHOOK_PORT", "8001"))
 
+# Gate Camera (Hikvision ANPR) Configuration
+GATE_CAMERA_IP = os.getenv("GATE_CAMERA_IP", "192.168.1.7")
+GATE_CAMERA_PORT = int(os.getenv("GATE_CAMERA_PORT", "80"))
+GATE_CAMERA_USER = os.getenv("GATE_CAMERA_USER", "admin")
+GATE_CAMERA_PASS = os.getenv("GATE_CAMERA_PASS", "")
+
+# PlateRecognizer API for ANPR plate reading
+PLATE_RECOGNIZER_API_KEY = os.getenv("PLATE_RECOGNIZER_API_KEY", "")
+
+# Logging Configuration
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "[{asctime}] {levelname} {name}: {message}",
+            "style": "{",
+            "datefmt": "%H:%M:%S",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "loggers": {
+        "apps.gate": {
+            "handlers": ["console"],
+            "level": "DEBUG" if DEBUG else "INFO",
+            "propagate": False,
+        },
+        "HikvisionANPRService": {
+            "handlers": ["console"],
+            "level": "DEBUG" if DEBUG else "INFO",
+            "propagate": False,
+        },
+    },
+}
+
 # Proxy Configuration - Trust reverse proxy headers for HTTPS
 # Required when Django is behind nginx/proxy that terminates SSL
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -359,3 +399,4 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = "DENY"
