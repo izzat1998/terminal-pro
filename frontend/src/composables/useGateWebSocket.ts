@@ -10,43 +10,47 @@ import { ref, shallowRef, onUnmounted } from 'vue'
 import type { VehicleDetectionResult } from './useGateDetection'
 
 export interface WebSocketConfig {
-  /** Gate ID to subscribe to (default: 'main') */
   gateId?: string
-  /** Auto-reconnect on disconnect (default: true) */
   autoReconnect?: boolean
-  /** Reconnect delay in ms (default: 3000) */
   reconnectDelay?: number
-  /** Max reconnect attempts (default: 5) */
   maxReconnectAttempts?: number
 }
 
 export interface GateWebSocketState {
-  /** Connection status */
   status: 'disconnected' | 'connecting' | 'connected' | 'error'
-  /** Last error message */
   error: string | null
-  /** Number of reconnect attempts */
   reconnectAttempts: number
 }
 
-type VehicleDetectedCallback = (detection: VehicleDetectionResult) => void
+export interface ANPRDetectionEvent extends VehicleDetectionResult {
+  direction: 'approach' | 'depart' | 'unknown'
+  matchedEntryId: number | null
+  detectionId: number | null
+}
 
-/**
- * WebSocket composable for gate camera real-time events
- *
- * @example
- * ```ts
- * const { connect, disconnect, onVehicleDetected, state } = useGateWebSocket()
- *
- * onVehicleDetected((detection) => {
- *   console.log('Vehicle detected:', detection.plate_number)
- *   spawnVehicle(detection)
- * })
- *
- * onMounted(() => connect())
- * onUnmounted(() => disconnect())
- * ```
- */
+type VehicleDetectedCallback = (detection: VehicleDetectionResult) => void
+type ANPRDetectionCallback = (detection: ANPRDetectionEvent) => void
+
+/** Safely invoke every callback in a list, logging errors without propagating. */
+function notifyCallbacks<T>(callbacks: ((arg: T) => void)[], arg: T): void {
+  for (const cb of callbacks) {
+    try {
+      cb(arg)
+    } catch (err) {
+      console.error('[GateWebSocket] Callback error:', err)
+    }
+  }
+}
+
+/** Subscribe to a callback list and return an unsubscribe function. */
+function subscribe<T>(list: T[], item: T): () => void {
+  list.push(item)
+  return () => {
+    const idx = list.indexOf(item)
+    if (idx > -1) list.splice(idx, 1)
+  }
+}
+
 export function useGateWebSocket(config: WebSocketConfig = {}) {
   const {
     gateId = 'main',
@@ -55,47 +59,33 @@ export function useGateWebSocket(config: WebSocketConfig = {}) {
     maxReconnectAttempts = 5,
   } = config
 
-  // State
   const state = ref<GateWebSocketState>({
     status: 'disconnected',
     error: null,
     reconnectAttempts: 0,
   })
 
-  // WebSocket instance
   const socket = shallowRef<WebSocket | null>(null)
-
-  // Event callbacks
   const vehicleDetectedCallbacks: VehicleDetectedCallback[] = []
-
-  // Reconnect timer
+  const anprDetectionCallbacks: ANPRDetectionCallback[] = []
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
-  /**
-   * Build WebSocket URL for the gate
-   */
   function buildWebSocketUrl(): string {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = import.meta.env.VITE_WS_HOST || window.location.host
-
-    // In development, backend runs on different port
     const wsHost = import.meta.env.DEV
-      ? host.replace(/:\d+$/, ':8008') // Replace frontend port with backend port
+      ? host.replace(/:\d+$/, ':8008')
       : host
 
-    return `${protocol}//${wsHost}/ws/gate/${gateId}/`
+    const token = localStorage.getItem('access_token')
+    const query = token ? `?token=${token}` : ''
+
+    return `${protocol}//${wsHost}/ws/gate/${gateId}/${query}`
   }
 
-  /**
-   * Connect to WebSocket server
-   */
   function connect(): void {
-    if (socket.value?.readyState === WebSocket.OPEN) {
-      console.warn('[GateWebSocket] Already connected')
-      return
-    }
+    if (socket.value?.readyState === WebSocket.OPEN) return
 
-    // Clear any pending reconnect
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
@@ -112,9 +102,7 @@ export function useGateWebSocket(config: WebSocketConfig = {}) {
 
       socket.value.onopen = () => {
         console.log('[GateWebSocket] Connected')
-        state.value.status = 'connected'
-        state.value.error = null
-        state.value.reconnectAttempts = 0
+        state.value = { status: 'connected', error: null, reconnectAttempts: 0 }
       }
 
       socket.value.onclose = (event) => {
@@ -122,14 +110,13 @@ export function useGateWebSocket(config: WebSocketConfig = {}) {
         state.value.status = 'disconnected'
         socket.value = null
 
-        // Auto-reconnect if enabled and not a clean close
         if (autoReconnect && event.code !== 1000) {
           scheduleReconnect()
         }
       }
 
-      socket.value.onerror = (error) => {
-        console.error('[GateWebSocket] Error:', error)
+      socket.value.onerror = (err) => {
+        console.error('[GateWebSocket] Error:', err)
         state.value.status = 'error'
         state.value.error = 'Ошибка подключения к серверу'
       }
@@ -137,16 +124,13 @@ export function useGateWebSocket(config: WebSocketConfig = {}) {
       socket.value.onmessage = (event) => {
         handleMessage(event.data)
       }
-    } catch (error) {
-      console.error('[GateWebSocket] Failed to create WebSocket:', error)
+    } catch (err) {
+      console.error('[GateWebSocket] Failed to create WebSocket:', err)
       state.value.status = 'error'
       state.value.error = 'Не удалось создать подключение'
     }
   }
 
-  /**
-   * Disconnect from WebSocket server
-   */
   function disconnect(): void {
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
@@ -162,9 +146,6 @@ export function useGateWebSocket(config: WebSocketConfig = {}) {
     state.value.reconnectAttempts = 0
   }
 
-  /**
-   * Schedule a reconnection attempt
-   */
   function scheduleReconnect(): void {
     if (state.value.reconnectAttempts >= maxReconnectAttempts) {
       console.error('[GateWebSocket] Max reconnect attempts reached')
@@ -177,67 +158,53 @@ export function useGateWebSocket(config: WebSocketConfig = {}) {
       `[GateWebSocket] Reconnecting in ${reconnectDelay}ms (attempt ${state.value.reconnectAttempts}/${maxReconnectAttempts})`
     )
 
-    reconnectTimer = setTimeout(() => {
-      connect()
-    }, reconnectDelay)
+    reconnectTimer = setTimeout(connect, reconnectDelay)
   }
 
-  /**
-   * Handle incoming WebSocket message
-   */
-  function handleMessage(data: string): void {
+  function handleMessage(raw: string): void {
+    let msg: Record<string, unknown>
     try {
-      const message = JSON.parse(data)
+      msg = JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      console.error('[GateWebSocket] Failed to parse message')
+      return
+    }
 
-      // Vehicle detection event from backend
-      // Backend sends: { plate_number, confidence, vehicle_type, ... }
-      if (message.plate_number !== undefined) {
-        // Map backend snake_case to frontend camelCase format
-        const vehicleType = (message.vehicle_type ?? 'UNKNOWN') as VehicleDetectionResult['vehicleType']
+    if (msg.plate_number === undefined) return
 
-        const detection: VehicleDetectionResult = {
-          plateNumber: message.plate_number,
-          vehicleType: vehicleType,
-          confidence: message.plate_confidence ?? message.confidence ?? 0.9,
-          timestamp: new Date().toISOString(),
-          source: 'api',
-        }
+    // Normalize confidence: camera sends 0-100 int, frontend expects 0-1 float
+    const rawConfidence = (msg.plate_confidence ?? msg.confidence ?? 0.9) as number
+    const confidence = rawConfidence > 1 ? rawConfidence / 100 : rawConfidence
 
-        // Notify all registered callbacks
-        vehicleDetectedCallbacks.forEach((callback) => {
-          try {
-            callback(detection)
-          } catch (error) {
-            console.error('[GateWebSocket] Callback error:', error)
-          }
-        })
+    const detection: VehicleDetectionResult = {
+      plateNumber: msg.plate_number as string,
+      vehicleType: ((msg.vehicle_type as string) ?? 'UNKNOWN') as VehicleDetectionResult['vehicleType'],
+      confidence,
+      timestamp: (msg.timestamp as string) ?? new Date().toISOString(),
+      source: 'api',
+    }
+
+    notifyCallbacks(vehicleDetectedCallbacks, detection)
+
+    if (msg.event_type === 'anpr') {
+      const anprEvent: ANPRDetectionEvent = {
+        ...detection,
+        direction: ((msg.direction as string) ?? 'unknown') as ANPRDetectionEvent['direction'],
+        matchedEntryId: (msg.matched_entry_id as number) ?? null,
+        detectionId: (msg.detection_id as number) ?? null,
       }
-    } catch (error) {
-      console.error('[GateWebSocket] Failed to parse message:', error)
+      notifyCallbacks(anprDetectionCallbacks, anprEvent)
     }
   }
 
-  /**
-   * Register a callback for vehicle detection events
-   *
-   * @param callback Function to call when vehicle is detected
-   * @returns Unsubscribe function
-   */
   function onVehicleDetected(callback: VehicleDetectedCallback): () => void {
-    vehicleDetectedCallbacks.push(callback)
-
-    // Return unsubscribe function
-    return () => {
-      const index = vehicleDetectedCallbacks.indexOf(callback)
-      if (index > -1) {
-        vehicleDetectedCallbacks.splice(index, 1)
-      }
-    }
+    return subscribe(vehicleDetectedCallbacks, callback)
   }
 
-  /**
-   * Send a message to the WebSocket server (for future use)
-   */
+  function onANPRDetection(callback: ANPRDetectionCallback): () => void {
+    return subscribe(anprDetectionCallbacks, callback)
+  }
+
   function send(data: Record<string, unknown>): boolean {
     if (socket.value?.readyState !== WebSocket.OPEN) {
       console.warn('[GateWebSocket] Cannot send - not connected')
@@ -248,23 +215,15 @@ export function useGateWebSocket(config: WebSocketConfig = {}) {
     return true
   }
 
-  // Cleanup on unmount
-  onUnmounted(() => {
-    disconnect()
-  })
+  onUnmounted(() => disconnect())
 
   return {
-    /** Reactive connection state */
     state,
-    /** Connect to WebSocket server */
     connect,
-    /** Disconnect from WebSocket server */
     disconnect,
-    /** Register callback for vehicle detection events */
     onVehicleDetected,
-    /** Send message to server */
+    onANPRDetection,
     send,
-    /** Check if currently connected */
     isConnected: () => socket.value?.readyState === WebSocket.OPEN,
   }
 }

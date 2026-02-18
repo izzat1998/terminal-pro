@@ -7,14 +7,16 @@
  * Designed to be embedded in CSS3DRenderer for 3D yard canvas integration.
  */
 
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { ToolOutlined, CameraOutlined, ScanOutlined, DownOutlined, UpOutlined } from '@ant-design/icons-vue'
+import { ToolOutlined, CameraOutlined, ScanOutlined, DownOutlined, UpOutlined, VideoCameraOutlined } from '@ant-design/icons-vue'
 import { useGateDetection, type VehicleDetectionResult } from '@/composables/useGateDetection'
+import { useGateWebSocket } from '@/composables/useGateWebSocket'
+import WebRTCPlayer from '@/components/gate/WebRTCPlayer.vue'
 import { gateVehicleService } from '@/services/gateVehicleService'
 import type { VehicleType } from '@/composables/useVehicleModels'
 
-type CameraSource = 'webcam' | 'mock'
+type CameraSource = 'webcam' | 'mock' | 'ipcam'
 
 type GateMode = 'entry' | 'exit'
 
@@ -39,10 +41,14 @@ const emit = defineEmits<{
   vehicleDetected: [result: VehicleDetectionResult]
 }>()
 
+// WebRTC stream URL (mediamtx WHEP endpoint — sub stream for lower bandwidth)
+const webrtcUrl = import.meta.env.VITE_GATE_CAMERA_WEBRTC_URL || 'http://localhost:8889/gate-sub/whep'
+
 // Refs
 const widgetRef = ref<HTMLDivElement>()
 const videoRef = ref<HTMLVideoElement>()
 const canvasRef = ref<HTMLCanvasElement>()
+const webrtcPlayerRef = ref<InstanceType<typeof WebRTCPlayer> | null>(null)
 
 // Camera state
 const currentSource = ref<CameraSource>(props.initialSource)
@@ -56,8 +62,35 @@ const isMinimized = ref(false)
 // Detection
 const { isDetecting, lastResult, error: detectionError, useMockDetection, detectVehicle, clearError } = useGateDetection()
 
+// IP Camera WebSocket
+const gateWS = useGateWebSocket({ gateId: 'main' })
+let wsUnsubscribe: (() => void) | null = null
+
+function startIPCam(): void {
+  gateWS.connect()
+  wsUnsubscribe = gateWS.onVehicleDetected((detection) => {
+    lastResult.value = detection
+    message.success(`Распознан: ${detection.plateNumber}`)
+    emit('vehicleDetected', detection)
+  })
+  // Connect WebRTC player (nextTick because ref may not be mounted yet)
+  nextTick(() => {
+    webrtcPlayerRef.value?.connect()
+  })
+}
+
+function stopIPCam(): void {
+  if (wsUnsubscribe) {
+    wsUnsubscribe()
+    wsUnsubscribe = null
+  }
+  gateWS.disconnect()
+  webrtcPlayerRef.value?.disconnect()
+}
+
 // Computed
 const canCapture = computed(() => {
+  if (currentSource.value === 'ipcam') return false
   if (currentSource.value === 'mock') return true
   if (currentSource.value === 'webcam') return isWebcamActive.value
   return false
@@ -65,6 +98,13 @@ const canCapture = computed(() => {
 
 const statusText = computed(() => {
   if (isDetecting.value) return 'Сканирование...'
+  if (currentSource.value === 'ipcam') {
+    const wsStatus = gateWS.state.value.status
+    if (wsStatus === 'connected') return 'IP Камера активна'
+    if (wsStatus === 'connecting') return 'Подключение...'
+    if (gateWS.state.value.error) return gateWS.state.value.error
+    return 'Отключена'
+  }
   if (currentSource.value === 'mock') return 'Тестовый режим'
   if (isWebcamActive.value) return 'Камера активна'
   if (webcamError.value) return 'Ошибка камеры'
@@ -73,6 +113,13 @@ const statusText = computed(() => {
 
 const statusType = computed(() => {
   if (isDetecting.value) return 'processing'
+  if (currentSource.value === 'ipcam') {
+    const wsStatus = gateWS.state.value.status
+    if (wsStatus === 'connected') return 'online'
+    if (wsStatus === 'connecting') return 'processing'
+    if (wsStatus === 'error') return 'error'
+    return 'offline'
+  }
   if (currentSource.value === 'mock') return 'test'
   if (isWebcamActive.value) return 'online'
   if (webcamError.value) return 'error'
@@ -109,10 +156,12 @@ const modeConfig = computed(() => {
 
 // Watch for visibility changes
 watch(() => props.visible, (visible) => {
-  if (visible && currentSource.value === 'webcam') {
-    startWebcam()
-  } else if (!visible) {
+  if (visible) {
+    if (currentSource.value === 'webcam') startWebcam()
+    else if (currentSource.value === 'ipcam') startIPCam()
+  } else {
     stopWebcam()
+    stopIPCam()
   }
 })
 
@@ -171,12 +220,17 @@ function onSourceChange(source: CameraSource): void {
   if (currentSource.value === 'webcam') {
     stopWebcam()
   }
+  if (currentSource.value === 'ipcam') {
+    stopIPCam()
+  }
 
   currentSource.value = source
   clearError()
 
   if (source === 'webcam') {
     startWebcam()
+  } else if (source === 'ipcam') {
+    startIPCam()
   }
 }
 
@@ -265,13 +319,15 @@ function toggleMinimize(): void {
 
 // Lifecycle
 onMounted(() => {
-  if (props.visible && currentSource.value === 'webcam') {
-    startWebcam()
+  if (props.visible) {
+    if (currentSource.value === 'webcam') startWebcam()
+    else if (currentSource.value === 'ipcam') startIPCam()
   }
 })
 
 onUnmounted(() => {
   stopWebcam()
+  stopIPCam()
 })
 </script>
 
@@ -333,6 +389,18 @@ onUnmounted(() => {
               <span class="mock-text">Тестовый режим</span>
               <span class="mock-hint">Нажмите "Сканировать" для симуляции</span>
             </div>
+          </div>
+
+          <!-- IP Camera Feed (live WebRTC via mediamtx) -->
+          <div v-if="currentSource === 'ipcam'" class="ipcam-feed">
+            <WebRTCPlayer
+              ref="webrtcPlayerRef"
+              :url="webrtcUrl"
+              :auto-connect="false"
+              :auto-reconnect="true"
+              :max-reconnect-attempts="10"
+              :reconnect-interval="3000"
+            />
           </div>
 
           <!-- Webcam Error -->
@@ -409,6 +477,7 @@ onUnmounted(() => {
           :options="[
             { value: 'mock', label: 'Тест', icon: ToolOutlined },
             { value: 'webcam', label: 'Камера', icon: CameraOutlined },
+            { value: 'ipcam', label: 'IP Кам', icon: VideoCameraOutlined },
           ]"
           block
           size="small"
@@ -416,6 +485,7 @@ onUnmounted(() => {
         />
 
         <a-button
+          v-if="currentSource !== 'ipcam'"
           type="primary"
           block
           size="small"
@@ -751,6 +821,37 @@ onUnmounted(() => {
 .mock-hint {
   font-size: 9px;
   color: rgba(255,255,255,0.4);
+}
+
+/* IP Camera Feed (live WebRTC) */
+.ipcam-feed {
+  position: absolute;
+  inset: 0;
+}
+
+.ipcam-feed :deep(.webrtc-player) {
+  width: 100%;
+  height: 100%;
+}
+
+.ipcam-feed :deep(.webrtc-video) {
+  object-fit: cover;
+}
+
+.ipcam-feed :deep(.status-overlay) {
+  font-size: 11px;
+  gap: 6px;
+}
+
+.ipcam-feed :deep(.status-text) {
+  font-size: 10px;
+}
+
+.ipcam-feed :deep(.live-indicator) {
+  top: 4px;
+  right: 4px;
+  padding: 2px 6px;
+  font-size: 9px;
 }
 
 /* Feed Error */

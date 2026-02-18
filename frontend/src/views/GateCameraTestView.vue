@@ -525,7 +525,7 @@ onUnmounted(() => {
     <!-- Left Panel: Camera -->
     <div class="camera-panel">
       <GateCameraPanel
-        initial-source="mock"
+        initial-source="rtsp"
         @vehicle-detected="onVehicleDetected"
       />
     </div>

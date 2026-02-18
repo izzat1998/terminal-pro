@@ -5,3 +5,4 @@
  */
 
 export { default as GateCameraPanel } from './GateCameraPanel.vue'
+export { default as WebRTCPlayer } from './WebRTCPlayer.vue'

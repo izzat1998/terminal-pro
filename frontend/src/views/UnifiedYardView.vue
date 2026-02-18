@@ -395,11 +395,13 @@ function onCameraClick(): void {
   isWidgetOpen.value = isCameraWidgetVisible.value
 }
 
-/** Handle entry camera detection -- saves to DB, deduplicates, and animates */
+/** Handle entry camera detection -- deduplicates and animates.
+ *  WebSocket/IP-cam detections skip saveToDB because the ANPR webhook
+ *  already saved the detection on the backend side. */
 async function onVehicleDetected(result: VehicleDetectionResult): Promise<void> {
   gateCameraRef.value?.triggerPulse()
   gatePoller.addCameraPlate(result.plateNumber)
-  await animateEntry(result.plateNumber, result.vehicleType, { saveToDB: true })
+  await animateEntry(result.plateNumber, result.vehicleType)
 }
 
 /** Handle exit camera detection -- saves to DB, deduplicates, and animates */
