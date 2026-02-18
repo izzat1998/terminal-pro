@@ -10,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/validate-file-access.sh \"$FILE_PATH\" \"$TOOL_NAME\""
+            "command": ".claude/hooks/validate-file-access.sh"
           }
         ]
       }
@@ -21,11 +21,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/format-on-edit.sh \"$FILE_PATH\""
+            "command": ".claude/hooks/format-on-edit.sh"
           },
           {
             "type": "command",
-            "command": ".claude/hooks/syntax-check.sh \"$FILE_PATH\""
+            "command": ".claude/hooks/syntax-check.sh"
           }
         ]
       }
