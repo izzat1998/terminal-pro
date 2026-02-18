@@ -1,4 +1,4 @@
-.PHONY: help dev backend frontend telegram-miniapp \
+.PHONY: help dev backend frontend telegram-miniapp mediamtx anpr test-anpr \
         migrate makemigrations test test-backend lint clean install shell
 
 # Use bash for better compatibility with complex commands
@@ -23,6 +23,9 @@ help:
 	@echo "  make backend           - Start only Django backend (port 8008)"
 	@echo "  make frontend          - Start only Vue frontend (port 5174)"
 	@echo "  make telegram-miniapp  - Start only Telegram Mini App (port 5175)"
+	@echo "  make mediamtx          - Start RTSP→WebRTC camera proxy"
+	@echo "  make anpr              - Start ANPR event listener (Hikvision camera)"
+	@echo "  make test-anpr         - Test ANPR pipeline with capture loop (every 10s)"
 	@echo ""
 	@echo "Database:"
 	@echo "  make migrate      - Run Django migrations"
@@ -64,6 +67,18 @@ frontend:
 
 telegram-miniapp:
 	cd telegram-miniapp && npm run dev
+
+# Gate camera stream proxy (RTSP → WebRTC via mediamtx)
+mediamtx:
+	mediamtx ./mediamtx.yml
+
+# Gate camera ANPR event listener (Hikvision plate detection)
+anpr:
+	$(BACKEND_PYTHON) backend/manage.py listen_anpr
+
+# Test ANPR pipeline with capture loop (every 10s)
+test-anpr:
+	PYTHONUNBUFFERED=1 $(BACKEND_PYTHON) backend/manage.py test_capture_loop
 
 # Database management
 migrate:

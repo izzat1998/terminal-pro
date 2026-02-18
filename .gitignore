@@ -96,6 +96,14 @@ Thumbs.db
 # ==================== Docker ====================
 .docker/
 
+# ==================== Camera / Streaming ====================
+mediamtx.yml
+scripts/camera_connection_test.py
+scripts/test_anpr.py
+
+# ==================== Sidecar ====================
+.sidecar/
+
 # ==================== Misc ====================
 *.bak
 *.tmp

@@ -27,7 +27,7 @@ make dev             # Start frontend + backend
 | Language | TypeScript 5.9 | Strict mode enabled |
 | UI Library | Ant Design Vue 4.x | Globally registered |
 | Build Tool | Vite 7.x (rolldown) | Fast HMR, ESBuild |
-| HTTP Client | Axios | Configured in `src/services/` |
+| HTTP Client | Native fetch | `src/utils/httpClient.ts` with JWT + auto-refresh |
 | Routing | Vue Router 4.x | File-based routes in `src/router/` |
 
 ## Architecture
@@ -51,10 +51,12 @@ src/
 │   └── company/         # Customer portal views
 ├── router/              # Vue Router configuration
 │   └── index.ts
-├── services/            # API client services
-│   └── api.ts           # Axios instance with interceptors
+├── services/            # Domain-specific API service modules
+│   ├── tariffsService.ts
+│   ├── terminalService.ts
+│   └── ...              # One file per domain
 ├── composables/         # Reusable composition functions
-├── utils/               # Utility functions
+├── utils/               # Utility functions + httpClient.ts (base HTTP client)
 └── config/              # Configuration files
 ```
 
@@ -67,7 +69,7 @@ View Component (src/views/)
 Service (src/services/)
     │
     ▼ HTTP request
-Backend API (localhost:8000/api)
+Backend API (localhost:8008/api)
     │
     ▼ response
 Service transforms data
@@ -174,79 +176,40 @@ export function useContainers() {
 
 ## API Integration
 
+### HTTP Client (`src/utils/httpClient.ts`)
+
+All API calls use the `http` object from `httpClient.ts` (native `fetch`, NOT Axios). It handles JWT auth, token refresh, and error parsing automatically.
+
+```typescript
+import { http } from '@/utils/httpClient'
+
+// GET
+const data = await http.get<ContainerEntry[]>('/terminal/entries/')
+
+// POST
+const result = await http.post<Invoice>('/billing/invoices/', { container_ids: [1, 2] })
+
+// PATCH
+await http.patch<void>(`/terminal/entries/${id}/`, { status: 'EXITED' })
+
+// File upload
+await http.upload<void>('/files/upload/', formData)
+
+// File download (authenticated)
+import { downloadFile } from '@/utils/httpClient'
+await downloadFile('/billing/export/statement/1/', 'statement.xlsx')
+```
+
 ### Service Layer (`src/services/`)
 
-All API calls go through service functions. Never call axios directly from components.
+Domain-specific API wrappers that call `http.*` methods. One file per domain (e.g., `tariffsService.ts`, `terminalService.ts`). Never call `http.*` directly from components — use service functions.
 
-```typescript
-// src/services/api.ts
-import axios from 'axios'
+### Error Handling
 
-export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
-  headers: { 'Content-Type': 'application/json' }
-})
-
-// JWT token interceptor
-api.interceptors.request.use(config => {
-  const token = localStorage.getItem('access_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-// Auto-refresh on 401
-api.interceptors.response.use(
-  response => response,
-  async error => {
-    if (error.response?.status === 401) {
-      // Handle token refresh or redirect to login
-    }
-    return Promise.reject(error)
-  }
-)
-```
-
-```typescript
-// src/services/containers.ts
-import { api } from './api'
-import type { Container, ContainerEntry } from '@/types'
-
-export async function getContainers(): Promise<Container[]> {
-  const { data } = await api.get('/customer/containers/')
-  return data.results
-}
-
-export async function createEntry(entry: Partial<ContainerEntry>): Promise<ContainerEntry> {
-  const { data } = await api.post('/terminal/entries/', entry)
-  return data
-}
-```
-
-### Response Handling
-
-Backend returns standardized responses:
-
-```typescript
-// Success response
-interface SuccessResponse<T> {
-  success: true
-  data: T
-  message?: string
-}
-
-// Error response
-interface ErrorResponse {
-  success: false
-  error: {
-    code: string
-    message: string
-    details?: Record<string, string[]>
-  }
-  timestamp: string
-}
-```
+- `httpClient.ts` throws `ApiError` (from `src/types/api.ts`) on failures
+- `parseResponse<T>()` throws for non-JSON responses — never returns `undefined`
+- 401 responses trigger automatic token refresh + retry
+- Error codes must match `ApiErrorCode` union type in `src/types/api.ts`
 
 ## State Management
 
@@ -427,7 +390,7 @@ const handleSubmit = async () => {
 import { ref, computed, onMounted } from 'vue'  // 1. Vue
 import { useRouter } from 'vue-router'           // 2. Vue ecosystem
 import { message } from 'ant-design-vue'         // 3. UI library
-import { getContainers } from '@/services'       // 4. Local services
+import { getContainers } from '@/services/terminalService'  // 4. Local services
 import type { Container } from '@/types'         // 5. Types (type-only)
 
 // Naming conventions
@@ -442,10 +405,10 @@ const fetchData = async () => {}                 // async functions describe act
 | Issue | Cause | Solution |
 |-------|-------|----------|
 | TypeScript errors on build | Type mismatches | Run `npm run build` to see all errors |
-| API connection refused | Backend not running | Start with `make backend` or check port 8000 |
+| API connection refused | Backend not running | Start with `make backend` or check port 8008 |
 | Ant Design styles missing | CSS not imported | Ensure `ant-design-vue/dist/reset.css` in main.ts |
 | Route not found | Missing route config | Add route in `src/router/index.ts` |
-| Token not sent | Interceptor issue | Check `api.ts` interceptor and localStorage |
+| Token not sent | Auth issue | Check `httpClient.ts` token logic and localStorage |
 | Component not updating | Reactivity lost | Use `ref()` for primitives, `reactive()` for objects |
 | `v-model` not working | Wrong syntax | Use `v-model:value` for Ant Design inputs |
 
@@ -483,7 +446,7 @@ All env vars must be prefixed with `VITE_` to be exposed to the client:
 
 ```env
 # .env or .env.local
-VITE_API_BASE_URL=http://localhost:8000/api
+VITE_API_BASE_URL=http://localhost:8008/api
 ```
 
 Access in code:

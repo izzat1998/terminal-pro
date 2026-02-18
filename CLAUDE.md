@@ -34,7 +34,7 @@ make frontend          # Vue on port 5174
 make telegram-miniapp  # React Telegram Mini App on port 5175
 
 # Testing
-make test        # Run all tests
+make test        # Run backend tests
 pytest backend/  # Backend only
 
 # Database
@@ -72,6 +72,8 @@ make makemigrations  # Create migrations
 │  │  - All business logic here                            │   │
 │  │  - Views are thin orchestration                       │   │
 │  └──────────────────────────────────────────────────────┘   │
+│  Apps: accounts, containers, terminal_operations, vehicles, │
+│        files, customer_portal, billing, gate                │
 └─────────────────────────┬───────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────┐
@@ -217,6 +219,14 @@ When implementing billing, invoicing, or financial calculations:
 | State tracking | `current_status` must be updated atomically with related fields |
 
 **Before writing financial code:** List edge cases and get user approval (see `.claude/rules/workflow.md` Rule 2).
+
+## Security Review Status (2026-02-09)
+
+Full review completed — all 70 findings resolved. Do NOT re-investigate these:
+- SECRET_KEY, .sql files, RegisterSerializer, IsCustomer permissions, JWT downloads — all fixed
+- Security headers (9 settings in `if not DEBUG:` block) — complete
+- Test routes wrapped in `import.meta.env.DEV` — stripped in prod build
+- See `memory/review-findings.md` for full report
 
 ## AI Assistant Guidelines
 

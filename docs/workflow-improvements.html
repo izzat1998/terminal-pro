@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTT Workflow Improvements Explorer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #d29922;
+    --purple: #bc8cff;
+    --pink: #f778ba;
+    --cyan: #39d353;
+    --radius: 12px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    padding: 40px 20px 20px;
+    position: relative;
+  }
+  .header h1 {
+    font-size: 2.2em;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .header p { color: var(--text-dim); font-size: 1.05em; }
+
+  /* Stats Bar */
+  .stats-bar {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    padding: 24px 20px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    text-align: center;
+    min-width: 100px;
+  }
+  .stat-value {
+    font-size: 2em;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .stat-value.red { color: var(--red); }
+  .stat-value.orange { color: var(--orange); }
+  .stat-value.green { color: var(--green); }
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.purple { color: var(--purple); }
+  .stat-label {
+    font-size: 0.78em;
+    color: var(--text-dim);
+    margin-top: 4px;
+    line-height: 1.3;
+  }
+
+  /* View Tabs */
+  .view-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 20px 24px;
+  }
+  .view-tab {
+    padding: 10px 22px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.92em;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .view-tab:hover { border-color: var(--accent); color: var(--text); }
+  .view-tab.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  /* Views */
+  .view { display: none; padding: 0 20px 40px; max-width: 1200px; margin: 0 auto; }
+  .view.active { display: block; }
+
+  /* ── TIMELINE VIEW ── */
+  .timeline {
+    position: relative;
+    padding-left: 40px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to bottom, var(--accent), var(--purple), var(--green));
+    border-radius: 2px;
+  }
+  .tl-item {
+    position: relative;
+    margin-bottom: 28px;
+    cursor: pointer;
+  }
+  .tl-dot {
+    position: absolute;
+    left: -33px;
+    top: 14px;
+    width: 19px;
+    height: 19px;
+    border-radius: 50%;
+    border: 3px solid var(--bg);
+    transition: transform 0.3s, box-shadow 0.3s;
+    z-index: 1;
+  }
+  .tl-item:hover .tl-dot {
+    transform: scale(1.3);
+    box-shadow: 0 0 12px currentColor;
+  }
+  .tl-time {
+    font-size: 0.78em;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tl-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 22px;
+    transition: all 0.3s;
+  }
+  .tl-item:hover .tl-card {
+    border-color: var(--accent);
+    transform: translateX(4px);
+  }
+  .tl-card h3 {
+    font-size: 1.05em;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tl-card h3 .emoji { font-size: 1.2em; }
+  .tl-card .trigger {
+    display: inline-block;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.82em;
+    background: rgba(88, 166, 255, 0.12);
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+  }
+  .tl-card p { font-size: 0.9em; color: var(--text-dim); line-height: 1.5; }
+
+  /* ── CARDS VIEW ── */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 20px;
+  }
+  .tool-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .tool-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    border-color: var(--accent);
+  }
+  .tool-card.expanded .card-details { display: block; }
+  .card-head {
+    padding: 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .card-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5em;
+    flex-shrink: 0;
+  }
+  .card-head-text { flex: 1; }
+  .card-head-text h3 { font-size: 1.05em; margin-bottom: 4px; }
+  .card-head-text .card-file {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.78em;
+    color: var(--text-dim);
+  }
+  .card-type-badge {
+    font-size: 0.72em;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+  .badge-auto { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+  .badge-skill { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+  .badge-script { background: rgba(188, 140, 255, 0.15); color: var(--purple); }
+
+  .card-ba {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-top: 1px solid var(--border);
+  }
+  .card-before, .card-after {
+    padding: 14px 20px;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  .card-before {
+    border-right: 1px solid var(--border);
+    background: rgba(248, 81, 73, 0.04);
+  }
+  .card-after {
+    background: rgba(63, 185, 80, 0.04);
+  }
+  .ba-label {
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 6px;
+  }
+  .ba-label.before { color: var(--red); }
+  .ba-label.after { color: var(--green); }
+  .card-before p, .card-after p { color: var(--text-dim); }
+
+  .card-details {
+    display: none;
+    border-top: 1px solid var(--border);
+    padding: 18px 20px;
+    background: var(--surface-2);
+  }
+  .card-details h4 {
+    font-size: 0.85em;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .card-details ul {
+    list-style: none;
+    padding: 0;
+  }
+  .card-details li {
+    font-size: 0.85em;
+    color: var(--text-dim);
+    padding: 3px 0;
+    padding-left: 16px;
+    position: relative;
+  }
+  .card-details li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+  }
+  .card-details .code-block {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.82em;
+    background: var(--bg);
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-top: 10px;
+    color: var(--text-dim);
+    overflow-x: auto;
+  }
+  .expand-hint {
+    text-align: center;
+    padding: 8px;
+    font-size: 0.78em;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── FLOW VIEW ── */
+  .flow-container {
+    position: relative;
+    padding: 20px 0;
+  }
+  .flow-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .flow-node {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 22px;
+    text-align: center;
+    min-width: 160px;
+    transition: all 0.3s;
+    cursor: pointer;
+    position: relative;
+  }
+  .flow-node:hover {
+    transform: scale(1.05);
+    z-index: 2;
+  }
+  .flow-node.highlight {
+    border-color: var(--accent);
+    box-shadow: 0 0 20px rgba(88, 166, 255, 0.2);
+  }
+  .flow-node .fn-emoji { font-size: 1.5em; margin-bottom: 4px; }
+  .flow-node .fn-title { font-size: 0.9em; font-weight: 600; }
+  .flow-node .fn-sub { font-size: 0.75em; color: var(--text-dim); margin-top: 2px; }
+  .flow-node .fn-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    font-size: 0.65em;
+    padding: 2px 7px;
+    border-radius: 8px;
+    font-weight: 700;
+  }
+  .flow-arrow {
+    font-size: 1.5em;
+    color: var(--text-dim);
+    animation: pulse 2s infinite;
+  }
+  .flow-arrow.down {
+    display: block;
+    text-align: center;
+    margin: 4px 0;
+    font-size: 1.3em;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+  .flow-section-label {
+    text-align: center;
+    font-size: 0.75em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin: 20px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-content: center;
+  }
+  .flow-section-label::before,
+  .flow-section-label::after {
+    content: '';
+    height: 1px;
+    width: 60px;
+    background: var(--border);
+  }
+
+  /* ── IMPACT VIEW ── */
+  .impact-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 768px) { .impact-grid { grid-template-columns: 1fr; } }
+  .impact-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+  .impact-card h3 {
+    font-size: 1em;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bar-chart { display: flex; flex-direction: column; gap: 10px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; }
+  .bar-label {
+    font-size: 0.8em;
+    color: var(--text-dim);
+    min-width: 130px;
+    text-align: right;
+  }
+  .bar-track {
+    flex: 1;
+    height: 24px;
+    background: var(--bg);
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 1s ease;
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+  }
+  .bar-fill span {
+    font-size: 0.72em;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+  }
+  .coverage-ring {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    padding: 20px;
+  }
+  .ring-container { position: relative; width: 120px; height: 120px; }
+  .ring-container svg { transform: rotate(-90deg); }
+  .ring-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .ring-label .ring-value { font-size: 1.8em; font-weight: 700; }
+  .ring-label .ring-text { font-size: 0.72em; color: var(--text-dim); }
+  .ring-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ring-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85em;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Prompt output */
+  .prompt-section {
+    max-width: 1200px;
+    margin: 40px auto;
+    padding: 0 20px;
+  }
+  .prompt-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    position: relative;
+  }
+  .prompt-box h3 {
+    font-size: 0.85em;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+  .prompt-text {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.85em;
+    color: var(--text);
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .copy-btn {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    padding: 6px 14px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.82em;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .copy-btn:hover { opacity: 0.85; }
+  .copy-btn.copied { background: var(--green); }
+
+  /* Animations */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-in {
+    animation: fadeInUp 0.5s ease forwards;
+    opacity: 0;
+  }
+  .animate-in:nth-child(1) { animation-delay: 0.05s; }
+  .animate-in:nth-child(2) { animation-delay: 0.1s; }
+  .animate-in:nth-child(3) { animation-delay: 0.15s; }
+  .animate-in:nth-child(4) { animation-delay: 0.2s; }
+  .animate-in:nth-child(5) { animation-delay: 0.25s; }
+  .animate-in:nth-child(6) { animation-delay: 0.3s; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>MTT Workflow Improvements</h1>
+  <p>6 tools implemented from Claude Code Insights analysis — here's how they transform your dev workflow</p>
+</div>
+
+<!-- Stats Bar -->
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-value accent">255</div>
+    <div class="stat-label">Sessions<br>Analyzed</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value red">45</div>
+    <div class="stat-label">Wrong Approach<br>Incidents</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value orange">34</div>
+    <div class="stat-label">Buggy Code<br>Incidents</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value red">5</div>
+    <div class="stat-label">Production<br>Crashes (deps)</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value green">6</div>
+    <div class="stat-label">Tools<br>Implemented</div>
+  </div>
+</div>
+
+<!-- View Tabs -->
+<div class="view-tabs">
+  <div class="view-tab active" data-view="timeline">Timeline</div>
+  <div class="view-tab" data-view="cards">Tool Cards</div>
+  <div class="view-tab" data-view="flow">Flow Diagram</div>
+  <div class="view-tab" data-view="impact">Impact Analysis</div>
+</div>
+
+<!-- ═══════════ TIMELINE VIEW ═══════════ -->
+<div class="view active" id="view-timeline">
+  <div class="timeline">
+    <div class="tl-item animate-in">
+      <div class="tl-dot" style="background: var(--green); color: var(--green);"></div>
+      <div class="tl-time">Morning — Start of Day</div>
+      <div class="tl-card">
+        <h3><span class="emoji">🚀</span> /devstart — Self-Healing Dev Server</h3>
+        <div class="trigger">/devstart</div>
+        <p>Starts all 3 services (Django :8008, Vue :5174, Telegram :5175), checks prerequisites, health-checks each one, and auto-restarts failures up to 3 times. No more babysitting servers across 18+ sessions.</p>
+      </div>
+    </div>
+
+    <div class="tl-item animate-in">
+      <div class="tl-dot" style="background: var(--accent); color: var(--accent);"></div>
+      <div class="tl-time">During Development — Writing Code</div>
+      <div class="tl-card">
+        <h3><span class="emoji">🐛</span> /tdd-bugfix — Test-Driven Bug Fix</h3>
+        <div class="trigger">/tdd-bugfix</div>
+        <p>When you encounter a bug: automatically writes a failing test first, then loops through fix iterations (max 5) autonomously until the test passes, then runs regression checks. Reduces the 34 buggy-code incidents by catching them systematically.</p>
+      </div>
+    </div>
+
+    <div class="tl-item animate-in">
+      <div class="tl-dot" style="background: var(--purple); color: var(--purple);"></div>
+      <div class="tl-time">Ready to Commit — Saving Work</div>
+      <div class="tl-card">
+        <h3><span class="emoji">📦</span> /smart-commit — Intelligent Commit Workflow</h3>
+        <div class="trigger">/smart-commit</div>
+        <p>Reviews all changes, verifies every new import has a corresponding dependency in requirements.txt or package.json, groups changes into logical commits with conventional prefixes (feat:, fix:, etc.), and asks for your approval before executing.</p>
+      </div>
+    </div>
+
+    <div class="tl-item animate-in">
+      <div class="tl-dot" style="background: var(--orange); color: var(--orange);"></div>
+      <div class="tl-time">At Commit Time — Automatic Safety Net</div>
+      <div class="tl-card">
+        <h3><span class="emoji">🛡️</span> Pre-commit Hook — Dependency Guard</h3>
+        <div class="trigger">automatic on every git commit</div>
+        <p>Runs automatically on every commit. Scans staged Python files for imports not in requirements.txt and staged TS/Vue files for packages not in package.json. Warns you before the commit goes through — would have prevented all 5 production crashes from missing dependencies.</p>
+      </div>
+    </div>
+
+    <div class="tl-item animate-in">
+      <div class="tl-dot" style="background: var(--pink); color: var(--pink);"></div>
+      <div class="tl-time">End of Day / CI Pipeline — Automated Review</div>
+      <div class="tl-card">
+        <h3><span class="emoji">🔍</span> Headless Review Script — Automated Audit</h3>
+        <div class="trigger">./scripts/claude-review.sh [scope]</div>
+        <p>Run from terminal or CI without an interactive session. Four scopes: <b>last-commit</b> (quick check), <b>staged</b> (pre-push), <b>branch</b> (PR review), <b>full</b> (entire project audit with parallel agents). Catches N+1 queries, float in financial code, security issues, TypeScript violations.</p>
+      </div>
+    </div>
+
+    <div class="tl-item animate-in">
+      <div class="tl-dot" style="background: var(--cyan); color: var(--cyan);"></div>
+      <div class="tl-time">Background — Always Running</div>
+      <div class="tl-card">
+        <h3><span class="emoji">💚</span> Self-Healing — Built into /devstart</h3>
+        <div class="trigger">automatic within /devstart</div>
+        <p>When a service crashes during development, /devstart reads the error logs, auto-diagnoses common issues (missing pip packages, unapplied migrations, npm deps), fixes them, and restarts the service — up to 3 retries per service.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ CARDS VIEW ═══════════ -->
+<div class="view" id="view-cards">
+  <div class="cards-grid" id="cards-grid"></div>
+</div>
+
+<!-- ═══════════ FLOW VIEW ═══════════ -->
+<div class="view" id="view-flow">
+  <div class="flow-container">
+    <div class="flow-section-label">Start of Day</div>
+    <div class="flow-row">
+      <div class="flow-node highlight" style="border-color: var(--green);" data-tool="devstart">
+        <div class="fn-badge badge-skill">SKILL</div>
+        <div class="fn-emoji">🚀</div>
+        <div class="fn-title">/devstart</div>
+        <div class="fn-sub">Start + health check + auto-heal</div>
+      </div>
+    </div>
+    <div class="flow-arrow down">↓</div>
+    <div class="flow-row">
+      <div class="flow-node" style="border-color: var(--border);">
+        <div class="fn-emoji">⌨️</div>
+        <div class="fn-title">Write Code</div>
+        <div class="fn-sub">Your regular development</div>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-node" style="border-color: var(--green);">
+        <div class="fn-badge badge-auto" style="font-size:0.6em;">EXISTING</div>
+        <div class="fn-emoji">✓</div>
+        <div class="fn-title">syntax-check.sh</div>
+        <div class="fn-sub">Catches errors on every edit</div>
+      </div>
+    </div>
+
+    <div class="flow-section-label">Hit a Bug?</div>
+    <div class="flow-row">
+      <div class="flow-node highlight" style="border-color: var(--accent);" data-tool="tdd">
+        <div class="fn-badge badge-skill">SKILL</div>
+        <div class="fn-emoji">🐛</div>
+        <div class="fn-title">/tdd-bugfix</div>
+        <div class="fn-sub">Failing test → fix loop → regression</div>
+      </div>
+    </div>
+
+    <div class="flow-section-label">Ready to Commit</div>
+    <div class="flow-row">
+      <div class="flow-node highlight" style="border-color: var(--purple);" data-tool="smart-commit">
+        <div class="fn-badge badge-skill">SKILL</div>
+        <div class="fn-emoji">📦</div>
+        <div class="fn-title">/smart-commit</div>
+        <div class="fn-sub">Review → verify deps → group → commit</div>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-node highlight" style="border-color: var(--orange);" data-tool="pre-commit">
+        <div class="fn-badge badge-auto">AUTO</div>
+        <div class="fn-emoji">🛡️</div>
+        <div class="fn-title">pre-commit hook</div>
+        <div class="fn-sub">Warns about missing deps</div>
+      </div>
+    </div>
+
+    <div class="flow-section-label">End of Day / CI</div>
+    <div class="flow-row">
+      <div class="flow-node highlight" style="border-color: var(--pink);" data-tool="review">
+        <div class="fn-badge badge-script">SCRIPT</div>
+        <div class="fn-emoji">🔍</div>
+        <div class="fn-title">claude-review.sh</div>
+        <div class="fn-sub">Headless review: commit / staged / branch / full</div>
+      </div>
+    </div>
+
+    <div class="flow-section-label">Always Active</div>
+    <div class="flow-row">
+      <div class="flow-node" style="border-color: var(--cyan);">
+        <div class="fn-badge badge-auto">AUTO</div>
+        <div class="fn-emoji">💚</div>
+        <div class="fn-title">Self-Healing</div>
+        <div class="fn-sub">Auto-restart on crash (in /devstart)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ IMPACT VIEW ═══════════ -->
+<div class="view" id="view-impact">
+  <div class="impact-grid">
+    <div class="impact-card animate-in">
+      <h3>📊 Friction Sources Addressed</h3>
+      <div class="bar-chart">
+        <div class="bar-row">
+          <div class="bar-label">Wrong approach (45)</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:0%; background: linear-gradient(90deg, var(--red), var(--orange));" data-target="82">
+              <span>~82% covered</span>
+            </div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">Buggy code (34)</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:0%; background: linear-gradient(90deg, var(--orange), var(--green));" data-target="70">
+              <span>~70% covered</span>
+            </div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">Server issues (18)</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:0%; background: linear-gradient(90deg, var(--accent), var(--green));" data-target="95">
+              <span>~95% covered</span>
+            </div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">Git friction (17)</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:0%; background: linear-gradient(90deg, var(--purple), var(--accent));" data-target="85">
+              <span>~85% covered</span>
+            </div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">Prod dep crashes (5)</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:0%; background: linear-gradient(90deg, var(--green), var(--cyan));" data-target="100">
+              <span>100% covered</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="impact-card animate-in">
+      <h3>🎯 Tool Coverage Map</h3>
+      <div class="coverage-ring">
+        <div class="ring-container">
+          <svg width="120" height="120" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border)" stroke-width="10"/>
+            <circle cx="60" cy="60" r="50" fill="none" stroke="var(--green)" stroke-width="10"
+              stroke-dasharray="314" stroke-dashoffset="314" stroke-linecap="round"
+              id="coverage-ring"/>
+          </svg>
+          <div class="ring-label">
+            <div class="ring-value" id="coverage-pct">0%</div>
+            <div class="ring-text">Friction<br>Covered</div>
+          </div>
+        </div>
+        <div class="ring-legend">
+          <div class="ring-legend-item"><div class="legend-dot" style="background:var(--green);"></div> Automatic (hook) — 1 tool</div>
+          <div class="ring-legend-item"><div class="legend-dot" style="background:var(--accent);"></div> Slash commands — 3 skills</div>
+          <div class="ring-legend-item"><div class="legend-dot" style="background:var(--purple);"></div> CLI script — 1 tool</div>
+          <div class="ring-legend-item"><div class="legend-dot" style="background:var(--cyan);"></div> Built-in (self-heal) — 1 feature</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="impact-card animate-in">
+      <h3>⏱️ Estimated Time Saved Per Session</h3>
+      <div class="bar-chart">
+        <div class="bar-row">
+          <div class="bar-label">/devstart</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:0%; background: var(--green);" data-target="60">
+              <span>~3-5 min</span>
+            </div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">/smart-commit</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:0%; background: var(--purple);" data-target="40">
+              <span>~2-3 min</span>
+            </div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">/tdd-bugfix</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:0%; background: var(--accent);" data-target="80">
+              <span>~5-15 min</span>
+            </div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">pre-commit hook</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:0%; background: var(--orange);" data-target="50">
+              <span>~2-4 min (per catch)</span>
+            </div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">headless review</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:0%; background: var(--pink);" data-target="95">
+              <span>~20-45 min</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="impact-card animate-in">
+      <h3>🔗 Which Tool Catches What</h3>
+      <div style="font-size:0.85em; line-height:1.8;">
+        <div><span style="color:var(--red);">Missing dependencies</span> → <b style="color:var(--orange);">pre-commit hook</b> + <b style="color:var(--purple);">/smart-commit</b></div>
+        <div><span style="color:var(--red);">Server crashes</span> → <b style="color:var(--green);">/devstart</b> self-healing</div>
+        <div><span style="color:var(--red);">Wrong approach bugs</span> → <b style="color:var(--accent);">/tdd-bugfix</b> (test-first catches it)</div>
+        <div><span style="color:var(--red);">N+1 queries</span> → <b style="color:var(--pink);">claude-review.sh</b></div>
+        <div><span style="color:var(--red);">Float in billing</span> → <b style="color:var(--pink);">claude-review.sh</b></div>
+        <div><span style="color:var(--red);">TS any violations</span> → <b style="color:var(--pink);">claude-review.sh</b> + <span style="color:var(--text-dim);">syntax-check (existing)</span></div>
+        <div><span style="color:var(--red);">Messy git history</span> → <b style="color:var(--purple);">/smart-commit</b> grouping</div>
+        <div><span style="color:var(--red);">Security issues</span> → <b style="color:var(--pink);">claude-review.sh full</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Prompt Output -->
+<div class="prompt-section">
+  <div class="prompt-box">
+    <h3>📋 Summary Prompt — copy this to remember your new workflow</h3>
+    <button class="copy-btn" onclick="copyPrompt()">Copy</button>
+    <div class="prompt-text" id="prompt-output"></div>
+  </div>
+</div>
+
+<script>
+  // ── Data ──
+  const tools = [
+    {
+      id: 'pre-commit',
+      name: 'Pre-commit Dependency Hook',
+      emoji: '🛡️',
+      file: '.git/hooks/pre-commit',
+      type: 'auto', typeLabel: 'Automatic',
+      color: 'var(--orange)',
+      before: 'You add "import numpy" in a Python file, commit, push to production — server crashes because numpy isn\'t in requirements.txt. Happened 5 times.',
+      after: 'Hook scans every staged file at commit time. If it finds an import for a package not in requirements.txt or package.json, it warns you immediately. Zero production crashes from missing deps.',
+      details: [
+        'Scans staged .py files for import statements',
+        'Cross-checks against sys.stdlib_module_names (Python 3.10+)',
+        'Scans staged .ts/.vue/.js files for package imports',
+        'Verifies packages exist in frontend/package.json',
+        'Warns but never blocks — you can always override'
+      ],
+      usage: 'Automatic — runs on every git commit'
+    },
+    {
+      id: 'devstart',
+      name: '/devstart — Self-Healing Dev Server',
+      emoji: '🚀',
+      file: '.claude/skills/devstart/SKILL.md',
+      type: 'skill', typeLabel: 'Slash Command',
+      color: 'var(--green)',
+      before: 'You start servers manually, they crash silently, you don\'t notice until an API call fails. Across 18 sessions you spent time diagnosing dead backends and restarting.',
+      after: 'One command starts all 3 services, health-checks them, auto-diagnoses failures (missing deps, migrations, port conflicts), fixes and restarts — up to 3 retries per service.',
+      details: [
+        'Checks prerequisites (venv, node_modules)',
+        'Kills processes on ports 8008, 5174, 5175',
+        'Checks for pending Django migrations',
+        'Starts Django, Vue, and Telegram Mini App in background',
+        'Health-checks each after 8 seconds',
+        'Auto-fixes: pip install, npm ci, migrate, port kill',
+        'Reports final status table with URLs'
+      ],
+      usage: '/devstart  or  "start dev"'
+    },
+    {
+      id: 'smart-commit',
+      name: '/smart-commit — Intelligent Commit Workflow',
+      emoji: '📦',
+      file: '.claude/skills/smart-commit/SKILL.md',
+      type: 'skill', typeLabel: 'Slash Command',
+      color: 'var(--purple)',
+      before: 'Commits mixed backend+frontend+tests in one blob. Forgot to add numpy to requirements.txt. Messy commit messages. Had to fix and re-commit multiple times across 17 git sessions.',
+      after: 'Automatically reviews all changes, verifies every dependency, groups into logical commits (backend, frontend, tests), uses conventional format, and shows you the plan before executing.',
+      details: [
+        'Surveys git status + diff + log',
+        'Verifies all new Python imports are in requirements.txt',
+        'Verifies all new TS/Vue imports are in package.json',
+        'Groups changes: feat → fix → refactor → chore → test',
+        'Drafts conventional commit messages (feat:, fix:, etc.)',
+        'Shows commit plan and waits for approval',
+        'Stages specific files only (never git add -A)',
+        'Reports all commit hashes after execution'
+      ],
+      usage: '/smart-commit  or  "commit"'
+    },
+    {
+      id: 'tdd',
+      name: '/tdd-bugfix — Test-Driven Bug Fix',
+      emoji: '🐛',
+      file: '.claude/skills/tdd-bugfix/SKILL.md',
+      type: 'skill', typeLabel: 'Slash Command',
+      color: 'var(--accent)',
+      before: 'Claude guesses at fixes without tests, produces buggy code (34 incidents), takes wrong approaches (45 incidents). You spend time correcting and re-correcting.',
+      after: 'Rigid 5-phase pipeline: understand bug → write failing test → fix loop (max 5 autonomous iterations) → regression check → report. Claude works autonomously until the test passes.',
+      details: [
+        'Phase 1: Read source, identify expected vs actual behavior',
+        'Phase 2: Write a test that reproduces the bug exactly',
+        'Phase 3: Loop — implement fix → run test → analyze → adjust (max 5x)',
+        'Phase 4: Run full app test suite for regressions',
+        'Phase 5: Report root cause, fix diff, test results',
+        'Never changes the test to make it pass',
+        'Never asks for guidance during the fix loop'
+      ],
+      usage: '/tdd-bugfix  or  "fix this bug with TDD"'
+    },
+    {
+      id: 'review',
+      name: 'Headless Review Script',
+      emoji: '🔍',
+      file: 'scripts/claude-review.sh',
+      type: 'script', typeLabel: 'CLI Script',
+      color: 'var(--pink)',
+      before: 'Code reviews required interactive sessions, eating context window. Audits hit token limits. You couldn\'t review code overnight or in CI.',
+      after: 'Run from terminal: ./scripts/claude-review.sh [scope]. Four scopes from quick (last-commit) to comprehensive (full audit with parallel agents). Outputs a markdown report.',
+      details: [
+        'last-commit: Quick review of most recent commit',
+        'staged: Pre-push check of staged changes',
+        'branch: Comprehensive review of all branch changes vs main',
+        'full: Parallel-agent audit (financial, API, frontend, security)',
+        'Checks: N+1 queries, float, security, any types, language, service pattern',
+        'Outputs timestamped markdown report',
+        'Can run in CI/CD pipeline or overnight'
+      ],
+      usage: './scripts/claude-review.sh last-commit'
+    },
+    {
+      id: 'self-heal',
+      name: 'Self-Healing (in /devstart)',
+      emoji: '💚',
+      file: 'Built into /devstart skill',
+      type: 'auto', typeLabel: 'Automatic',
+      color: 'var(--cyan)',
+      before: 'Backend crashes from missing migration → you manually diagnose → run migrate → restart. Frontend dies from missing npm package → manual npm install → restart. Repeat.',
+      after: 'Built into /devstart: when a health check fails, it reads the error log, matches known patterns (ModuleNotFoundError → pip install, missing migration → migrate), applies the fix, and retries automatically.',
+      details: [
+        'Detects ModuleNotFoundError → runs pip install -r requirements.txt',
+        'Detects missing migration → runs make migrate',
+        'Detects missing npm package → runs npm install',
+        'Detects port conflict → kills existing process',
+        'Retries up to 3 times per service',
+        'Reports diagnosis to you if all retries fail'
+      ],
+      usage: 'Automatic within /devstart'
+    }
+  ];
+
+  // ── Render Cards ──
+  const cardsGrid = document.getElementById('cards-grid');
+  tools.forEach(t => {
+    const badgeClass = t.type === 'auto' ? 'badge-auto' : t.type === 'skill' ? 'badge-skill' : 'badge-script';
+    cardsGrid.innerHTML += `
+      <div class="tool-card animate-in" onclick="this.classList.toggle('expanded')">
+        <div class="card-head">
+          <div class="card-icon" style="background:${t.color}22;">${t.emoji}</div>
+          <div class="card-head-text">
+            <h3>${t.name}</h3>
+            <div class="card-file">${t.file}</div>
+          </div>
+          <span class="card-type-badge ${badgeClass}">${t.typeLabel}</span>
+        </div>
+        <div class="card-ba">
+          <div class="card-before">
+            <div class="ba-label before">Before</div>
+            <p>${t.before}</p>
+          </div>
+          <div class="card-after">
+            <div class="ba-label after">After</div>
+            <p>${t.after}</p>
+          </div>
+        </div>
+        <div class="card-details">
+          <h4>How It Works</h4>
+          <ul>${t.details.map(d => `<li>${d}</li>`).join('')}</ul>
+          <div class="code-block">${t.usage}</div>
+        </div>
+        <div class="expand-hint">Click to ${'{expand}'} details</div>
+      </div>
+    `.replace('{expand}', 'toggle');
+  });
+
+  // ── View switching ──
+  document.querySelectorAll('.view-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('view-' + tab.dataset.view).classList.add('active');
+      if (tab.dataset.view === 'impact') animateBars();
+    });
+  });
+
+  // ── Animate bars on impact view ──
+  function animateBars() {
+    document.querySelectorAll('.bar-fill[data-target]').forEach(bar => {
+      bar.style.width = '0%';
+      setTimeout(() => {
+        bar.style.width = bar.dataset.target + '%';
+      }, 100);
+    });
+    // Animate ring
+    const ring = document.getElementById('coverage-ring');
+    const pct = document.getElementById('coverage-pct');
+    if (ring) {
+      const target = 83;
+      const circumference = 314;
+      ring.style.transition = 'stroke-dashoffset 1.5s ease';
+      ring.style.strokeDashoffset = circumference;
+      setTimeout(() => {
+        ring.style.strokeDashoffset = circumference * (1 - target / 100);
+      }, 200);
+      // Animate percentage
+      let current = 0;
+      const interval = setInterval(() => {
+        current += 1;
+        if (current > target) { clearInterval(interval); return; }
+        pct.textContent = current + '%';
+      }, 18);
+    }
+  }
+
+  // ── Prompt output ──
+  function updatePrompt() {
+    const text = `My MTT project now has 6 workflow improvements installed:
+
+1. PRE-COMMIT HOOK (.git/hooks/pre-commit)
+   Automatic — warns about missing dependencies on every git commit.
+   Catches Python imports not in requirements.txt and TS/Vue packages not in package.json.
+
+2. /devstart SKILL
+   Type "/devstart" to start all 3 dev servers with health checks and auto-restart.
+   Handles: Django :8008, Vue :5174, Telegram Mini App :5175.
+
+3. /smart-commit SKILL
+   Type "/smart-commit" to review changes, verify deps, group into logical commits.
+   Uses conventional commit format (feat:, fix:, refactor:, etc).
+
+4. /tdd-bugfix SKILL
+   Type "/tdd-bugfix" for test-driven bug fixing.
+   Writes failing test → iterates fix autonomously → regression check.
+
+5. HEADLESS REVIEW (scripts/claude-review.sh)
+   Run "./scripts/claude-review.sh [scope]" from terminal.
+   Scopes: last-commit, staged, branch, full.
+
+6. SELF-HEALING (built into /devstart)
+   Auto-diagnoses and fixes crashed services during development.
+
+Typical daily workflow:
+  /devstart → write code → /tdd-bugfix (if bugs) → /smart-commit → review.sh (overnight)`;
+
+    document.getElementById('prompt-output').textContent = text;
+  }
+  updatePrompt();
+
+  function copyPrompt() {
+    const text = document.getElementById('prompt-output').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.querySelector('.copy-btn');
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  // Initial bar animation if impact is shown
+  setTimeout(() => {
+    if (document.getElementById('view-impact').classList.contains('active')) {
+      animateBars();
+    }
+  }, 500);
+</script>
+
+</body>
+</html>

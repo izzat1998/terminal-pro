@@ -40,7 +40,7 @@ export default defineConfig({
     allowedHosts: ['localhost', 'mini-app.xlog.uz', '.ngrok-free.app', '.ngrok.io'],
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8008',
         changeOrigin: true,
       }
     }

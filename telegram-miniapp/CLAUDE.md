@@ -32,7 +32,7 @@ make dev               # Start all services (backend + frontend + telegram-minia
 | Telegram UI | @telegram-apps/telegram-ui | Official Telegram components |
 | Build Tool | Vite 6.x | With React SWC plugin |
 | Styling | Tailwind CSS 4.x | Utility-first CSS |
-| State | React Context + hooks | No external state library |
+| State | Zustand 5.x + React Context | Zustand for global state, Context for component-scoped |
 | Routing | React Router 6.x | Hash-based routing |
 | Telegram SDK | @tma.js/sdk-react 3.x | Mini App SDK integration |
 
@@ -81,7 +81,7 @@ src/
 Page Component (src/pages/)
     │
     ▼ fetch via fetch()
-Backend API (localhost:8000/api via Vite proxy)
+Backend API (localhost:8008/api via Vite proxy)
     │
     ▼ JSON response
 Page updates local state (useState/useReducer)
@@ -129,7 +129,7 @@ Component re-render
 // vite.config.ts
 proxy: {
   '/api': {
-    target: 'http://localhost:8000',
+    target: 'http://localhost:8008',
     changeOrigin: true,
   }
 }
@@ -274,7 +274,7 @@ const fetchVehicles = async () => {}                 // async: action verb
 
 ```env
 # .env.local (development overrides)
-VITE_API_BASE_URL=http://localhost:8000/api
+VITE_API_BASE_URL=http://localhost:8008/api
 
 # Enable HTTPS for camera (uses mkcert)
 HTTPS=true
